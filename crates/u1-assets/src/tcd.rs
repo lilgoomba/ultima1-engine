@@ -4,7 +4,7 @@
 //! column-major ("top to bottom, left to right"): 18 bytes for column 0,
 //! then 18 bytes for column 1, ... Maps 0-1 are castles, 2-9 towns
 //! (per Ultima Stones). Cell values index `???TOWN.BIN` tiles.
-//! UNKNOWN / needs verification: column-major order and map ordering.
+//! Column-major order verified against original data (SPEC §5).
 
 use crate::error::{AssetError, Result};
 
@@ -55,6 +55,23 @@ impl TownCastleMaps {
         Ok(TownCastleMaps { maps })
     }
 
+    /// Tile to draw for a cell value. Values 0..=50 are `???TOWN.BIN`
+    /// indices; 51..=63 are floor cells that also carry a region code
+    /// (shop counters, pub, prison, door gaps; SPEC §5) and draw as floor
+    /// (tile 1). Verified against original data.
+    pub fn display_tile(value: u8) -> usize {
+        if value <= 50 {
+            value as usize
+        } else {
+            1
+        }
+    }
+
+    /// Region code carried by a floor cell (51..=63), if any.
+    pub fn region_code(value: u8) -> Option<u8> {
+        (51..=63).contains(&value).then_some(value)
+    }
+
     pub fn is_castle(index: usize) -> bool {
         index < 2
     }
@@ -76,6 +93,17 @@ mod tests {
         assert_eq!(t.maps[0].cell(0, 17), 0x01);
         assert_eq!(t.maps[0].cell(1, 0), 0x00);
         assert!(TownCastleMaps::is_castle(1) && !TownCastleMaps::is_castle(2));
+    }
+
+    #[test]
+    fn region_values_draw_as_floor() {
+        assert_eq!(TownCastleMaps::display_tile(0), 0);
+        assert_eq!(TownCastleMaps::display_tile(50), 50);
+        for v in 51..=63 {
+            assert_eq!(TownCastleMaps::display_tile(v), 1);
+            assert_eq!(TownCastleMaps::region_code(v), Some(v));
+        }
+        assert_eq!(TownCastleMaps::region_code(7), None);
     }
 
     #[test]

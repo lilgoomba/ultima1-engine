@@ -60,10 +60,31 @@ impl Terrain {
     }
 
     /// Tile index for a given animation frame counter.
-    pub fn tile_for_frame(self, frame: usize) -> usize {
-        let (base, frames) = self.tile();
-        base + frame % frames
+    /// Base tile and animation-tick based selection, matching the timing
+    /// observed in DOSBox (see SPEC §3.5): castles alternate tiles 4/5 every
+    /// 3 ticks; towns show tile 7 on one tick out of 4 and tile 8 otherwise.
+    /// Water uses tile 0 with a horizontal scroll (see [`water_scroll`]).
+    pub fn tile_for_frame(self, tick: usize) -> usize {
+        match self {
+            Terrain::Castle => 4 + (tick / 3) % 2,
+            Terrain::Town => {
+                if tick % 4 == 0 {
+                    7
+                } else {
+                    8
+                }
+            }
+            _ => self.tile().0,
+        }
     }
+}
+
+/// Horizontal source offset (in pixels, for a 16-pixel-wide tile) of the
+/// scrolling water tile at animation `tick`: displayed column `x` shows
+/// source column `(x + offset) % width`, so the pattern moves left by 4
+/// pixels per tick and repeats every 4 ticks. Verified against DOSBox.
+pub fn water_scroll(tick: usize, tile_width: usize) -> usize {
+    ((tick % 4) * tile_width / 4) % tile_width.max(1)
 }
 
 /// The decoded overworld: one value (0..=15) per cell, row-major.

@@ -10,3 +10,7 @@
 *.4
 /game/
 /gamedata/
+*.COM
+*.com
+*.asm
+/re/

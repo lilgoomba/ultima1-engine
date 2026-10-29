@@ -1,48 +1,66 @@
 # ultima1-engine
 
-An open-source, **clean-room** re-implementation engine for Origin Systems'
-*Ultima I: The First Age of Darkness* (the MS-DOS port of the 1986 remake,
-as sold by GOG.com). Written in Rust with SDL2. Linux first.
+An open-source re-implementation engine for Origin Systems' *Ultima I: The
+First Age of Darkness* (the MS-DOS port of the 1986 remake, as sold on the
+*Ultima 1-3* CD-ROM and by GOG.com). It is written independently in Rust
+with SDL2, from a written specification. Linux first.
 
 **Status: early.** Today it has:
 
-* `u1-assets`: a library that parses the documented DOS data formats:
+* `u1-assets`: a library that parses the DOS data formats, verified
+  against an original copy:
   * every tile file (EGA row-planar, CGA, Tandy and mono)
   * `MAP.BIN` (the overworld)
   * `TCD.BIN` (towns and castles)
   * `PLAYERn.U1` saves
+  * the `CASTLE.16` / `CASTLE.4` title pictures and `NIF.BIN`
+  * the location table, read at run time from your own `OUT.EXE`
+  * the game's random number generator and its dungeon-level generator
   * case-insensitive game-folder discovery
-  * a small software renderer
+  * a small software renderer with the original animation timing
 * `u1view`: a scrollable overworld viewer, either for your own game files
   or for a fully synthetic `--demo` world.
-* [`docs/SPEC.md`](docs/SPEC.md): the file-format spec, with sources. It
-  marks what is confirmed by public docs and what is still unknown.
+* [`docs/SPEC.md`](docs/SPEC.md): the format and behaviour spec, with
+  sources. Each item is marked as verified against original data,
+  verified from the original executable, documented publicly, or unknown.
 
 ![demo screenshot (procedural placeholder art, not Origin's)](docs/demo.png)
 
 *The screenshot uses procedurally generated placeholder tiles and a
 synthetic map. It contains no original game art.*
 
-## Clean-room policy
+## Development policy: spec from reference, independent implementation
 
-This project must stay legally clean. Contributors agree to the following:
+This is **not** a strict clean-room project. It works like this:
 
-1. **Use only public documentation.** Format knowledge comes from public
-   community documentation (ModdingWiki, Ultima Stones, Dino's U1 guide,
-   the Ultima Codex and similar) and from observing the game while it
-   runs. Every claim is cited in `docs/SPEC.md`.
-2. **No reverse engineering of the executables.** Do not disassemble,
-   decompile or debug Origin's executables. Do not paste code or tables
-   taken from them. Do not use projects that say they derive from
-   decompilation (for example Ultima I Unity) as a source.
-3. **Do not copy third-party code verbatim.** Descriptions in other
-   projects' docs are fine. Their code is not.
-4. **Never commit original game files.** That includes `.BIN`, `.EXE`,
-   `.U1`, `CASTLE.*` and any data or screenshots taken from them. Do not
-   use abandonware downloads. `.gitignore` blocks the usual extensions as a
-   safety net.
-5. **Use synthetic test data only.** Tests build their inputs from the
-   spec.
+1. **Reference study stays outside the repository.** Maintainers may study
+   a legally owned copy of the original game, both its data files and its
+   executables (`ULTIMA.EXE`, `GEN.EXE`, `OUT.EXE`, `SPACE.EXE`,
+   `MONDAIN.EXE`, `MOSLO.COM`). Study methods include running it in
+   DOSBox, diffing save files, and disassembling or decompiling the
+   executables, but only **for reference**. Disassembly listings,
+   decompiled code, memory dumps and raw notes stay on the maintainer's
+   machine and are never committed.
+2. **Findings become a plain-language spec.** What was learned is restated
+   in [`docs/SPEC.md`](docs/SPEC.md) in our own words: layouts, rules,
+   and algorithms in prose or pseudocode, plus a few example values. Each
+   item says how it was established ("verified against original data",
+   "verified from original executable", public documentation, or
+   unknown). Public community documentation is cited there as well.
+3. **The engine is written fresh from the spec.** No original code is
+   translated or pasted in. Do not copy decompiled code or large data
+   tables from the executables into the repository. When the engine needs
+   such a table (for example the location coordinates), it reads it at run
+   time from the user's own copy.
+4. **No original assets in the repository.** Never commit original game
+   files (`.BIN`, `.EXE`, `.COM`, `.U1`, `CASTLE.*`, `NIF.BIN`), extracts
+   from them, or screenshots that show original art. `.gitignore` blocks
+   the usual extensions as a safety net. Do not use abandonware
+   downloads.
+5. **Third-party code is not copied.** Other projects' descriptions may be
+   cited; their code may not be copied.
+6. **Tests use synthetic data only.** Tests build their inputs from the
+   spec and never read original files.
 
 To run the engine with real data you need your own legally purchased copy.
 
@@ -76,7 +94,10 @@ cargo run --release -p u1view -- --demo
 cargo run --release -p u1view -- --demo --seed 42 --scale 4
 ```
 
-### With your own copy (GOG)
+### With your own copy (CD-ROM or GOG)
+
+From the *Ultima 1-3* CD-ROM, point `--game-dir` at the `ULTIMA1` folder.
+For GOG:
 
 1. Install *Ultima 1+2+3* from GOG.
 2. Find the Ultima I folder, for example `~/GOG Games/Ultima 1+2+3/Ultima1`
@@ -105,9 +126,25 @@ EGA first, then Tandy, then CGA.
 | Home | Recentre |
 | Esc | Quit |
 
-Options: `--scale N`, `--cols N`, `--rows N`, `--start X,Y`, `--seed N`
-(demo only), `--mode ega|t1k|cga`, and `--screenshot out.png`. The
-screenshot option renders one frame and exits. It also works headless:
+Options:
+
+* `--scale N`, `--cols N`, `--rows N`
+* `--start X,Y`
+* `--seed N` (demo only)
+* `--mode ega|t1k|cga`
+* `--screenshot out.png`: renders one frame and exits.
+* `--full-map out.png`: renders the whole 168x156 world to one image and
+  exits.
+* `--frame N`: the animation tick to render with `--screenshot`. One tick
+  is about 0.165 s; water scrolls each tick, castles change every 3 ticks
+  and towns every 4.
+* `--locations` (needs `--game-dir`): prints the 84-entry location table
+  read from your `OUT.EXE` and checks it against `MAP.BIN`.
+* `--dungeon X,Y,LEVEL,SEED` (needs `--game-dir`): prints an ASCII map of
+  the dungeon level the original generator would build for the entrance
+  at X,Y. SEED is save word 0x32.
+
+Screenshots also work headless:
 
 ```sh
 SDL_VIDEODRIVER=dummy cargo run -p u1view -- --demo --start 100,104 --screenshot docs/demo.png
@@ -134,12 +171,12 @@ docs/demo.png      demo screenshot (synthetic art)
 
 ## Roadmap
 
-1. Verify the spec against a real copy (see the checklist in SPEC §11).
+1. Finish the remaining open items in SPEC §11, such as dungeon monsters
+   and the shop and monster tables.
 2. Town/castle viewer from `TCD.BIN` and `EGATOWN.BIN`.
 3. Save-file inspector.
 4. Movement, transports and the overworld rules.
-5. A dungeon generator that follows the documented 9x9 / 10-level
-   structure.
+5. A first-person dungeon view on top of the existing generator.
 6. Combat, shops, space and the Mondain battle, rebuilt from documented
    behaviour.
 

@@ -1,0 +1,9 @@
+[package]
+name = "u1-assets"
+description = "Clean-room loaders for the data files of Ultima I (1986 DOS remake)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]

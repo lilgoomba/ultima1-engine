@@ -1,0 +1,12 @@
+/target
+# Never commit original game data. These patterns are a safety net.
+*.BIN
+*.bin
+*.EXE
+*.exe
+*.U1
+*.u1
+*.16
+*.4
+/game/
+/gamedata/

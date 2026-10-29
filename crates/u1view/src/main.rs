@@ -1,4 +1,4 @@
-//! u1view: scrollable overworld viewer for the u1 clean-room engine.
+//! u1view: scrollable overworld viewer for the u1 engine.
 //!
 //! Usage:
 //!   u1view --game-dir <path> [--mode ega|t1k|cga]
@@ -29,10 +29,14 @@ struct Args {
     rows: usize,
     start: Option<(isize, isize)>,
     screenshot: Option<PathBuf>,
+    full_map: Option<PathBuf>,
+    frame: Option<usize>,
+    locations: bool,
+    dungeon: Option<(u16, u16, u16, u16)>,
 }
 
 const USAGE: &str = "\
-u1view - Ultima I overworld viewer (clean-room engine)
+u1view - Ultima I overworld viewer (independent engine)
 
 USAGE:
     u1view --game-dir <path> [options]
@@ -48,6 +52,10 @@ OPTIONS:
     --rows <n>            Visible rows (default 13)
     --start <x,y>         Initial top-left cell
     --screenshot <file>   Render one frame to a PNG and exit
+    --full-map <file>     Render the whole map (1 px per tile pixel) to a PNG and exit (no SDL window)
+    --frame <n>           Fix the animation tick (0.165 s units) for --screenshot/--full-map
+    --locations           Print the location table read from your OUT.EXE and check it against MAP.BIN
+    --dungeon <x,y,l,s>   Print dungeon level l at entrance (x,y) for save seed s (needs OUT.EXE)
     -h, --help            Show this help
 
 KEYS: arrows scroll (Shift = 8 cells), Home recentres, Esc quits.";
@@ -63,6 +71,10 @@ fn parse_args() -> Result<Args, String> {
         rows: 13,
         start: None,
         screenshot: None,
+        full_map: None,
+        frame: None,
+        locations: false,
+        dungeon: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -87,6 +99,21 @@ fn parse_args() -> Result<Args, String> {
                 ));
             }
             "--screenshot" => a.screenshot = Some(val("--screenshot")?.into()),
+            "--full-map" => a.full_map = Some(val("--full-map")?.into()),
+            "--frame" => a.frame = Some(val("--frame")?.parse().map_err(|e| format!("--frame: {e}"))?),
+            "--locations" => a.locations = true,
+            "--dungeon" => {
+                let v = val("--dungeon")?;
+                let n: Vec<u16> = v
+                    .split(',')
+                    .map(|p| p.trim().parse::<u16>())
+                    .collect::<Result<_, _>>()
+                    .map_err(|e| format!("--dungeon: {e}"))?;
+                if n.len() != 4 || !(1..=10).contains(&n[2]) {
+                    return Err("--dungeon expects X,Y,LEVEL(1-10),SAVESEED".into());
+                }
+                a.dungeon = Some((n[0], n[1], n[2], n[3]));
+            }
             "-h" | "--help" => {
                 println!("{USAGE}");
                 std::process::exit(0);
@@ -144,8 +171,74 @@ fn write_png(path: &PathBuf, w: u32, h: u32, rgb: &[u8]) -> Result<(), String> {
     wr.write_image_data(rgb).map_err(|e| e.to_string())
 }
 
+fn print_locations(dir: &PathBuf) -> Result<(), String> {
+    use u1_assets::locations::{kind_of, tcd_map_for, terrain_for, LocationTable};
+    let g = GameDir::new(dir).map_err(|e| e.to_string())?;
+    let exe = g.read("OUT.EXE").map_err(|e| e.to_string())?;
+    let table = LocationTable::from_out_exe(&exe).map_err(|e| e.to_string())?;
+    let map = g.load_world_map().map_err(|e| e.to_string())?;
+    let mut bad = 0;
+    for l in &table.locations {
+        let kind = kind_of(l.id).expect("1..=84");
+        let cell = map.cell(l.x as usize, l.y as usize);
+        let ok = cell == terrain_for(kind);
+        bad += usize::from(!ok);
+        let tcd = tcd_map_for(l.id).map_or(String::from("-"), |m| m.to_string());
+        println!("{:>2} {:<9} ({:>3},{:>3}) terrain {cell} {} tcd {tcd:>2}  {}", l.id, format!("{kind:?}"), l.x, l.y, if ok { "ok " } else { "BAD" }, l.name);
+    }
+    println!("{} locations, {bad} terrain mismatches", table.locations.len());
+    if bad > 0 {
+        return Err("location table does not match MAP.BIN".into());
+    }
+    Ok(())
+}
+
+fn print_dungeon(dir: &PathBuf, (x, y, level, seed): (u16, u16, u16, u16)) -> Result<(), String> {
+    use u1_assets::dungeon::{fixed_spots_from_out_exe, generate, Cell, Item};
+    let g = GameDir::new(dir).map_err(|e| e.to_string())?;
+    let exe = g.read("OUT.EXE").map_err(|e| e.to_string())?;
+    let spots = fixed_spots_from_out_exe(&exe).map_err(|e| e.to_string())?;
+    let d = generate(x, y, level, seed, &spots, 0);
+    println!("dungeon at ({x},{y}) level {level} save seed {seed}; rows = second index b, columns = first index a");
+    for b in 0..11 {
+        let row: String = (0..11)
+            .map(|a| match (d.cells[a][b], d.items[a][b]) {
+                (_, Item::Chest) => '$',
+                (_, Item::Coffin) => '+',
+                (Cell::Empty, _) => '.',
+                (Cell::Wall, _) => '#',
+                (Cell::SecretDoor, _) => 's',
+                (Cell::Door, _) => 'D',
+                (Cell::LadderDown, _) => 'v',
+                (Cell::LadderUp, _) => '^',
+                (Cell::ForceField, _) => 'F',
+                (Cell::Other(_), _) => '?',
+            })
+            .collect();
+        println!("{row}");
+    }
+    Ok(())
+}
+
 fn run(a: Args) -> Result<(), String> {
+    if a.locations || a.dungeon.is_some() {
+        let dir = a.game_dir.as_ref().ok_or("--locations/--dungeon need --game-dir")?;
+        if a.locations {
+            print_locations(dir)?;
+        }
+        if let Some(d) = a.dungeon {
+            print_dungeon(dir, d)?;
+        }
+        return Ok(());
+    }
     let world = load(&a)?;
+    if let Some(path) = &a.full_map {
+        let (w, h) = (world.map.width, world.map.height);
+        let fb = render_world(&world.map, &world.tiles, &world.palette, 0, 0, w, h, a.frame.unwrap_or(0));
+        write_png(path, (w * world.tiles.width) as u32, (h * world.tiles.height) as u32, &fb)?;
+        println!("saved full map ({w}x{h} cells) to {}", path.display());
+        return Ok(());
+    }
     let (tw, th) = (world.tiles.width, world.tiles.height);
     let (fb_w, fb_h) = ((a.cols * tw) as u32, (a.rows * th) as u32);
     let max_x = world.map.width as isize - a.cols as isize;
@@ -183,7 +276,7 @@ fn run(a: Args) -> Result<(), String> {
     let t0 = Instant::now();
 
     loop {
-        let frame = (t0.elapsed().as_millis() / 500) as usize;
+        let frame = a.frame.unwrap_or((t0.elapsed().as_millis() / 165) as usize);
         let fb = render_world(&world.map, &world.tiles, &world.palette, vx, vy, a.cols, a.rows, frame);
         tex.update(None, &fb, fb_w as usize * 3).map_err(|e| e.to_string())?;
         canvas.clear();

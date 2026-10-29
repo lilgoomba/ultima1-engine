@@ -1,6 +1,6 @@
 [package]
 name = "u1view"
-description = "Scrollable overworld viewer for the u1 clean-room engine"
+description = "Scrollable overworld viewer for the u1 engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

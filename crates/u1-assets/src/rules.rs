@@ -126,6 +126,25 @@ pub fn wrap(x: i32, y: i32) -> (i32, i32) {
     (x.rem_euclid(MAP_W), y.rem_euclid(MAP_H))
 }
 
+/// Where the player ends up after one step from (x,y). Verified from the
+/// original executable: north/south and the drawn view wrap like a plain
+/// torus, but stepping off the east or west edge also moves the player 77
+/// rows (down if y < 77, otherwise up), so the edge joins the north half of
+/// the world to the south half. Monsters and the view use plain [`wrap`].
+pub fn player_step(x: i32, y: i32, dx: i32, dy: i32) -> (i32, i32) {
+    let (nx, ny) = wrap(x + dx, y + dy);
+    let crossed = (dx < 0 && x == 0) || (dx > 0 && x == MAP_W - 1);
+    if crossed {
+        let ny = if ny >= EDGE_SHIFT { ny - EDGE_SHIFT } else { ny + EDGE_SHIFT };
+        (nx, ny)
+    } else {
+        (nx, ny)
+    }
+}
+
+/// Row shift applied when the player crosses the east/west edge.
+pub const EDGE_SHIFT: i32 = 77;
+
 /// Map cell shown at viewport cell (col,row) when the player is at (px,py).
 pub fn view_cell(px: i32, py: i32, col: i32, row: i32) -> (i32, i32) {
     wrap(px - PLAYER_COL + col, py - PLAYER_ROW + row)
@@ -467,6 +486,17 @@ pub(crate) mod tests {
     fn wraps_like_a_torus() {
         assert_eq!(wrap(-1, -1), (167, 155));
         assert_eq!(wrap(168, 156), (0, 0));
+    }
+
+    #[test]
+    fn east_west_edge_switches_hemisphere() {
+        assert_eq!(player_step(0, 89, -1, 0), (167, 12));
+        assert_eq!(player_step(0, 10, -1, 0), (167, 87));
+        assert_eq!(player_step(167, 77, 1, 0), (0, 0));
+        assert_eq!(player_step(167, 76, 1, 0), (0, 153));
+        assert_eq!(player_step(5, 0, 0, -1), (5, 155));
+        assert_eq!(player_step(5, 155, 0, 1), (5, 0));
+        assert_eq!(player_step(84, 40, -1, 0), (83, 40));
         assert_eq!(view_cell(3, 89, 0, 0), (162, 85));
         assert_eq!(view_cell(3, 89, PLAYER_COL, PLAYER_ROW), (3, 89));
         assert_eq!(land_of(83, 77), 0);

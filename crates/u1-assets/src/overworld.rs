@@ -154,7 +154,7 @@ impl Overworld {
         }
         self.say(format!(">{}", t.direction_names[dir as usize]));
         let (dx, dy) = dir.delta();
-        let (nx, ny) = rules::wrap(self.x + dx, self.y + dy);
+        let (nx, ny) = rules::player_step(self.x, self.y, dx, dy);
         let tile = match self.entity_at(nx, ny) {
             Some(i) => self.entities[i].tile,
             None => Self::terrain(map, nx, ny),
@@ -363,9 +363,9 @@ mod tests {
         let map = world(1);
         let mut o = Overworld::new_at(0, 0, 1);
         o.step(Dir::West, &map, &t, &locs);
-        assert_eq!((o.x, o.y), (167, 0));
+        assert_eq!((o.x, o.y), (167, 77)); // edge crossing shifts 77 rows
         o.step(Dir::North, &map, &t, &locs);
-        assert_eq!((o.x, o.y), (167, 155));
+        assert_eq!((o.x, o.y), (167, 76));
         assert_eq!(o.moves, 2);
         // synthetic food rate on foot is 2: counter starts at 1, eats on move 2.
         assert_eq!(o.food, 199);

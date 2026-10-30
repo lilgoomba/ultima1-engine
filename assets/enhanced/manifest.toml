@@ -1,6 +1,47 @@
 # Enhanced video mode asset pack (see README "Enhanced video mode" and
 # docs/SPEC.md §20). Every tile or screen not listed here is drawn from
 # the original art, scaled up nearest-neighbour.
-name = "u1-enhanced (empty)"
+#
+# Batch 1 (for review): overworld terrain and the player on foot, original
+# 16-bit-console-style art, 32x32, one shared 64-colour palette.
+name = "u1-enhanced 16-bit (batch 1)"
 tile_size = 32
 license = "CC-BY-SA-4.0"
+
+[palette]
+ega = "Pack art uses its own 64-colour palette, not the EGA 16."
+cga = "Same art as EGA; the pack does not imitate CGA colours."
+
+[world.0]   # water: bobs through four frames as the original scrolls
+frames = ["world/water0.png", "world/water1.png", "world/water2.png", "world/water3.png"]
+scroll = true
+
+[world.1]   # grass: four variants, one per map cell, with shared edges
+variants = ["world/grass0.png", "world/grass1.png", "world/grass2.png", "world/grass3.png"]
+
+[world.2]   # forest
+file = "world/forest.png"
+
+[world.3]   # mountains: rock to every edge, three peak layouts per map cell
+variants = ["world/mountain0.png", "world/mountain1.png", "world/mountain2.png"]
+
+[world.4]   # castle, pennant frame A
+file = "world/castle0.png"
+
+[world.5]   # castle, pennant frame B
+file = "world/castle1.png"
+
+[world.6]   # signpost
+file = "world/signpost.png"
+
+[world.7]   # town, smoke frame A
+file = "world/town0.png"
+
+[world.8]   # town, smoke frame B
+file = "world/town1.png"
+
+[world.9]   # dungeon entrance
+file = "world/dungeon.png"
+
+[world.0x0A] # the player on foot (transparent background)
+file = "world/player.png"

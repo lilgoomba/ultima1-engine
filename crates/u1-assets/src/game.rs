@@ -116,6 +116,13 @@ pub struct Game {
     /// Set when a feature outside this engine's scope was reached (space,
     /// Mondain's time machine, dungeons).
     pub stopped: Option<&'static str>,
+    /// The dungeon being explored (mode 3).
+    pub dungeon: Option<crate::dgame::DungeonState>,
+    pub view_tables: Option<crate::dview::ViewTables>,
+    /// Local time (hour, minute, second, hundredths) for the original's
+    /// time-of-day seeds; `None` uses `fixed_time` (tests, `--seed`).
+    pub clock: Option<fn() -> [u8; 4]>,
+    pub fixed_time: u16,
 }
 
 impl Game {
@@ -157,6 +164,10 @@ impl Game {
             counter: 0,
             save_to: None,
             stopped: None,
+            dungeon: None,
+            view_tables: None,
+            clock: None,
+            fixed_time: seed,
         };
         g.redraw();
         g
@@ -355,6 +366,8 @@ impl Game {
     pub fn redraw(&mut self) {
         if self.mode == OUTDOORS {
             self.draw_world();
+        } else if self.mode == crate::dgame::DUNGEON {
+            self.draw_dungeon();
         } else {
             self.draw_town();
         }
@@ -533,6 +546,9 @@ impl Game {
             b' ' => {
                 self.sayln(m::PASS);
             }
+            keys::LEFT | keys::RIGHT | keys::UP | keys::DOWN if self.mode == crate::dgame::DUNGEON => {
+                self.dungeon_move(io, key)
+            }
             keys::LEFT => self.cmd_move(io, Dir::West)?,
             keys::RIGHT => self.cmd_move(io, Dir::East)?,
             keys::UP => self.cmd_move(io, Dir::North)?,
@@ -543,22 +559,17 @@ impl Game {
             b'6' => self.cmd_attack(io, Some(Dir::East))?,
             b'4' => self.cmd_attack(io, Some(Dir::West))?,
             b'B' => self.cmd_board(io)?,
-            b'C' => self.cmd_cast(io),
+            b'C' => self.cmd_cast_spell(io),
             b'D' => self.cmd_drop(io)?,
             b'E' => self.cmd_enter(io)?,
             b'F' => self.cmd_fire(io)?,
             b'G' => self.cmd_get(io),
             b'H' => self.err(io, m::HYPERJUMP_Q),
+            b'I' if self.mode == crate::dgame::DUNGEON => self.dungeon_inform(),
             b'I' => self.cmd_inform(),
-            b'K' => {
-                self.say(m::KLIMB);
-                self.err(io, m::QUESTION);
-            }
+            b'K' => self.cmd_klimb(io),
             b'N' => self.cmd_noise(),
-            b'O' => {
-                self.say(m::OPEN);
-                self.err(io, m::QUESTION);
-            }
+            b'O' => self.cmd_open(io),
             b'Q' => self.cmd_quit(io),
             b'R' => self.cmd_ready(io)?,
             b'S' => self.cmd_steal(io),
@@ -567,7 +578,13 @@ impl Game {
             b'V' => self.err(io, m::VIEW_Q),
             b'X' => self.cmd_xit(io),
             b'Z' => {
+                if self.mode == crate::dgame::DUNGEON {
+                    self.restore_dungeon_borders();
+                }
                 self.cmd_ztats(io)?;
+                if let Some(d) = self.dungeon.as_mut() {
+                    d.title = true;
+                }
                 self.redraw();
                 self.term.cursor(0, 24);
             }
@@ -595,6 +612,13 @@ impl Game {
             }
             self.from_ow();
             self.show_stats();
+        } else if self.mode == crate::dgame::DUNGEON {
+            // No food is eaten below ground.
+            self.ow.moves = self.ow.moves.wrapping_add(1);
+            self.dungeon_monsters(io);
+            if self.mode == crate::dgame::DUNGEON && self.hits() > 0 {
+                self.draw_dungeon();
+            }
         } else {
             self.ow.moves = self.ow.moves.wrapping_add(1);
             self.npc_turn(io)?;
@@ -748,6 +772,10 @@ impl Game {
 
     /// Death and resurrection `c47c` (verified from original executable).
     pub fn death(&mut self, io: &mut dyn Io) -> IoResult<()> {
+        if self.mode == crate::dgame::DUNGEON {
+            self.restore_dungeon_borders();
+            self.dungeon = None;
+        }
         self.mode = OUTDOORS;
         self.set(off::FOOD, 0);
         self.set(off::HITS, 0);
@@ -847,9 +875,8 @@ impl Game {
             Some(LocationKind::Town) => self.enter_town(p),
             Some(LocationKind::Castle) => self.enter_castle(p),
             Some(LocationKind::Landmark) => self.landmark(io, p)?,
-            _ => {
-                // Dungeons are a later phase.
-            }
+            Some(LocationKind::Dungeon) => self.enter_dungeon(),
+            None => {}
         }
         Ok(())
     }
@@ -992,6 +1019,10 @@ impl Game {
             self.err(io, m::QUESTION);
             return Ok(());
         }
+        if self.mode == crate::dgame::DUNGEON {
+            self.dungeon_attack(io, range, wpn);
+            return Ok(());
+        }
         self.say(m::COLON);
         let d = match dir {
             Some(d) => d,
@@ -1072,7 +1103,7 @@ impl Game {
     }
 
     /// `761`: coins found on a slain monster.
-    fn loot(&mut self, n: i16, len: usize) {
+    pub(crate) fn loot(&mut self, n: i16, len: usize) {
         let mut n = n;
         let coin = self.coin();
         if coin.wrapping_add(n) > 9999 {
@@ -1137,12 +1168,6 @@ impl Game {
         self.term.println(&dn);
         let dmg = self.r(1, i32::from(self.transport() as i16) * 10) + 30;
         self.outdoor_attack(io, d, 3, dmg, 80)
-    }
-
-    fn cmd_cast(&mut self, io: &mut dyn Io) {
-        self.say(m::CAST_DASH);
-        self.sayln(m::NO_EFFECT);
-        self.snd(io, 6);
     }
 
     fn cmd_get(&mut self, io: &mut dyn Io) {

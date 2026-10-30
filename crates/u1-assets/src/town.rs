@@ -485,6 +485,10 @@ impl Game {
         self.say(m::UNLOCK);
         match self.mode {
             CASTLE => {}
+            crate::dgame::DUNGEON => {
+                self.dungeon_unlock(io);
+                return;
+            }
             TOWN => {
                 self.err(io, m::SP_WHAT);
                 return;

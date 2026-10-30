@@ -22,6 +22,8 @@ pub struct Term {
     pub px: Vec<u8>,
     pub col: usize,
     pub row: usize,
+    /// The graphics pen of the line routines (`lineto` starts here).
+    pub pen: (i32, i32),
 }
 
 impl Default for Term {
@@ -34,7 +36,7 @@ impl Term {
     /// The static frame: blue border, white viewport frame, black viewport,
     /// the message box (left) and the stats box (right) with their labels.
     pub fn new() -> Self {
-        let mut t = Term { px: vec![BLUE; W * H], col: 1, row: 24 };
+        let mut t = Term { px: vec![BLUE; W * H], col: 1, row: 24, pen: (0, 0) };
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
         t.fill(0, 159, 241, 199, WHITE);
@@ -84,6 +86,60 @@ impl Term {
                 y += sy;
             }
         }
+    }
+
+    /// One pixel, set (not mixed), clipped to the screen.
+    pub fn plot(&mut self, x: i32, y: i32, c: u8) {
+        if (0..W as i32).contains(&x) && (0..H as i32).contains(&y) {
+            self.px[y as usize * W + x as usize] = c;
+        }
+    }
+
+    /// The original's line routine (SPEC §6.6): a Bresenham walk along
+    /// the longer axis (x wins ties) with error 2m-n, plotting n+1 pixels.
+    /// The pen ends at (x1,y1). Used by the dungeon view, where the exact
+    /// pixels matter.
+    pub fn line_u1(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: u8) {
+        self.pen = (x1, y1);
+        let (mut sx, mut sy) = (1, 1);
+        let mut dy = y1 - y0;
+        if dy < 0 {
+            sy = -1;
+            dy = -dy;
+        }
+        let mut dx = x1 - x0;
+        if dx < 0 {
+            sx = -1;
+            dx = -dx;
+        }
+        // (major, minor) deltas and the straight step along the major axis.
+        let (n, m, ax, ay) = if dx >= dy { (dx, dy, sx, 0) } else { (dy, dx, 0, sy) };
+        let (mut x, mut y) = (x0, y0);
+        let mut err = 2 * m - n;
+        for _ in 0..=n {
+            self.plot(x, y, c);
+            if err < 0 {
+                x += ax;
+                y += ay;
+                err += 2 * m;
+            } else {
+                x += sx;
+                y += sy;
+                err += 2 * m - 2 * n;
+            }
+        }
+    }
+
+    /// `lineto`: a line from the pen to (x,y).
+    pub fn lineto(&mut self, x: i32, y: i32, c: u8) {
+        let (x0, y0) = self.pen;
+        self.line_u1(x0, y0, x, y, c);
+    }
+
+    /// Move the pen and plot one pixel there.
+    pub fn moveto_plot(&mut self, x: i32, y: i32, c: u8) {
+        self.pen = (x, y);
+        self.plot(x, y, c);
     }
 
     pub fn cursor(&mut self, col: usize, row: usize) {

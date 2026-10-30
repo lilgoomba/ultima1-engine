@@ -124,3 +124,30 @@ fn leaving_a_town_returns_to_its_tile_and_quit_saves_820_bytes() {
     assert_eq!(back.position(), (66, 41));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn entering_a_dungeon_and_climbing_out() {
+    let Some(g) = play(39, 60, "e") else { return };
+    assert_eq!(g.mode, 3);
+    let d = g.dungeon.as_ref().unwrap();
+    assert_eq!((d.depth, d.a, d.b), (1, 1, 1));
+    assert!(said(&g, "Entering..."));
+    // Facing south on the up ladder: K climbs out to the overworld.
+    let Some(g) = play(39, 60, "ek") else { return };
+    assert!(said(&g, " up to level 0"));
+    assert_eq!((g.mode, g.dungeon.is_none()), (0, true));
+    // Facing east the ladder must be faced first.
+    let Some(g) = play(39, 60, "e{left}k") else { return };
+    assert!(said(&g, "Thou must face the ladder!"));
+    assert_eq!(g.mode, 3);
+}
+
+#[test]
+fn dungeon_turns_and_blocked_path() {
+    // Level 1 of this dungeon has a wall two squares east of the ladder.
+    let Some(g) = play(39, 60, "e{right}") else { return };
+    assert!(said(&g, "Turn right"));
+    assert_eq!(g.dungeon.as_ref().unwrap().facing, 1);
+    let Some(g) = play(39, 60, "e{right}{up}") else { return };
+    assert!(said(&g, "Forward - path blocked!"));
+}

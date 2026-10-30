@@ -46,6 +46,11 @@ impl Exe {
         }
     }
 
+    /// Byte at a data-segment offset.
+    pub fn b(&self, off: usize) -> u8 {
+        self.data.get(DATA_BASE + off).copied().unwrap_or(0)
+    }
+
     /// Entry `i` of a table of string pointers.
     pub fn ptr(&self, table: usize, i: usize) -> String {
         self.s(self.w(table + 2 * i) as usize)
@@ -258,6 +263,56 @@ pub mod m {
     pub const HIT_EX: usize = 0x01AC;
     pub const ATTACKED_BY: usize = 0x16F0;
     pub const THOU_ART_DEAD: usize = 0x39FA;
+    // Dungeons (verified from original executable).
+    pub const DESTROYED: usize = 0x01B2;
+    pub const KILLED_EX: usize = 0x01BE;
+    pub const THOU_DOST_FIND: usize = 0x01C7;
+    pub const NOTHING_CAP: usize = 0x01E9;
+    pub const OPENED: usize = 0x02D8;
+    pub const COFFIN: usize = 0x02E1;
+    pub const CHEST: usize = 0x02E8;
+    pub const LADDER_CREATED: usize = 0x02EE;
+    pub const TELEPORTED: usize = 0x02FE;
+    pub const FIELD_CREATED: usize = 0x030A;
+    pub const FIELD_DESTROYED: usize = 0x0319;
+    pub const FAILED: usize = 0x032A;
+    pub const SHAZAM_SP: usize = 0x0332;
+    pub const MONSTER_REMOVED: usize = 0x033B;
+    pub const CAST: usize = 0x038E;
+    pub const USED_UP: usize = 0x0394;
+    pub const DUNGEON_ONLY: usize = 0x03AF;
+    pub const MIMIC: usize = 0x085D;
+    /// " North ", " South ", " East  ", " West  ".
+    pub const COMPASS: [usize; 4] = [0x0863, 0x086B, 0x0873, 0x087B];
+    pub const LEVEL_TITLE: usize = 0x0883;
+    pub const TURN_AROUND: usize = 0x088E;
+    pub const TURN_LEFT: usize = 0x089A;
+    pub const TURN_RIGHT: usize = 0x08A4;
+    pub const FORWARD: usize = 0x08AF;
+    pub const PATH_BLOCKED: usize = 0x08B7;
+    pub const SECRET_DOOR: usize = 0x0C4A;
+    pub const UP_TO_LEVEL: usize = 0x0CB1;
+    pub const SP_HIT_SP: usize = 0x0CBF;
+    pub const POINTS: usize = 0x0CC5;
+    pub const DOWN_TO_LEVEL: usize = 0x0CCC;
+    pub const FACE_LADDER: usize = 0x0CEA;
+    pub const SP_COFFIN: usize = 0x0D18;
+    pub const NONE_HERE: usize = 0x0D20;
+    pub const SP_CHEST: usize = 0x163D;
+    pub const TRAP: usize = 0x1644;
+    pub const ARMOR_DESTROYED: usize = 0x16FD;
+    pub const GREMLIN: usize = 0x170E;
+    pub const MENTAL: usize = 0x1729;
+    pub const THIEF_STOLE: usize = 0x1738;
+    pub const N_SP: usize = 0x1746;
+    pub const MONSTER_NAMES: usize = 0x3930;
+    pub const INCANTATIONS: usize = 0x2B56;
+    /// Dungeon wireframe tables: shape pointers (30 words), the shapes'
+    /// baseline per depth (5 words), corner x and y per depth (6 words each).
+    pub const SHAPES: usize = 0x2480;
+    pub const SHAPE_Y: usize = 0x24BC;
+    pub const VIEW_X: usize = 0x3808;
+    pub const VIEW_Y: usize = 0x3814;
     pub const RESURRECTION: usize = 0x3A0A;
     pub const QUEST_COMPLETED: usize = 0x0B66;
     pub const YOU_FIND_A: usize = 0x0B82;

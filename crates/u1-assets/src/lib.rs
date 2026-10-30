@@ -7,7 +7,9 @@
 //! or game data is embedded; tests use synthetic data built from the spec.
 
 pub mod demo;
+pub mod dgame;
 pub mod dungeon;
+pub mod dview;
 pub mod error;
 pub mod exe;
 pub mod font;

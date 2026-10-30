@@ -243,7 +243,7 @@ file = "dungeon/m24.png"
 
 # dmon.20 (invisible seeker) has no picture: it is not seen.
 
-# Batch 3 (for review): space flight, original 16-bit-console-style art
+# Batch 3: space flight, original 16-bit-console-style art
 # with its own colours. The frames and backgrounds are stretched over the
 # original's view; ships are drawn nose up and turned to their heading,
 # each fitted to the box the original drew.
@@ -284,7 +284,7 @@ file = "space/fighter.png"
 [space.reticle]
 file = "space/reticle.png"
 
-# Batch 3 (for review): Mondain's castle and the endgame.
+# Batch 3: Mondain's castle and the endgame.
 
 [mond.0]    # floor
 file = "mond/0.png"

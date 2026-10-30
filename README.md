@@ -281,7 +281,7 @@ wall on purpose. Town pictures were drawn procedurally or by hand; the
 dungeon textures and monsters were made like batch 1 (generated from
 text only, cut out, outlined and given their own 64-colour palette).
 
-Batch 3 (on review) covers space flight: a riveted gunmetal frame for
+Batch 3 covers space flight: a riveted gunmetal frame for
 the top-down view and a cockpit frame for the front view, a starfield
 and a nebula behind them, the earth-like planet, the sun, the space
 station, the three player ships, the enemy fighter and the crosshair.
@@ -326,7 +326,7 @@ docs/demo.png      demo screenshot (synthetic art)
 1. Finish the remaining open items in SPEC §11.
 2. Space and the Mondain battle.
 3. Optional quality-of-life features, kept apart from the faithful mode.
-4. Enhanced video mode art: space flight and the Mondain battle (batch 3) under review.
+4. Enhanced video mode art: the title screens and an optional enhanced sound mode.
 
 ## License
 

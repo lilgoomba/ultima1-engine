@@ -401,16 +401,20 @@ impl Game {
     }
 
     fn tile(&mut self, set: bool, idx: usize, x: usize, y: usize, shift: usize) {
-        self.tile_over(set, idx, None, x, y, shift);
+        self.tile_over(set, idx, None, None, x, y, shift);
     }
 
-    fn tile_over(&mut self, set: bool, idx: usize, under: Option<ArtId>, x: usize, y: usize, shift: usize) {
+    #[allow(clippy::too_many_arguments)]
+    fn tile_over(&mut self, set: bool, idx: usize, under: Option<ArtId>, pos: Option<(u16, u16)>, x: usize, y: usize, shift: usize) {
         let tiles = if set { &self.a.town_tiles } else { &self.a.world_tiles };
         let Some(px) = tiles.tiles.get(idx) else { return };
         let (w, h) = (tiles.width, tiles.height);
         let px = px.clone();
         let id = if set { ArtId::Town(idx as u16) } else { ArtId::World(idx as u16) };
         self.term.blit_art(id, under, x, y, w, h, &px, shift);
+        if let Some(p) = pos {
+            self.term.art_pos(p);
+        }
     }
 
     /// Outdoor viewport: 19x9 tiles of the world around the player.
@@ -453,13 +457,12 @@ impl Game {
         let tw = self.a.world_tiles.width.max(1);
         let th = self.a.world_tiles.height.max(1);
         let (sx, sy) = (8 + col as usize * tw, 8 + row as usize * th);
-        // Objects stand on terrain (tiles 0-9): note which, for the
-        // enhanced renderer's sprites.
-        let under = (t > 9).then(|| {
-            let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
-            ArtId::World(Terrain::from_cell(self.a.map.cell(mx as usize, my as usize)).tile().0 as u16)
-        });
-        self.tile_over(false, t, under, sx, sy, shift);
+        // Objects stand on terrain (tiles 0-9): note which, and the map
+        // cell (picks a picture variant), for the enhanced renderer.
+        let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
+        let under = (t > 9).then(|| ArtId::World(Terrain::from_cell(self.a.map.cell(mx as usize, my as usize)).tile().0 as u16));
+        let pos = (mx >= 0 && my >= 0).then_some((mx as u16, my as u16));
+        self.tile_over(false, t, under, pos, sx, sy, shift);
     }
 
     /// `af57(p)`: the per-poll outdoor animation, `p` counting the polls
@@ -512,21 +515,37 @@ impl Game {
         let th = self.a.town_tiles.height.max(1);
         for y in 0..TCD_HEIGHT {
             for x in 0..TCD_WIDTH {
-                let c = self.maps[self.layout].cell(x, y);
-                let t = if c < 0x33 { c as usize } else { 1 };
-                self.tile(true, t, 8 + x * tw, 8 + y * th, 0);
+                let t = self.town_ground(x as i32, y as i32).unwrap_or(1);
+                self.tile_over(true, t, None, Some((x as u16, y as u16)), 8 + x * tw, 8 + y * th, 0);
             }
         }
-        self.tile(true, PLAYER_TILE as usize, 8 + self.px as usize * tw, 8 + self.py as usize * th, 0);
+        self.town_sprite(PLAYER_TILE as usize, self.px, self.py);
         self.draw_npcs();
     }
 
-    pub fn draw_npcs(&mut self) {
+    /// The town map tile at a cell (what a person stands on).
+    fn town_ground(&self, x: i32, y: i32) -> Option<usize> {
+        if !(0..TCD_WIDTH as i32).contains(&x) || !(0..TCD_HEIGHT as i32).contains(&y) {
+            return None;
+        }
+        let c = self.maps[self.layout].cell(x as usize, y as usize);
+        Some(if c < 0x33 { c as usize } else { 1 })
+    }
+
+    /// A person in town: the tile, noting the ground under it and the
+    /// cell for the enhanced renderer.
+    fn town_sprite(&mut self, t: usize, x: i32, y: i32) {
         let tw = self.a.town_tiles.width.max(1);
         let th = self.a.town_tiles.height.max(1);
+        let Some(g) = self.town_ground(x, y) else { return };
+        let under = Some(ArtId::Town(g as u16));
+        self.tile_over(true, t, under, Some((x as u16, y as u16)), 8 + x as usize * tw, 8 + y as usize * th, 0);
+    }
+
+    pub fn draw_npcs(&mut self) {
         for n in self.npcs {
-            if n.tile != -1 && (0..TCD_WIDTH as i16).contains(&n.x) && (0..TCD_HEIGHT as i16).contains(&n.y) {
-                self.tile(true, n.tile as usize, 8 + n.x as usize * tw, 8 + n.y as usize * th, 0);
+            if n.tile != -1 {
+                self.town_sprite(n.tile as usize, n.x as i32, n.y as i32);
             }
         }
     }

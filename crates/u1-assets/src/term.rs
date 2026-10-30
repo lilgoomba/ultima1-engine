@@ -40,6 +40,9 @@ pub struct ArtOp {
     pub under: Option<ArtId>,
     /// Horizontal scroll of the tile (the water).
     pub shift: u16,
+    /// Map cell the tile shows (outdoors: world map x,y; in towns: the
+    /// town map cell), which picks among a picture's `variants`.
+    pub pos: Option<(u16, u16)>,
     pub x: usize,
     pub y: usize,
     pub w: usize,
@@ -455,7 +458,14 @@ impl Term {
         for r in y..y + h {
             px.extend_from_slice(&self.px[r * W + x..r * W + x + w]);
         }
-        self.art.push(ArtOp { id, under, shift: shift as u16, x, y, w, h, px });
+        self.art.push(ArtOp { id, under, shift: shift as u16, pos: None, x, y, w, h, px });
+    }
+
+    /// Note the map cell shown by the newest region (see [`ArtOp::pos`]).
+    pub fn art_pos(&mut self, pos: (u16, u16)) {
+        if let Some(o) = self.art.last_mut() {
+            o.pos = Some(pos);
+        }
     }
 
     /// Text currently shown in a character row (glyphs matched back to

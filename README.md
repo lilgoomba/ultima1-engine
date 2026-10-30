@@ -237,7 +237,9 @@ cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --video enhanced --pa
   declares `tile_size` (pixels per original 16-pixel tile: 32 gives a
   640×400 internal screen, 64 gives 1280×800), and maps tile ids
   (`world.N`, `town.N`, `mond.N`, `screen.nif`) to a `file` or a list of
-  animation `frames`, with optional `scroll` (water) and `fps`. An
+  animation `frames`, with optional `scroll` (water) and `fps`, or to
+  `variants` (alternatives chosen per map cell by a fixed hash, so large
+  grass fields do not repeat). An
   optional `[palette]` table holds free-form notes per video mode. See
   SPEC §20 and the docs at the top of `crates/u1-assets/src/enhanced.rs`.
 * Any id the pack does not list, and any tile the game has drawn over

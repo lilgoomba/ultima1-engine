@@ -20,6 +20,9 @@
 //! frames = ["world/water0.png", "world/water1.png"]
 //! scroll = true           # follows the original's water scroll
 //!
+//! [world.1]               # grass: one of these per map cell, picked
+//! variants = ["world/grass0.png", "world/grass1.png", "world/grass2.png"]
+//!
 //! [world.4]
 //! file = "world/castle.png"
 //! fps = 4                 # extra animation of a `frames` list, by clock
@@ -239,6 +242,24 @@ pub struct Entry {
     /// Frames per second of a clock-driven animation (0: frame 0 only,
     /// unless `scroll`).
     pub fps: f64,
+    /// Alternative pictures (`variants`), one chosen per map cell so large
+    /// areas do not repeat; empty if none. `frames[0]` is the first.
+    pub variants: Vec<Rgba>,
+}
+
+/// Which of `n` variants a map cell shows: a fixed hash of the cell, so a
+/// cell always looks the same and neighbours differ irregularly.
+pub fn variant_index(pos: (u16, u16), n: usize) -> usize {
+    if n <= 1 {
+        return 0;
+    }
+    let mut h = u32::from(pos.0).wrapping_mul(0x9E37_79B1) ^ u32::from(pos.1).wrapping_mul(0x85EB_CA77);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2C1B_3C6D);
+    h ^= h >> 12;
+    h = h.wrapping_mul(0x297A_2D39);
+    h ^= h >> 15;
+    (h % n as u32) as usize
 }
 
 /// A loaded asset pack.
@@ -314,6 +335,7 @@ impl Pack {
                 ArtId::Screen(_) => (W, 168),
             };
             let mut files = Vec::new();
+            let mut vfiles = Vec::new();
             let (mut scroll, mut fps) = (false, 0.0);
             for (k, v) in keys {
                 match (k.as_str(), v) {
@@ -326,6 +348,14 @@ impl Pack {
                             }
                         }
                     }
+                    ("variants", Value::List(l)) => {
+                        for f in l {
+                            match f {
+                                Value::Str(f) => vfiles.push(f.clone()),
+                                _ => return Err(format!("[{sec}] variants: strings expected")),
+                            }
+                        }
+                    }
                     ("scroll", Value::Bool(b)) => scroll = *b,
                     ("fps", Value::Int(n)) => fps = *n as f64,
                     ("fps", Value::Float(f)) => fps = *f,
@@ -333,8 +363,12 @@ impl Pack {
                     _ => return Err(format!("[{sec}] bad key {k}")),
                 }
             }
+            if files.len() > 1 && !vfiles.is_empty() {
+                return Err(format!("[{sec}] variants cannot be combined with several frames"));
+            }
+            files.extend(vfiles.iter().cloned());
             if files.is_empty() {
-                return Err(format!("[{sec}] needs file or frames"));
+                return Err(format!("[{sec}] needs file, frames or variants"));
             }
             let mut frames = Vec::new();
             for f in &files {
@@ -344,9 +378,22 @@ impl Pack {
                 }
                 frames.push(img.resized(ow * s, oh * s));
             }
-            pack.entries.insert(id, Entry { frames, scroll, fps });
+            let variants = if vfiles.is_empty() { Vec::new() } else { std::mem::take(&mut frames) };
+            if frames.is_empty() {
+                frames.push(variants[0].clone());
+            }
+            pack.entries.insert(id, Entry { frames, scroll, fps, variants });
         }
         Ok(pack)
+    }
+
+    /// The picture of `e` for a tile drawn at map cell `pos` (variants)
+    /// with `shift` (0..ow) at clock `ms`.
+    fn pick(e: &Entry, pos: Option<(u16, u16)>, shift: usize, ow: usize, ms: u64) -> &Rgba {
+        match pos {
+            Some(p) if !e.variants.is_empty() => &e.variants[variant_index(p, e.variants.len())],
+            _ => Pack::frame(e, shift, ow, ms),
+        }
     }
 
     /// The frame of `e` to show for a tile drawn with `shift` (0..ow) at
@@ -404,12 +451,12 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
             continue;
         }
         let (x0, y0) = (op.x * s, op.y * s);
-        let f = Pack::frame(e, op.shift as usize, op.w, ms);
+        let f = Pack::pick(e, op.pos, op.shift as usize, op.w, ms);
         if f.px.chunks(4).any(|p| p[3] < 255) {
             // A sprite: the terrain behind it, else black (the original
             // tiles have black backgrounds).
             match op.under.and_then(|u| pack.entries.get(&u)) {
-                Some(u) => put(&mut out, Pack::frame(u, 0, op.w, ms), x0, y0, 0),
+                Some(u) => put(&mut out, Pack::pick(u, op.pos, 0, op.w, ms), x0, y0, 0),
                 None => {
                     for y in y0..y0 + op.h * s {
                         for x in x0..(x0 + op.w * s).min(ow) {
@@ -577,6 +624,53 @@ file = "x.png"
         assert_eq!(Pack::frame(&p.entries[&ArtId::World(4)], 0, 16, 400), &p.entries[&ArtId::World(4)].frames[1]);
         t.inverted = true;
         assert_eq!(compose(&t, &EGA_PALETTE, &p, 0), t.to_rgb(&EGA_PALETTE, 2));
+    }
+
+    #[test]
+    fn variants_follow_the_map_cell() {
+        let m = "[world.1]\nvariants = [\"g0.png\", \"g1.png\", \"g2.png\", \"g3.png\"]\n[world.0x0A]\nfile = \"player.png\"";
+        let ld = |f: &str| -> Result<Rgba, String> {
+            Ok(match f {
+                "g0.png" => solid(32, 32, [0, 10, 0, 255]),
+                "g1.png" => solid(32, 32, [0, 11, 0, 255]),
+                "g2.png" => solid(32, 32, [0, 12, 0, 255]),
+                "g3.png" => solid(32, 32, [0, 13, 0, 255]),
+                other => load(other)?,
+            })
+        };
+        let p = Pack::parse(m, ld).unwrap();
+        let e = &p.entries[&ArtId::World(1)];
+        assert_eq!((e.variants.len(), e.frames.len()), (4, 1));
+        // Deterministic, and all variants turn up over a field.
+        let mut seen = [0usize; 4];
+        for y in 0..16u16 {
+            for x in 0..16u16 {
+                let i = variant_index((x, y), 4);
+                assert_eq!(i, variant_index((x, y), 4));
+                seen[i] += 1;
+            }
+        }
+        assert!(seen.iter().all(|&n| n > 30), "{seen:?}");
+        // Not one value along a row or a column.
+        assert!((0..8u16).map(|x| variant_index((x, 3), 4)).collect::<std::collections::HashSet<_>>().len() > 1);
+        assert!((0..8u16).map(|y| variant_index((3, y), 4)).collect::<std::collections::HashSet<_>>().len() > 1);
+        // The compositor shows the cell's variant, also under a sprite.
+        let mut t = Term::new();
+        t.blit_art(ArtId::World(1), None, 8, 8, 16, 16, &[2; 256], 0);
+        t.art_pos((5, 7));
+        t.blit_art(ArtId::World(10), Some(ArtId::World(1)), 24, 8, 16, 16, &[15; 256], 0);
+        t.art_pos((6, 7));
+        let rgb = compose(&t, &EGA_PALETTE, &p, 0);
+        assert_eq!(px(&rgb, 2, 16, 16), [0, 10 + variant_index((5, 7), 4) as u8, 0]);
+        assert_eq!(px(&rgb, 2, 50, 18), [0, 10 + variant_index((6, 7), 4) as u8, 0]);
+        // Without a cell (a tile drawn outside the map): the first one.
+        t.blit_art(ArtId::World(1), None, 40, 8, 16, 16, &[2; 256], 0);
+        assert_eq!(px(&compose(&t, &EGA_PALETTE, &p, 0), 2, 82, 18), [0, 10, 0]);
+        // A file plus variants: the file is variant 0.
+        let p2 = Pack::parse("[world.1]\nfile = \"g0.png\"\nvariants = [\"g1.png\"]", ld).unwrap();
+        assert_eq!(p2.entries[&ArtId::World(1)].variants.len(), 2);
+        // Variants of an animation are refused.
+        assert!(Pack::parse("[world.1]\nframes = [\"g0.png\", \"g1.png\"]\nvariants = [\"g2.png\"]", ld).is_err());
     }
 
     #[test]

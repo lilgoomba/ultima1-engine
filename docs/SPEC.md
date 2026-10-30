@@ -1365,9 +1365,9 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   `license`, `tile_size` (16–128, a multiple of 16; default 32) and a
   `[palette]` table of free-form notes per video mode. Each other section
   names an original picture: `world.N` (overworld tile set, §3.2),
-  `town.N` (§3.3), `mond.N` (§3.4) or `screen.nif`. It holds `file` or
-  `frames` (PNG paths relative to the pack), and optionally `scroll` and
-  `fps`. An unknown section is skipped with a warning, and a wrong-sized
+  `town.N` (§3.3), `mond.N` (§3.4) or `screen.nif`. It holds `file`,
+  `frames` or `variants` (PNG paths relative to the pack), and optionally
+  `scroll` and `fps`. An unknown section is skipped with a warning, and a wrong-sized
   PNG is resized nearest-neighbour with a warning. A malformed line, an
   unknown key in a picture section or a missing or unreadable PNG is an
   error, and the pack is not loaded.
@@ -1376,8 +1376,19 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   is 320S×168S.
 * **Recording.** The game draws exactly as before. Every tile blit also
   records an *art op*: the picture's id, the screen rectangle, the
-  pixels it drew and, for a world sprite (tile > 9), the terrain under it.
-  A later blit that overlaps an op removes it.
+  pixels it drew, the map cell it shows (world map x,y outdoors, town
+  map cell in towns and castles) and, for a sprite, the ground under it
+  (outdoors the terrain under a tile > 9; in towns the town map tile
+  under the player or a person). A later blit that overlaps an op
+  removes it.
+* **Variants.** `variants = [...]` lists alternative pictures for one id
+  (with `file`, the file is the first). Each map cell shows variant
+  h(x, y) mod n, where h is a fixed integer hash of the cell
+  (`enhanced::variant_index`), so the choice never changes while
+  playing and large fields of one terrain do not repeat. A sprite's
+  ground uses the same cell. Ops with no map cell use the first
+  variant. `variants` cannot be combined with a multi-picture `frames`
+  list.
 * **Composition.** The 320×200 screen is scaled up by S
   nearest-neighbour. Then each op whose rectangle still holds exactly the
   pixels it drew, and whose id is in the pack, is replaced by the pack's

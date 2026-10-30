@@ -1533,6 +1533,9 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   original display the game files suggest (§15), no enhanced art, and
   the original beeps. Screenshot runs never read the file.
 
+Planned optional quality-of-life features, all off by default, are
+listed in [ROADMAP.md](ROADMAP.md).
+
 ## Sources
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.

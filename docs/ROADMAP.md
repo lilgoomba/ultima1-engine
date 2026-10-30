@@ -54,10 +54,11 @@ the tests keep the original behaviour.
   original's to none.
 * **Faster space combat.** Shorter waits between space turns and
   animations.
-* **Turn off the CPU-speed quirks.** The original ties some timings and
-  behaviour to the processor's speed (the engine reproduces them; SPEC
-  §19 and the timing notes); an option to use fixed, comfortable timings
-  instead.
+* **Turn off the CPU-speed quirks.** Some of the original's timing
+  depends on the processor (the idle Pass after a number of key polls,
+  speaker-effect lengths, some space and Mondain waits; SPEC §2, §11,
+  §18, §19); the engine reproduces them at one measured reference speed.
+  An option replaces them with fixed timings chosen for comfort.
 
 ## Controls
 

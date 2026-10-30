@@ -125,7 +125,7 @@ impl Game {
                 }
             }
         }
-        io.pause(&self.term, 5)?;
+        io.message_pause(&self.term, 5)?;
         self.wait(io)?;
         self.term.cursor(1, 24);
         Ok(())

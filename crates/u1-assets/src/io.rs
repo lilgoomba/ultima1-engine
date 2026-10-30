@@ -35,6 +35,10 @@ pub mod keys {
     /// Script-only: `{p}` stops the script at the next timed pause, so a
     /// screenshot can catch a picture that the pause would show.
     pub const STOP_AT_PAUSE: u8 = 0xFD;
+    /// Scripts: `{saveN}` / `{loadN}` (N 1..5, or q) ask for a save-slot
+    /// action at that poll (an idle poll otherwise), as F2/F5/F9 do.
+    pub const SAVE_REQ: u8 = 0xD0;
+    pub const LOAD_REQ: u8 = 0xD8;
 }
 
 pub trait Io {
@@ -124,6 +128,31 @@ pub trait Io {
     fn retrace(&mut self, _t: &Term, _n: u32) -> IoResult<()> {
         Ok(())
     }
+
+    // The optional engine features (SPEC §22); off, each is a no-op.
+
+    /// A pause that only lets a message be read (the message-delay
+    /// setting may shorten it); the original's `pause` otherwise.
+    fn message_pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
+        self.pause(t, ticks)
+    }
+
+    /// Space flight starts (`true`) or ends (the fast space setting).
+    fn in_space(&mut self, _on: bool) {}
+
+    /// A save-slot action asked for since the last poll (F2, F5, F9 with
+    /// save slots on). Taken by the main loop's key poll.
+    fn save_request(&mut self) -> Option<crate::slots::SaveReq> {
+        None
+    }
+
+    /// The result of a save-slot action, to show the player.
+    fn save_done(&mut self, _msg: &str) {}
+
+    /// Whether the message log should be kept ([`crate::term::Term::log`]).
+    fn wants_log(&self) -> bool {
+        false
+    }
 }
 
 /// Keys from a list; `Halt` once they run out.
@@ -133,11 +162,17 @@ pub struct ScriptIo {
     pub sounds: Vec<u8>,
     /// The events of `sound_ev` and `cue`, in order.
     pub events: Vec<crate::sound::Sfx>,
+    /// A `{saveN}`/`{loadN}` token seen, for `save_request`.
+    pub request: Option<crate::slots::SaveReq>,
+    /// What `save_done` reported.
+    pub done: Vec<String>,
+    /// `wants_log`.
+    pub log: bool,
 }
 
 impl ScriptIo {
     pub fn new(keys: &[u8]) -> Self {
-        ScriptIo { keys: keys.iter().copied().collect(), sounds: Vec::new(), events: Vec::new() }
+        ScriptIo { keys: keys.iter().copied().collect(), ..Default::default() }
     }
 
     /// Keys from text; `~` stands for the key that ends a timed wait and
@@ -158,6 +193,19 @@ impl ScriptIo {
                             out.extend(std::iter::repeat(keys::IDLE).take(n));
                             continue;
                         }
+                    }
+                    let slot = |n: &str| match n {
+                        "q" => Some(6u8),
+                        d if d.len() == 1 && (b'1'..=b'5').contains(&d.as_bytes()[0]) => Some(d.as_bytes()[0] - b'0'),
+                        _ => None,
+                    };
+                    if let Some(n) = name.strip_prefix("save").and_then(slot) {
+                        out.push(keys::SAVE_REQ + n);
+                        continue;
+                    }
+                    if let Some(n) = name.strip_prefix("load").and_then(slot) {
+                        out.push(keys::LOAD_REQ + n);
+                        continue;
                     }
                     out.push(match name.as_str() {
                         "left" => keys::LEFT,
@@ -186,6 +234,13 @@ impl Io for ScriptIo {
                 // A stray wait token where a key is expected is skipped.
                 Some(keys::WAIT | keys::STOP_AT_PAUSE) => continue,
                 Some(keys::IDLE) => return Ok(None),
+                Some(k) if (keys::SAVE_REQ + 1..keys::SAVE_REQ + 7).contains(&k) || (keys::LOAD_REQ + 1..keys::LOAD_REQ + 7).contains(&k) => {
+                    use crate::slots::{SaveReq, Slot};
+                    let n = k & 7;
+                    let slot = if n == 6 { Slot::Quick } else { Slot::N(n) };
+                    self.request = Some(if k < keys::LOAD_REQ { SaveReq::Save(slot) } else { SaveReq::Load(slot) });
+                    return Ok(None);
+                }
                 Some(k) => return Ok(Some(k)),
                 None => return Err(Halt),
             }
@@ -225,5 +280,17 @@ impl Io for ScriptIo {
 
     fn cue(&mut self, ev: crate::sound::Sfx) {
         self.events.push(ev);
+    }
+
+    fn save_request(&mut self) -> Option<crate::slots::SaveReq> {
+        self.request.take()
+    }
+
+    fn save_done(&mut self, msg: &str) {
+        self.done.push(msg.to_string());
+    }
+
+    fn wants_log(&self) -> bool {
+        self.log
     }
 }

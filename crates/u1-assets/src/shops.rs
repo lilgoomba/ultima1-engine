@@ -598,7 +598,7 @@ impl Game {
             if land == 3 {
                 self.storeroom = 9;
             }
-            io.pause(&self.term, 10)?;
+            io.message_pause(&self.term, 10)?;
         }
         self.press_space(io)?;
         self.redraw_town = true;

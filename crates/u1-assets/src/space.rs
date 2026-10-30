@@ -261,6 +261,7 @@ struct Space<'a> {
 /// OUT. Assumes the record is in sync with the live game.
 pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
     let Some(files) = g.space.take() else { return Ok(SpaceEnd::Landed) };
+    io.in_space(true);
     let mut s = Space::new(g, io, files);
     let r = s.main();
     let died = s.g.hits() <= 0;
@@ -268,6 +269,7 @@ pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
         s.g.term.sscene = None;
     }
     let Space { f: files, .. } = s;
+    io.in_space(false);
     g.space = Some(files);
     match r {
         Err(Stop::Halt) => Err(Halt),

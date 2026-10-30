@@ -3,12 +3,15 @@
 //! `$XDG_CONFIG_HOME`). The in-game options menu (F1) writes it; command-line
 //! options override it for one run. Nothing here changes the game itself.
 //!
-//! Only two keys are read, as plain `key = "value"` lines; anything else
+//! Only its own keys are read (the display, the sound and the optional
+//! quality-of-life settings of SPEC §22, each written only when it differs
+//! from the faithful default), as plain `key = "value"` lines; anything else
 //! (comments, unknown keys, other tables) is ignored, so a newer or
 //! hand-edited file never stops the game from starting, and is written
 //! back unchanged when the menu saves.
 
 use crate::gamedir::VideoMode;
+use crate::qol::{Qol, Scaling, MESSAGE_DELAYS};
 use crate::soundpack::SoundMode;
 use std::path::{Path, PathBuf};
 
@@ -84,6 +87,8 @@ impl VideoChoice {
 pub struct Config {
     pub video: Option<VideoChoice>,
     pub sound: Option<SoundMode>,
+    /// The optional engine features; the default is all off.
+    pub qol: Qol,
     /// Lines that could not be used (reported, never fatal).
     pub warnings: Vec<String>,
     /// The file's other lines, kept as they were for saving: top-level
@@ -139,7 +144,11 @@ impl Config {
                     Some(x) => c.sound = Some(x),
                     None => c.warnings.push(format!("line {}: sound wants original, enhanced or mute", n + 1)),
                 },
-                _ => c.kept.top.push(line.to_string()),
+                k => match qol_key(&mut c.qol, k, &v) {
+                    Some(Ok(())) => {}
+                    Some(Err(want)) => c.warnings.push(format!("line {}: {k} wants {want}", n + 1)),
+                    None => c.kept.top.push(line.to_string()),
+                },
             }
         }
         c
@@ -156,6 +165,25 @@ impl Config {
         }
         if let Some(v) = self.sound {
             s += &format!("sound = \"{}\"   # original | enhanced | mute\n", v.as_str());
+        }
+        let (q, d) = (&self.qol, Qol::default());
+        let mut flag = |on: bool, def: bool, k: &str, note: &str| {
+            if on != def {
+                s += &format!("{k} = {on}   # {note}\n");
+            }
+        };
+        flag(q.fullscreen, d.fullscreen, "fullscreen", "also Alt+Enter");
+        flag(q.crt, d.crt, "crt", "CRT scanline filter");
+        flag(q.slots, d.slots, "save_slots", "F2 slots, F5 quicksave, F9 quickload");
+        flag(q.log, d.log, "message_log", "PgUp shows the messages that scrolled away");
+        flag(q.turbo, d.turbo, "turbo", "also F4");
+        flag(q.fast_space, d.fast_space, "fast_space", "space flight and combat wait half as long");
+        flag(q.steady, d.steady, "steady_timing", "speaker effects no longer hold the game");
+        if q.scaling != d.scaling {
+            s += &format!("scaling = \"{}\"   # whole | fill\n", q.scaling.as_str());
+        }
+        if q.message_delay != d.message_delay {
+            s += &format!("message_delay = {}   # per cent of the original: 100 | 50 | 25 | 0\n", q.message_delay);
         }
         for l in self.kept.top.iter().chain(&self.kept.tables) {
             s += l;
@@ -183,6 +211,35 @@ impl Config {
         std::fs::write(&tmp, self.to_toml())?;
         std::fs::rename(&tmp, path)
     }
+}
+
+/// Reads one quality-of-life key into `q`: `None` if `k` is not one,
+/// `Some(Err(what it wants))` if the value is wrong.
+fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
+    let flag = |v: &str| match v.to_ascii_lowercase().as_str() {
+        "true" | "on" | "yes" | "1" => Ok(true),
+        "false" | "off" | "no" | "0" => Ok(false),
+        _ => Err("true or false"),
+    };
+    let r = match k {
+        "fullscreen" => flag(v).map(|b| q.fullscreen = b),
+        "crt" => flag(v).map(|b| q.crt = b),
+        "save_slots" => flag(v).map(|b| q.slots = b),
+        "message_log" => flag(v).map(|b| q.log = b),
+        "turbo" => flag(v).map(|b| q.turbo = b),
+        "fast_space" => flag(v).map(|b| q.fast_space = b),
+        "steady_timing" => flag(v).map(|b| q.steady = b),
+        "scaling" => Scaling::parse(v).map(|x| q.scaling = x).ok_or("whole or fill"),
+        "message_delay" => match v.trim_end_matches('%').parse::<u8>() {
+            Ok(d) if MESSAGE_DELAYS.contains(&d) => {
+                q.message_delay = d;
+                Ok(())
+            }
+            _ => Err("100, 50, 25 or 0"),
+        },
+        _ => return None,
+    };
+    Some(r)
 }
 
 fn strip_comment(l: &str) -> &str {
@@ -345,6 +402,25 @@ mod tests {
         let cfg = Config { video: Some(VideoChoice::Cga), ..Default::default() };
         let cli = Cli { enhanced: Some(true), ..Default::default() };
         assert_eq!(resolve(cli, &cfg, VideoMode::Ega).mode, VideoMode::Cga, "--video enhanced keeps the file's display");
+    }
+
+    #[test]
+    fn qol_keys() {
+        assert_eq!(Config::default().qol, Qol::default(), "all off without a file");
+        assert!(!Config::default().to_toml().contains("turbo"), "defaults are not written");
+        let q = Qol { fullscreen: true, scaling: Scaling::Fill, crt: true, slots: true, log: true, turbo: true, message_delay: 25, fast_space: true, steady: true };
+        let c = Config { qol: q, ..Default::default() };
+        let back = Config::parse(&c.to_toml());
+        assert_eq!(back, c);
+        for one in [Qol { crt: true, ..Default::default() }, Qol { message_delay: 0, ..Default::default() }, Qol { scaling: Scaling::Fill, ..Default::default() }] {
+            let c = Config { qol: one, ..Default::default() };
+            assert_eq!(Config::parse(&c.to_toml()), c);
+        }
+        let c = Config::parse("turbo = on\ncrt = maybe\nmessage_delay = 30\nmessage_delay = \"50%\"\nscaling = huge\n");
+        assert!(c.qol.turbo);
+        assert_eq!(c.qol.message_delay, 50);
+        assert_eq!(c.warnings.len(), 3, "{:?}", c.warnings);
+        assert!(c.kept.top.is_empty(), "known keys are not kept twice");
     }
 
     #[test]

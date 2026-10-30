@@ -179,6 +179,10 @@ pub struct Term {
     /// black, whatever is drawn there, until it is cleared (the character
     /// program's screens, which redraw their insides between key waits).
     pub backdrop: Option<(ArtId, usize, usize, usize, usize)>,
+    /// The message log (an optional engine feature, SPEC §22.3): when
+    /// set, each line that scrolls off the top of the message window is
+    /// kept here (newest last). Nothing on the screen changes.
+    pub log: Option<Box<std::collections::VecDeque<String>>>,
 }
 
 impl Default for Term {
@@ -196,7 +200,7 @@ impl Term {
 
     /// The same frame for a CGA (`cga`) or a 16-colour screen.
     pub fn with_cga(cga: bool) -> Self {
-        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new(), dscene: None, sscene: None, backdrop: None };
+        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new(), dscene: None, sscene: None, backdrop: None, log: None };
         t.fill(0, 0, W - 1, H - 1, BLUE);
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
@@ -390,6 +394,17 @@ impl Term {
     }
 
     pub fn scroll(&mut self) {
+        if self.log.is_some() {
+            let gone = self.msg_text(21);
+            if let Some(l) = self.log.as_mut() {
+                if !gone.trim().is_empty() {
+                    if l.len() >= crate::msglog::KEEP {
+                        l.pop_front();
+                    }
+                    l.push_back(crate::msglog::tidy(&gone));
+                }
+            }
+        }
         let (x0, x1) = (0, 30 * 8);
         for y in 21 * 8..24 * 8 {
             for x in x0..x1 {

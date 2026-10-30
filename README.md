@@ -345,6 +345,11 @@ original's own shop and king windows:
 * **Video**: Enhanced, EGA, CGA or Tandy (only the displays your game
   files include are offered; Enhanced is the pack's art over EGA).
 * **Sound**: Original beeps, Enhanced or Mute.
+* **Optional features** (all off by default; with them off the game
+  plays exactly as before and every save stays an original player file):
+  Fullscreen, Scaling (whole pixels or fill the window), CRT filter, Save
+  slots, Message log, Turbo, Msg delay (original, 50%, 25%, none), Space
+  speed and CPU timing. See "Optional features" below.
 
 Up/Down chooses a line, Left/Right changes it, and F1, Enter or Esc
 returns to the game. Changes apply at once without restarting: a new
@@ -369,6 +374,41 @@ Comments, other keys and tables in the file are kept when the menu saves.
 `--video`, `--mode` (or `C`) and `--sound`/`--mute` override the file for
 one run. Screenshots (`--screenshot`) ignore it; `--options` draws the menu
 over a screenshot.
+
+### Optional features (F1, all off by default)
+
+| Setting | Keys | What it does |
+|---|---|---|
+| Fullscreen | Alt+Enter | Fullscreen at the desktop's size. |
+| Scaling | | Whole pixels (largest whole multiple, letterboxed) or fill the window. |
+| CRT filter | | Scanlines and a slight glow, drawn after the frame. |
+| Save slots | F2, F5, F9 | F2 opens five slots plus the quicksave (Up/Down or 1-5/Q, S save, L or Enter load, Esc back); F5 quicksaves and F9 quickloads. Slot 1 is the character's own file, the one Quit writes; the others sit beside it (`PLAYER2-slot2.U1`, `PLAYER2-quick.U1`) and every one is an original 820-byte record. Saving works outdoors only, as Quit does; loading restarts the game from the record. |
+| Message log | PgUp, PgDn, Home, End | PgUp shows the last 500 lines of the message window, 12 at a time; PgDn at the newest page, Esc or Enter closes it. The message window itself is unchanged. |
+| Turbo | F4 | Every wait 4x shorter. F4 works whether or not the menu turned it on. |
+| Msg delay | | The pauses after messages: original, 50%, 25% or none. |
+| Space speed | | Space flight's waits halved. |
+| CPU timing | | "Steady": the PC-speaker effects no longer hold the game for their length (the original's CPU was busy playing them); the engine's other timing is already fixed rather than CPU-dependent. |
+
+A short note at the top of the map reports saves, loads and F4. A slot
+key pressed where the original would not take a command (a question, a
+shop, space flight) is dropped with "Not now". Loading works anywhere a
+command is taken; saving only outdoors. In `config.toml`:
+
+```toml
+fullscreen = true      # also Alt+Enter
+scaling = "fill"       # whole | fill
+crt = true
+save_slots = true
+message_log = true
+turbo = true           # also F4
+message_delay = 25     # 100 | 50 | 25 | 0
+fast_space = true
+steady_timing = true
+```
+
+Only settings that differ from the default are written. `--fullscreen` and
+`--crt` turn those on for one run; screenshots take `--crt`, `--slots` and
+`--log` (`--keys` may hold `{save1}`..`{save5}`, `{saveq}`, `{load1}`..).
 
 Tests that use your own files are skipped unless you point them at your
 install:

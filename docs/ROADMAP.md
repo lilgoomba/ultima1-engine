@@ -1,6 +1,9 @@
 # Quality-of-life roadmap
 
-Approved, **optional** features, none of them built yet. The rule for every
+Approved, **optional** features. Built (branch qol-review-1, SPEC §22):
+fullscreen, whole-number scaling, CRT filter, save slots, quicksave and
+quickload, the scrollback message log, turbo, adjustable message delay,
+faster space flight and steady timing. The rest are not built yet. The rule for every
 one: the faithful behaviour stays the default. Each is off until the player
 turns it on (in the options menu, F1, or `config.toml`; see SPEC §21), never
 changes a save file's format, and never changes the game's rules or the
@@ -16,8 +19,8 @@ the tests keep the original behaviour.
   and even; a choice between "largest whole multiple" and "fill the
   window".
 * **CRT scanline filter.** An optional scanline/mask overlay drawn by the
-  front end after the frame is composed; off by default and never in
-  screenshots.
+  front end after the frame is composed; off by default and in
+  screenshots only with `--crt`.
 
 ## Saving
 

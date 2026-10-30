@@ -1114,3 +1114,57 @@ fn a_display_chosen_in_the_character_program_restarts_it_in_that_display() {
     assert_eq!(&std::fs::read(&path).unwrap()[..5], b"Hero\0");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn save_slots_write_original_records_and_load_them() {
+    use u1_assets::slots::{slot_path, Slot};
+    let Some(_) = game_dir() else { return };
+    let dir = std::env::temp_dir().join(format!("u1slots-game-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let base = dir.join("PLAYER2.U1");
+    // Saved outdoors to slot 3, the quicksave and slot 1 (Quit's file).
+    let mut g = play(66, 41, "").unwrap();
+    g.save_to = Some(base.clone());
+    let mut io = ScriptIo::from_text("{save3}{saveq}{save1}");
+    let _ = g.run(&mut io);
+    assert_eq!(io.done, ["Saved to slot 3", "Saved to the quicksave", "Saved to slot 1"]);
+    assert!(g.stopped.is_none(), "saving does not stop the game");
+    for s in [Slot::N(3), Slot::Quick, Slot::N(1)] {
+        let b = std::fs::read(slot_path(&base, s)).unwrap();
+        assert_eq!(b.len(), 820, "the original's record");
+        let r = PlayerRecord::parse(&b).unwrap();
+        assert_eq!((r.position(), r.name()), ((66, 41), g.rec.name()));
+    }
+    assert_eq!(std::fs::read(&base).unwrap(), std::fs::read(slot_path(&base, Slot::Quick)).unwrap());
+    // Loading stops the run with the record for the front end.
+    let mut g = play(66, 41, "").unwrap();
+    g.save_to = Some(base.clone());
+    let mut io = ScriptIo::from_text("{down}{load2}{load3}{down}");
+    let _ = g.run(&mut io);
+    assert_eq!(io.done, ["Nothing saved in slot 2", "Loaded slot 3"]);
+    assert_eq!(g.stopped, Some("load"));
+    assert_eq!(g.reload.as_ref().unwrap().as_bytes(), &std::fs::read(slot_path(&base, Slot::N(3))).unwrap()[..]);
+    assert_eq!(io.keys.len(), 1, "the run ends at the load");
+    // Not in a dungeon (as Quit).
+    let mut g = play(39, 60, "e").unwrap();
+    assert_eq!(g.mode, 3);
+    g.save_to = Some(dir.join("D.U1"));
+    let mut io = ScriptIo::from_text("{save2}");
+    let _ = g.run(&mut io);
+    assert_eq!(io.done, ["Saving works outdoors only (as Quit)"]);
+    assert!(!slot_path(&dir.join("D.U1"), Slot::N(2)).exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn qol_off_leaves_the_screen_and_record_as_they_were() {
+    // The message log and the slot tokens' idle polls change nothing a
+    // plain run shows: the same keys with the log kept draw the same.
+    let Some(plain) = play(66, 41, "e{down}{left}{left}") else { return };
+    let mut io = ScriptIo::from_text("e{down}{left}{left}");
+    io.log = true;
+    let logged = play_io(66, 41, &mut io, 2, &[], |_| {}).unwrap();
+    assert_eq!(plain.term.px, logged.term.px);
+    assert_eq!(plain.rec.as_bytes(), logged.rec.as_bytes());
+    assert!(plain.term.log.is_none() && logged.term.log.is_some());
+}

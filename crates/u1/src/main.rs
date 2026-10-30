@@ -8,9 +8,12 @@
 //!   u1 --game-dir <path> ... --sound original|enhanced|mute
 //!   u1 --sound-demo out.wav [--pack DIR]
 //!
-//! F1 opens the options menu (display and sound, switched live); the
-//! choice is kept in ~/.config/ultima1-engine/config.toml, which the
-//! command-line options override.
+//! F1 opens the options menu (display and sound, switched live, and the
+//! optional engine features of SPEC §22, all off by default); the choice is
+//! kept in ~/.config/ultima1-engine/config.toml, which the command-line
+//! options override. Alt+Enter toggles fullscreen and F4 turbo; with save
+//! slots on, F2 opens the slots, F5 quicksaves and F9 quickloads; with the
+//! message log on, PgUp opens it.
 //!
 //! Game files are only read. Quit (Q, outdoors) writes the 820-byte player
 //! record to `--save-to` (default `./PLAYER1.U1` in the current directory,
@@ -23,7 +26,10 @@ use std::time::{Duration, Instant};
 
 use u1_assets::config::{self, Config, VideoChoice};
 use u1_assets::enhanced::{self, Pack};
-use u1_assets::options::{MenuKey, OptionsMenu};
+use u1_assets::msglog::{self, LogView};
+use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
+use u1_assets::qol::{self, Qol, Scaling, Wait};
+use u1_assets::slots::{SaveReq, Slot, SlotKey, SlotScreen};
 use u1_assets::exe::Exe;
 use u1_assets::game::{Assets, Game, VideoSet};
 use u1_assets::gamedir::{GameDir, VideoMode};
@@ -50,7 +56,8 @@ const DEFAULT_POS: (u16, u16) = (49, 40);
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
           [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
           [--video original|enhanced] [--sound original|enhanced|mute] [--pack DIR]
-          [--screenshot out.png [--keys TEXT] [--counter N] [--options]]
+          [--fullscreen] [--crt]
+          [--screenshot out.png [--keys TEXT] [--counter N] [--options | --slots | --log] [--crt]]
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
 Space passes). --keys is typed text; {up} {down} {left} {right} {enter}
@@ -71,7 +78,15 @@ menu: the display (Enhanced, EGA, CGA, Tandy) and the sound (original beeps,
 enhanced, mute), switched without restarting. The choice is saved to
 ~/.config/ultima1-engine/config.toml ($XDG_CONFIG_HOME if set); --video,
 --mode and --sound override the file for one run. Screenshots ignore the
-file; --options draws the menu over a screenshot.";
+file; --options draws the menu over a screenshot.
+The menu's optional features are all off by default and change nothing when
+off: fullscreen (also Alt+Enter), whole-pixel or fill scaling, a CRT
+scanline filter, save slots (F2 slots, F5 quicksave, F9 quickload; slot 1 is
+the character's own file, every slot an original 820-byte record), a
+message log (PgUp, PgDn), turbo (F4), shorter message delays, faster space
+flight and steady timing. --fullscreen and --crt turn those on for one run;
+in screenshots --crt applies the filter, --slots and --log draw those
+windows (--keys may hold {saveN} / {loadN}, N 1-5 or q).";
 
 struct Args {
     game_dir: PathBuf,
@@ -99,6 +114,12 @@ struct Args {
     cli: config::Cli,
     /// Screenshots: draw the options menu over the last screen.
     options_shot: bool,
+    /// Screenshots: the save-slot screen, the message log.
+    slots_shot: bool,
+    log_shot: bool,
+    /// `--crt`, `--fullscreen`: on for this run.
+    crt: bool,
+    fullscreen: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -125,6 +146,10 @@ fn parse_args() -> Result<Args, String> {
         pack: None,
         cli: config::Cli::default(),
         options_shot: false,
+        slots_shot: false,
+        log_shot: false,
+        crt: false,
+        fullscreen: false,
     };
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
@@ -185,6 +210,10 @@ fn parse_args() -> Result<Args, String> {
                 a.cli.enhanced = Some(a.enhanced);
             }
             "--options" => a.options_shot = true,
+            "--slots" => a.slots_shot = true,
+            "--log" => a.log_shot = true,
+            "--crt" => a.crt = true,
+            "--fullscreen" => a.fullscreen = true,
             "--pack" => a.pack = Some(v()?.into()),
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
@@ -353,7 +382,11 @@ fn front(a: &Args, mode: VideoMode, io: &mut dyn Io) -> Result<Front, String> {
     }
 }
 
-fn load(a: &Args, mode: VideoMode, chosen: Option<&Path>) -> Result<(Game, [Rgb; 16]), String> {
+/// The game for the record in `chosen` (a roster file), `--save` or
+/// `--player`; `reload` (a save slot loaded) wins over all of them, and
+/// `--pos` is not applied to it.
+fn load(a: &Args, mode: VideoMode, chosen: Option<&Path>, reload: Option<PlayerRecord>) -> Result<(Game, [Rgb; 16]), String> {
+    let reloaded = reload.is_some();
     let e = |e: u1_assets::error::AssetError| e.to_string();
     let g = GameDir::new(&a.game_dir).map_err(e)?;
     let exe_bytes = g.read("OUT.EXE").map_err(e)?;
@@ -369,16 +402,18 @@ fn load(a: &Args, mode: VideoMode, chosen: Option<&Path>) -> Result<(Game, [Rgb;
     };
     let palette = palette_for(mode);
     let save_bytes = match (chosen, &a.save, a.player) {
+        _ if reloaded => None,
         (Some(p), _, _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
         (None, Some(p), _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
         (None, None, Some(n)) => Some(g.read(&format!("PLAYER{n}.U1")).map_err(e)?),
         _ => None,
     };
-    let mut rec = match save_bytes {
-        Some(b) => PlayerRecord::parse(&b).map_err(e)?,
-        None => Game::default_record("Hero", DEFAULT_POS.0, DEFAULT_POS.1),
+    let mut rec = match (save_bytes, reload) {
+        (_, Some(r)) => r,
+        (Some(b), None) => PlayerRecord::parse(&b).map_err(e)?,
+        (None, None) => Game::default_record("Hero", DEFAULT_POS.0, DEFAULT_POS.1),
     };
-    if let Some((x, y)) = a.pos {
+    if let Some((x, y)) = a.pos.filter(|_| !reloaded) {
         rec.set_u16(u1_assets::save::off::POS_X, x);
         rec.set_u16(u1_assets::save::off::POS_Y, y);
         let mut o = rec.objects()[0];
@@ -432,12 +467,22 @@ fn write_png(path: &Path, w: u32, h: u32, rgb: &[u8]) -> Result<(), String> {
 /// The start-up program's files, when `--intro` asks for them.
 fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
     let mut io = ScriptIo::from_text(&a.keys);
+    io.log = a.log_shot;
     let scale = 2; // the size of a 640x400 DOSBox capture
     let mode = video_mode(a)?;
     let pack = load_pack(a)?;
+    // --crt: the filter on the frame at its own size (as in the window).
+    let finish = |w: usize, h: usize, rgb: Vec<u8>| -> Result<(), String> {
+        if a.crt {
+            let k = qol::crt_factor(w);
+            write_png(out, (w * k) as u32, (h * k) as u32, &qol::crt(&rgb, w, h, k))
+        } else {
+            write_png(out, w as u32, h as u32, &rgb)
+        }
+    };
     let shot = |t: &Term, pal: &[Rgb; 16]| -> Result<(), String> {
-        let (w, h, rgb) = frame_rgb(t, pal, pack.as_ref(), scale, 0);
-        write_png(out, w as u32, h as u32, &rgb)
+        let (w, h, rgb) = frame_rgb(t, pal, pack.as_ref(), if a.crt { 1 } else { scale }, 0);
+        finish(w, h, rgb)
     };
     let chosen = match front(a, mode, &mut io)? {
         Front::Halted(t) => {
@@ -448,18 +493,40 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
         Front::Play(p) => Some(p),
         Front::Skip => None,
     };
-    let (mut g, palette) = load(a, mode, chosen.as_deref())?;
+    let (mut g, palette) = load(a, mode, chosen.as_deref(), None)?;
     let palette = &palette;
     let _ = g.run(&mut io);
-    if a.options_shot {
+    for d in &io.done {
+        println!("slots: {d}");
+    }
+    if let Some(r) = g.reload.take() {
+        // A loaded slot: the game as the window would start it again.
+        let (g2, _) = load(a, g.a.video, chosen.as_deref(), Some(r))?;
+        g = g2;
+    }
+    let window = if a.options_shot {
         let avail = available(a);
         let mut c = g.term.clone();
-        OptionsMenu::new(VideoChoice::from_parts(a.enhanced, mode), a.sound, avail).draw(&mut c);
+        let q = Qol { crt: a.crt, fullscreen: a.fullscreen, ..Default::default() };
+        OptionsMenu::new(VideoChoice::from_parts(a.enhanced, mode), a.sound, avail).with_qol(q).draw(&mut c);
+        Some(c)
+    } else if a.slots_shot {
+        let mut c = g.term.clone();
+        SlotScreen::new(g.save_to.as_deref().unwrap_or(Path::new("PLAYER1.U1"))).draw(&mut c);
+        Some(c)
+    } else if a.log_shot {
+        let mut c = g.term.clone();
+        LogView::new(&g.term).draw(&mut c);
+        Some(c)
+    } else {
+        None
+    };
+    if let Some(c) = window {
         // As in the window: the art stays on what the box leaves uncovered.
         match &pack {
             Some(p) => {
-                let rgb = enhanced::compose_boxed(&g.term, &c, palette, p, 0, OptionsMenu::BOX);
-                write_png(out, (W * p.scale()) as u32, (H * p.scale()) as u32, &rgb)?;
+                let rgb = enhanced::compose_boxed(&g.term, &c, palette, p, 0, PANEL);
+                finish(W * p.scale(), H * p.scale(), rgb)?;
             }
             None => shot(&c, palette)?,
         }
@@ -508,8 +575,10 @@ struct SdlIo {
     wanted: VideoMode,
     /// Which of the menu's displays this game directory has.
     avail: [bool; 4],
-    /// F1 was pressed: the menu opens at the next screen update.
-    menu_wanted: bool,
+    /// F1 (F2, PgUp) was pressed: that window opens at the next screen
+    /// update.
+    modal_wanted: Option<Modal>,
+    /// Keys go to the open window (`menu_keys`), not the game.
     in_menu: bool,
     menu_keys: std::collections::VecDeque<u8>,
     cfg_path: Option<PathBuf>,
@@ -517,40 +586,137 @@ struct SdlIo {
     front: bool,
     /// A display was chosen there: they stop and start again in it.
     restart: bool,
+    /// The optional engine features (SPEC §22).
+    qol: Qol,
+    /// In space flight (for the fast space setting).
+    in_space: bool,
+    /// The CRT filter's larger texture (its size, and the texture).
+    crt_tex: Option<(usize, usize, sdl2::render::Texture<'static>)>,
+    /// The character's save file (slot 1), once the game runs.
+    save_base: Option<PathBuf>,
+    /// A slot action for the game to take at its next key poll, and how
+    /// many polls it has waited.
+    save_req: Option<(SaveReq, u8)>,
+    /// A short note over the top of the map (slot results, F4).
+    toast: Option<(String, Instant)>,
 }
+
+/// The engine's own windows, run with the game paused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Modal {
+    Options,
+    Slots,
+    Log,
+}
+
+/// How long a note shows, and where.
+const TOAST: Duration = Duration::from_millis(2500);
+const TOAST_BOX: (usize, usize, usize, usize) = (8, 8, 311, 15);
 
 impl SdlIo {
     fn present(&mut self, t: &Term) -> IoResult<()> {
-        self.present_boxed(t, None)
+        match self.toast.as_ref().filter(|(_, at)| at.elapsed() < TOAST) {
+            Some((msg, _)) => {
+                let mut c = t.clone();
+                c.fill(TOAST_BOX.0, TOAST_BOX.1, TOAST_BOX.2, TOAST_BOX.3, u1_assets::term::BLACK);
+                opts::center(&mut c, 1, &msg.clone(), u1_assets::term::WARN);
+                self.present_over(t, Some((&c, TOAST_BOX)))
+            }
+            None => {
+                self.toast = None;
+                self.present_over(t, None)
+            }
+        }
     }
 
-    /// The screen, or (with `menu`) the screen with the options menu's box
-    /// over it; the enhanced art stays on what the box leaves uncovered.
-    fn present_boxed(&mut self, t: &Term, menu: Option<&Term>) -> IoResult<()> {
+    /// The screen, or (with `over`) the screen with another picture's
+    /// rectangle over it (a window, a note); the enhanced art stays on
+    /// what the rectangle leaves uncovered. Then the CRT filter, if on.
+    fn present_over(&mut self, t: &Term, over: Option<(&Term, (usize, usize, usize, usize))>) -> IoResult<()> {
         let ms = self.start.elapsed().as_millis() as u64;
         let pack = if self.enhanced { self.pack.as_ref() } else { None };
-        let (w, rgb) = match (pack, menu) {
-            (Some(p), Some(m)) => (W * p.scale(), enhanced::compose_boxed(t, m, &self.palette, p, ms, OptionsMenu::BOX)),
-            (_, m) => {
-                let (w, _, rgb) = frame_rgb(m.unwrap_or(t), &self.palette, pack, 1, ms);
-                (w, rgb)
-            }
+        let (w, h, rgb) = match (pack, over) {
+            (Some(p), Some((m, r))) => (W * p.scale(), H * p.scale(), enhanced::compose_boxed(t, m, &self.palette, p, ms, r)),
+            (_, o) => frame_rgb(o.map_or(t, |o| o.0), &self.palette, pack, 1, ms),
         };
-        self.tex.update(None, &rgb, w * 3).map_err(|_| Halt)?;
-        self.canvas.copy(&self.tex, None, None).map_err(|_| Halt)?;
+        if self.qol.crt {
+            let k = qol::crt_factor(w);
+            let (cw, ch) = (w * k, h * k);
+            if self.crt_tex.as_ref().map_or(true, |(x, y, _)| (*x, *y) != (cw, ch)) {
+                let tex = self.tc.create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGB24, cw as u32, ch as u32).map_err(|_| Halt)?;
+                self.crt_tex = Some((cw, ch, tex));
+            }
+            let out = qol::crt(&rgb, w, h, k);
+            let (_, _, tex) = self.crt_tex.as_mut().ok_or(Halt)?;
+            tex.update(None, &out, cw * 3).map_err(|_| Halt)?;
+            self.canvas.copy(tex, None, None).map_err(|_| Halt)?;
+        } else {
+            self.tex.update(None, &rgb, w * 3).map_err(|_| Halt)?;
+            self.canvas.copy(&self.tex, None, None).map_err(|_| Halt)?;
+        }
         self.canvas.present();
         Ok(())
+    }
+
+    /// `d` under the speed settings.
+    fn scaled(&self, d: Duration, w: Wait) -> Duration {
+        d.mul_f64(self.qol.wait_factor(w, self.in_space))
+    }
+
+    fn note(&mut self, msg: &str) {
+        self.toast = Some((msg.to_string(), Instant::now()));
+    }
+
+    /// Open one of the engine's windows (a second press closes it).
+    fn open(&mut self, m: Modal) {
+        if self.in_menu {
+            self.menu_keys.push_back(keys::ESC);
+        } else {
+            self.modal_wanted = Some(m);
+            self.in_menu = true;
+        }
+    }
+
+    /// A slot action for the game's next key poll (only the main loop's
+    /// poll takes it).
+    fn request(&mut self, r: SaveReq) {
+        if self.front || self.save_base.is_none() {
+            self.note("No game to save yet");
+            return;
+        }
+        self.save_req = Some((r, 0));
+    }
+
+    /// A request the game did not take within two polls (in a prompt,
+    /// space or a scene) is dropped.
+    fn age_request(&mut self) {
+        if let Some((_, age)) = &mut self.save_req {
+            *age += 1;
+            if *age > 2 {
+                self.save_req = None;
+                self.note("Not now (only at the command prompt)");
+            }
+        }
     }
 
     fn pump(&mut self) -> IoResult<()> {
         use sdl2::event::Event;
         use sdl2::keyboard::{Keycode, Mod};
-        for ev in self.events.poll_iter() {
+        let evs: Vec<Event> = self.events.poll_iter().collect();
+        for ev in evs {
             match ev {
                 Event::Quit { .. } => return Err(Halt),
                 Event::KeyDown { keycode: Some(k), keymod, .. } => {
                     let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::CAPSMOD);
+                    let alt = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
                     let c = match k {
+                        // Fullscreen: never passed to the game.
+                        Keycode::Return | Keycode::KpEnter if alt => {
+                            let q = Qol { fullscreen: !self.qol.fullscreen, ..self.qol };
+                            self.apply_qol(q);
+                            self.save_config(false);
+                            None
+                        }
                         Keycode::Left | Keycode::Kp4 => Some(keys::LEFT),
                         Keycode::Right | Keycode::Kp6 => Some(keys::RIGHT),
                         Keycode::Up | Keycode::Kp8 => Some(keys::UP),
@@ -558,14 +724,36 @@ impl SdlIo {
                         Keycode::Return | Keycode::KpEnter => Some(keys::ENTER),
                         Keycode::Escape => Some(keys::ESC),
                         Keycode::Backspace => Some(keys::BACKSPACE),
-                        // The options menu: no key of the original's.
+                        // The engine's own keys: none of them the original's.
                         Keycode::F1 => {
-                            if self.in_menu {
-                                self.menu_keys.push_back(keys::ESC);
-                            } else {
-                                self.menu_wanted = true;
-                                self.in_menu = true;
-                            }
+                            self.open(Modal::Options);
+                            None
+                        }
+                        Keycode::F2 if self.qol.slots && (self.in_menu || !self.front) => {
+                            self.open(Modal::Slots);
+                            None
+                        }
+                        Keycode::F5 if self.qol.slots && !self.in_menu => {
+                            self.request(SaveReq::Save(Slot::Quick));
+                            None
+                        }
+                        Keycode::F9 if self.qol.slots && !self.in_menu => {
+                            self.request(SaveReq::Load(Slot::Quick));
+                            None
+                        }
+                        Keycode::F4 if !self.in_menu => {
+                            let q = Qol { turbo: !self.qol.turbo, ..self.qol };
+                            self.apply_qol(q);
+                            self.note(if q.turbo { "Turbo on (F4)" } else { "Turbo off (F4)" });
+                            self.save_config(false);
+                            None
+                        }
+                        Keycode::PageUp if self.in_menu => Some(msglog::keys::PGUP),
+                        Keycode::PageDown if self.in_menu => Some(msglog::keys::PGDN),
+                        Keycode::Home if self.in_menu => Some(msglog::keys::HOME),
+                        Keycode::End if self.in_menu => Some(msglog::keys::END),
+                        Keycode::PageUp if self.qol.log && !self.front => {
+                            self.open(Modal::Log);
                             None
                         }
                         _ => {
@@ -579,7 +767,7 @@ impl SdlIo {
                         }
                     };
                     if let Some(c) = c {
-                        // Keys typed while the menu is up are the menu's.
+                        // Keys typed while a window is up are the window's.
                         if self.in_menu {
                             self.menu_keys.push_back(c);
                         } else {
@@ -592,41 +780,67 @@ impl SdlIo {
         }
         Ok(())
     }
+
+    /// Wait `d`, with the windows and restarts handled (time in a window
+    /// does not count).
+    fn wait(&mut self, t: &Term, d: Duration) -> IoResult<()> {
+        self.present(t)?;
+        let mut end = Instant::now() + d;
+        while Instant::now() < end {
+            self.pump()?;
+            end += self.menu(t)?;
+            self.restarting()?;
+            std::thread::sleep(Duration::from_millis(2).min(d));
+        }
+        Ok(())
+    }
+
+    /// Hold the game for a speaker effect of `len` (the original's CPU
+    /// was busy playing it), unless the speed settings say otherwise.
+    fn hold(&mut self, len: Duration) {
+        let end = Instant::now() + self.scaled(len, Wait::Sound);
+        while Instant::now() < end {
+            let _ = self.pump();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
 }
 
 impl Io for SdlIo {
     fn poll(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.age_request();
         self.present(t)?;
         loop {
             self.pump()?;
             self.menu(t)?;
             self.restarting()?;
+            let poll = self.scaled(POLL, Wait::Poll);
             if let Some(k) = self.pending.pop_front() {
-                self.next = Instant::now() + POLL;
+                self.next = Instant::now() + poll;
                 return Ok(Some(k));
             }
             let now = Instant::now();
             if now >= self.next {
-                self.next = (self.next + POLL).max(now);
+                self.next = (self.next + poll).max(now);
                 return Ok(None);
+            }
+            if self.toast.is_some() {
+                self.present(t)?;
             }
             std::thread::sleep(Duration::from_millis(5));
         }
     }
 
     fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
-        self.present(t)?;
-        let mut end = Instant::now() + TICK * ticks;
-        while Instant::now() < end {
-            self.pump()?;
-            end += self.menu(t)?;
-            self.restarting()?;
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        Ok(())
+        self.wait(t, self.scaled(TICK * ticks, Wait::Poll))
+    }
+
+    fn message_pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
+        self.wait(t, self.scaled(TICK * ticks, Wait::Message))
     }
 
     fn poll_now(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.age_request();
         self.present(t)?;
         self.pump()?;
         self.menu(t)?;
@@ -635,15 +849,7 @@ impl Io for SdlIo {
     }
 
     fn retrace(&mut self, t: &Term, n: u32) -> IoResult<()> {
-        self.present(t)?;
-        let mut end = Instant::now() + Duration::from_micros(14_286) * n;
-        while Instant::now() < end {
-            self.pump()?;
-            end += self.menu(t)?;
-            self.restarting()?;
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        Ok(())
+        self.wait(t, self.scaled(Duration::from_micros(14_286) * n, Wait::Poll))
     }
 
     fn flush(&mut self) {
@@ -668,21 +874,13 @@ impl Io for SdlIo {
                 _ => dev.lock().play(Arc::new(sound::render(&e, *rate, sound::CPU_HZ, u1_assets::soundpack::BEEP_AMP))),
             }
         }
-        let end = Instant::now() + len;
-        while Instant::now() < end {
-            let _ = self.pump();
-            std::thread::sleep(Duration::from_millis(1));
-        }
+        self.hold(len);
     }
 
     fn sound_distant(&mut self, n: u8) {
         if self.sound == SoundMode::Enhanced {
             // Unheard, but the original's time passes all the same.
-            let end = Instant::now() + Duration::from_secs_f64(sound::effect(n).millis() / 1000.0);
-            while Instant::now() < end {
-                let _ = self.pump();
-                std::thread::sleep(Duration::from_millis(1));
-            }
+            self.hold(Duration::from_secs_f64(sound::effect(n).millis() / 1000.0));
         } else {
             self.sound(n);
         }
@@ -725,48 +923,72 @@ impl Io for SdlIo {
     }
 
     fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
-        // About 1.5 s, or until a key (which is swallowed).
-        for _ in 0..12 {
+        // About 1.5 s (12 polls; fewer with a shorter message delay), or
+        // until a key (which is swallowed).
+        let n = (12 * u32::from(self.qol.message_delay.min(100)) + 50) / 100;
+        for _ in 0..n {
             if self.poll(t)?.is_some() {
                 break;
             }
         }
         Ok(())
     }
+
+    fn in_space(&mut self, on: bool) {
+        self.in_space = on;
+    }
+
+    fn save_request(&mut self) -> Option<SaveReq> {
+        self.save_req.take().map(|(r, _)| r)
+    }
+
+    fn save_done(&mut self, msg: &str) {
+        self.note(msg);
+    }
+
+    fn wants_log(&self) -> bool {
+        self.qol.log
+    }
 }
 
 impl SdlIo {
-    /// The options menu, if F1 was pressed: drawn over a copy of `t` and
-    /// run with the game paused until F1, Enter or Esc. Returns how long it
-    /// was open (timed waits resume where they were).
+    /// The window F1, F2 or PgUp asked for, if any: drawn over a copy of
+    /// `t` and run with the game paused until it closes. Returns how long
+    /// it was open (timed waits resume where they were).
     fn menu(&mut self, t: &Term) -> IoResult<Duration> {
-        if !self.menu_wanted {
-            return Ok(Duration::ZERO);
-        }
-        self.menu_wanted = false;
+        let Some(which) = self.modal_wanted.take() else { return Ok(Duration::ZERO) };
         let opened = Instant::now();
-        let mut m = OptionsMenu::new(VideoChoice::from_parts(self.enhanced, self.wanted), self.sound, self.avail);
-        let r = loop {
-            let mut c = t.clone();
-            m.draw(&mut c);
-            if let Err(e) = self.present_boxed(t, Some(&c)) {
-                break Err(e);
+        let r = match which {
+            Modal::Options => {
+                let video = VideoChoice::from_parts(self.enhanced, self.wanted);
+                let mut m = OptionsMenu::new(video, self.sound, self.avail).with_qol(self.qol);
+                self.run_modal(t, &mut m, |m, c| m.draw(c), |io, m, k| match m.key(k) {
+                    MenuKey::Changed => {
+                        io.choose(m.video, m.sound);
+                        io.apply_qol(m.qol);
+                        io.save_config(true);
+                        true
+                    }
+                    MenuKey::Close => false,
+                    MenuKey::Stay => true,
+                })
             }
-            if let Err(e) = self.pump() {
-                break Err(e);
+            Modal::Slots => {
+                let base = self.save_base.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1"));
+                let mut s = SlotScreen::new(&base);
+                self.run_modal(t, &mut s, |s, c| s.draw(c), |io, s, k| match s.key(k) {
+                    SlotKey::Do(r) => {
+                        io.request(r);
+                        false
+                    }
+                    SlotKey::Close => false,
+                    SlotKey::Stay => true,
+                })
             }
-            let mut close = false;
-            while let Some(k) = self.menu_keys.pop_front() {
-                match m.key(k) {
-                    MenuKey::Changed => self.choose(m.video, m.sound),
-                    MenuKey::Close => close = true,
-                    MenuKey::Stay => {}
-                }
+            Modal::Log => {
+                let mut v = LogView::new(t);
+                self.run_modal(t, &mut v, |v, c| v.draw(c), |_, v, k| v.key(k))
             }
-            if close {
-                break Ok(());
-            }
-            std::thread::sleep(Duration::from_millis(15));
         };
         self.in_menu = false;
         self.menu_keys.clear();
@@ -777,6 +999,22 @@ impl SdlIo {
         Ok(paused)
     }
 
+    /// Run one window until `key` says it closes (false).
+    fn run_modal<S>(&mut self, t: &Term, st: &mut S, draw: fn(&S, &mut Term), key: fn(&mut SdlIo, &mut S, u8) -> bool) -> IoResult<()> {
+        loop {
+            let mut c = t.clone();
+            draw(st, &mut c);
+            self.present_over(t, Some((&c, PANEL)))?;
+            self.pump()?;
+            while let Some(k) = self.menu_keys.pop_front() {
+                if !key(self, st, k) {
+                    return Ok(());
+                }
+            }
+            std::thread::sleep(Duration::from_millis(15));
+        }
+    }
+
     /// The title or character program stops here for a display chosen on
     /// its screen ([`Io::display_restart`]).
     fn restarting(&self) -> IoResult<()> {
@@ -785,7 +1023,7 @@ impl SdlIo {
 
     /// Apply the menu's choice now (the display's pictures at the game's
     /// next key poll; the title and character programs start again in it
-    /// when the menu closes) and save it.
+    /// when the menu closes).
     fn choose(&mut self, video: VideoChoice, sound: SoundMode) {
         self.sound = sound;
         self.wanted = video.mode();
@@ -793,20 +1031,53 @@ impl SdlIo {
         if video.enhanced() != self.enhanced {
             self.set_enhanced(video.enhanced());
         }
-        if let Some(p) = &self.cfg_path {
-            // The file's other lines are kept; one that cannot be read is
-            // left alone.
-            let mut c = Config::load(p);
-            if p.exists() && std::fs::read_to_string(p).is_err() {
-                eprintln!("{}: not saved (the file cannot be read)", p.display());
-                return;
+    }
+
+    /// Apply the optional features (the window's at once, the rest as
+    /// they are next used).
+    fn apply_qol(&mut self, q: Qol) {
+        let old = std::mem::replace(&mut self.qol, q);
+        if old.fullscreen != q.fullscreen || old.scaling != q.scaling {
+            self.apply_window();
+        }
+        if !q.crt {
+            self.crt_tex = None;
+        }
+        if !q.slots {
+            self.save_req = None;
+        }
+    }
+
+    fn apply_window(&mut self) {
+        use sdl2::video::FullscreenType;
+        let _ = self.canvas.set_integer_scale(self.qol.scaling == Scaling::Whole);
+        let want = if self.qol.fullscreen { FullscreenType::Desktop } else { FullscreenType::Off };
+        if self.canvas.window().fullscreen_state() != want {
+            if let Err(e) = self.canvas.window_mut().set_fullscreen(want) {
+                eprintln!("fullscreen: {e}");
             }
-            c.video = Some(video);
-            c.sound = Some(sound);
-            c.warnings.clear();
-            if let Err(e) = c.save(p) {
-                eprintln!("{}: {e}", p.display());
-            }
+        }
+    }
+
+    /// Save the choices (`all`: the display and sound as well as the
+    /// optional features; the keys F4 and Alt+Enter save only those).
+    fn save_config(&self, all: bool) {
+        let Some(p) = &self.cfg_path else { return };
+        // The file's other lines are kept; one that cannot be read is left
+        // alone.
+        let mut c = Config::load(p);
+        if p.exists() && std::fs::read_to_string(p).is_err() {
+            eprintln!("{}: not saved (the file cannot be read)", p.display());
+            return;
+        }
+        if all {
+            c.video = Some(VideoChoice::from_parts(self.enhanced, self.wanted));
+            c.sound = Some(self.sound);
+        }
+        c.qol = self.qol;
+        c.warnings.clear();
+        if let Err(e) = c.save(p) {
+            eprintln!("{}: {e}", p.display());
         }
     }
 
@@ -1001,13 +1272,28 @@ fn play(a: &Args) -> Result<(), String> {
         shown: mode,
         wanted: mode,
         avail,
-        menu_wanted: false,
+        modal_wanted: None,
         in_menu: false,
         menu_keys: Default::default(),
         cfg_path,
         front: true,
         restart: false,
+        qol: Qol::default(),
+        in_space: false,
+        crt_tex: None,
+        save_base: None,
+        save_req: None,
+        toast: None,
     };
+    // The optional features: the file's, and --crt / --fullscreen.
+    let mut q = cfg.qol;
+    q.crt |= a.crt;
+    q.fullscreen |= a.fullscreen;
+    io.apply_qol(q);
+    if q != Qol::default() {
+        // apply_qol only touches the window for a change.
+        io.apply_window();
+    }
     let chosen = match front(a, mode, &mut io)? {
         Front::Halted(_) => return Ok(()),
         Front::Play(p) => Some(p),
@@ -1017,14 +1303,24 @@ fn play(a: &Args) -> Result<(), String> {
     // game.
     io.front = false;
     io.restart = false;
-    let mode = io.wanted;
-    io.video_shown(mode);
-    let (mut g, _) = load(a, mode, chosen.as_deref())?;
-    let _ = g.run(&mut io);
-    if let Some(s) = g.stopped {
-        eprintln!("stopped: {s}");
+    let mut reload = None;
+    loop {
+        let mode = io.wanted;
+        io.video_shown(mode);
+        let (mut g, _) = load(a, mode, chosen.as_deref(), reload.take())?;
+        io.save_base = g.save_to.clone();
+        io.in_space = false;
+        let _ = g.run(&mut io);
+        // A save slot was loaded: the game starts again from it.
+        if let Some(r) = g.reload.take() {
+            reload = Some(r);
+            continue;
+        }
+        if let Some(s) = g.stopped {
+            eprintln!("stopped: {s}");
+        }
+        return Ok(());
     }
-    Ok(())
 }
 
 fn main() -> ExitCode {

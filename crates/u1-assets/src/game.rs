@@ -135,6 +135,9 @@ pub struct Game {
     /// Set when a feature outside this engine's scope was reached (space,
     /// Mondain's time machine, dungeons).
     pub stopped: Option<&'static str>,
+    /// A save slot was loaded (SPEC §22.2): the run stops (`stopped` is
+    /// "load") and the front end starts the game again from this record.
+    pub reload: Option<PlayerRecord>,
     /// The dungeon being explored (mode 3).
     pub dungeon: Option<crate::dgame::DungeonState>,
     pub view_tables: Option<crate::dview::ViewTables>,
@@ -196,6 +199,7 @@ impl Game {
             cursor_phase: 0,
             save_to: None,
             stopped: None,
+            reload: None,
             dungeon: None,
             view_tables: None,
             clock: None,
@@ -716,6 +720,15 @@ impl Game {
         let mut polls = 0u32;
         let key = loop {
             let k = self.poll_key(io)?;
+            if io.wants_log() {
+                crate::msglog::enable(&mut self.term);
+            }
+            if let Some(r) = io.save_request() {
+                self.slot_action(io, r);
+                if self.stopped.is_some() {
+                    return Ok(());
+                }
+            }
             if let Some(v) = io.video_switch() {
                 self.set_video(v);
                 io.video_shown(self.a.video);
@@ -1041,7 +1054,7 @@ impl Game {
         let name = self.rec.name();
         let dead = self.s(m::THOU_ART_DEAD);
         self.term.println(&format!("{name}{dead}"));
-        io.pause(&self.term, 80)?;
+        io.message_pause(&self.term, 80)?;
         self.sayln(m::RESURRECTION);
         for h in 1..=99 {
             self.set(off::HITS, h);
@@ -1511,6 +1524,51 @@ impl Game {
     }
 
     /// Quit `5b54`: save (outdoors only) and carry on playing.
+    /// A save-slot action (SPEC §22.2, an optional engine feature): a save
+    /// writes exactly the record Quit writes, and only where Quit may; a
+    /// load ends this run for the front end to start again from the file.
+    /// The result is reported by the front end, not on the game's screen.
+    pub fn slot_action(&mut self, io: &mut dyn Io, r: crate::slots::SaveReq) {
+        use crate::slots::{slot_path, SaveReq, Slot};
+        let Some(base) = self.save_to.clone() else {
+            io.save_done("No save file for this game");
+            return;
+        };
+        let name = |s: Slot| match s {
+            Slot::N(n) => format!("slot {n}"),
+            Slot::Quick => "the quicksave".to_string(),
+        };
+        match r {
+            SaveReq::Save(s) => {
+                if self.mode != OUTDOORS {
+                    io.save_done("Saving works outdoors only (as Quit)");
+                    return;
+                }
+                self.sync_record();
+                let p = slot_path(&base, s);
+                if let Some(d) = p.parent() {
+                    let _ = std::fs::create_dir_all(d);
+                }
+                match std::fs::write(&p, self.rec.as_bytes()) {
+                    Ok(()) => io.save_done(&format!("Saved to {}", name(s))),
+                    Err(_) => io.save_done(&format!("Could not save to {}", name(s))),
+                }
+            }
+            SaveReq::Load(s) => {
+                let p = slot_path(&base, s);
+                match std::fs::read(&p).ok().map(|b| PlayerRecord::parse(&b)) {
+                    Some(Ok(rec)) => {
+                        self.reload = Some(rec);
+                        self.stopped = Some("load");
+                        io.save_done(&format!("Loaded {}", name(s)));
+                    }
+                    Some(Err(_)) => io.save_done(&format!("{} is not a player file", name(s))),
+                    None => io.save_done(&format!("Nothing saved in {}", name(s))),
+                }
+            }
+        }
+    }
+
     fn cmd_quit(&mut self, io: &mut dyn Io) {
         self.say(m::QUIT);
         if self.mode != OUTDOORS {

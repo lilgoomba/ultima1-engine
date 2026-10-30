@@ -1,0 +1,201 @@
+//! Optional quality-of-life settings (docs/ROADMAP.md, SPEC §22). Every one
+//! is off by default, and off means the engine behaves exactly as it does
+//! without them: the same screens, the same timings, the same saves. None
+//! of them changes the game's rules, its random sequence or the save
+//! format. The front end applies them; this module holds the settings,
+//! their timing arithmetic and the pure parts (the CRT filter) so they can
+//! be tested without a window.
+
+/// How the screen fills the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Scaling {
+    /// Whole multiples only, letterboxed: every pixel the same size (the
+    /// engine's behaviour without the option).
+    #[default]
+    Whole,
+    /// As large as the window allows at the right shape (pixels may differ
+    /// by one in size).
+    Fill,
+}
+
+impl Scaling {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Scaling::Whole => "whole",
+            Scaling::Fill => "fill",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Scaling> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "whole" | "integer" => Some(Scaling::Whole),
+            "fill" => Some(Scaling::Fill),
+            _ => None,
+        }
+    }
+}
+
+/// The message-delay choices, in per cent of the original's.
+pub const MESSAGE_DELAYS: [u8; 4] = [100, 50, 25, 0];
+
+/// The settings. `Qol::default()` is the faithful engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Qol {
+    /// Fullscreen (also Alt+Enter).
+    pub fullscreen: bool,
+    pub scaling: Scaling,
+    /// The CRT scanline filter (never in screenshots unless asked for).
+    pub crt: bool,
+    /// Save slots (F2) and quicksave/quickload (F5/F9).
+    pub slots: bool,
+    /// The message log (PgUp).
+    pub log: bool,
+    /// Everything runs four times as fast (also F4).
+    pub turbo: bool,
+    /// The waits after messages, in per cent of the original's.
+    pub message_delay: u8,
+    /// Space flight and combat wait half as long.
+    pub fast_space: bool,
+    /// The original's processor-bound waits replaced by comfortable fixed
+    /// ones (a speaker effect no longer freezes the game).
+    pub steady: bool,
+}
+
+impl Default for Qol {
+    fn default() -> Self {
+        Qol { fullscreen: false, scaling: Scaling::Whole, crt: false, slots: false, log: false, turbo: false, message_delay: 100, fast_space: false, steady: false }
+    }
+}
+
+/// What kind of wait the game asks the front end for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Wait {
+    /// A main-loop key poll (130 ms) or a timed pause in general.
+    Poll,
+    /// A pause after a message (`Io::message_pause`, `wait_or_key`).
+    Message,
+    /// A speaker effect holding the game while it plays.
+    Sound,
+}
+
+/// How much a turbo wait is shortened by.
+pub const TURBO: f64 = 4.0;
+
+impl Qol {
+    /// The factor a wait of kind `w` is multiplied by (`in_space`: during
+    /// space flight). 1.0 for every wait with the settings off.
+    pub fn wait_factor(&self, w: Wait, in_space: bool) -> f64 {
+        let mut f = if self.turbo { 1.0 / TURBO } else { 1.0 };
+        match w {
+            Wait::Message => f *= f64::from(self.message_delay.min(100)) / 100.0,
+            Wait::Sound if self.steady => f = 0.0,
+            _ => {}
+        }
+        if in_space && self.fast_space && w != Wait::Sound {
+            f *= 0.5;
+        }
+        f
+    }
+
+    /// The next message delay in [`MESSAGE_DELAYS`] (`back`: the one before).
+    pub fn cycle_delay(&mut self, back: bool) {
+        let i = MESSAGE_DELAYS.iter().position(|&d| d == self.message_delay).unwrap_or(0);
+        let n = MESSAGE_DELAYS.len();
+        self.message_delay = MESSAGE_DELAYS[if back { (i + n - 1) % n } else { (i + 1) % n }];
+    }
+}
+
+/// How many output rows (and columns) a source pixel becomes under the CRT
+/// filter: a 320x200 frame is drawn at 3x, the enhanced 640x400 at 2x.
+pub fn crt_factor(w: usize) -> usize {
+    if w <= 320 { 3 } else { 2 }
+}
+
+/// The CRT filter: `rgb` (`w` x `h`) enlarged `k` times with dark gaps
+/// between the scanlines and a slight horizontal glow. A pure picture
+/// effect; the frame it is given is not changed.
+pub fn crt(rgb: &[u8], w: usize, h: usize, k: usize) -> Vec<u8> {
+    let k = k.max(2);
+    let ow = w * k;
+    let mut out = vec![0u8; ow * h * k * 3];
+    // Brightness of the k output rows of one scanline (per 256).
+    let rows: &[u32] = if k == 2 { &[256, 112] } else { &[256, 236, 96] };
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y * w + x) * 3;
+            let l = if x > 0 { i - 3 } else { i };
+            let r = if x + 1 < w { i + 3 } else { i };
+            for sx in 0..k {
+                // The pixel, a little of its neighbour on that side.
+                let n = if sx == 0 { l } else if sx == k - 1 { r } else { i };
+                let px: [u32; 3] = std::array::from_fn(|c| (u32::from(rgb[i + c]) * 7 + u32::from(rgb[n + c])) / 8);
+                for (sy, &b) in rows.iter().enumerate().take(k) {
+                    let o = ((y * k + sy) * ow + x * k + sx) * 3;
+                    for c in 0..3 {
+                        out[o + c] = (px[c] * b / 256).min(255) as u8;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn off_changes_no_wait() {
+        let q = Qol::default();
+        for w in [Wait::Poll, Wait::Message, Wait::Sound] {
+            for s in [false, true] {
+                assert_eq!(q.wait_factor(w, s), 1.0, "{w:?} in space {s}");
+            }
+        }
+    }
+
+    #[test]
+    fn speed_settings() {
+        let q = Qol { turbo: true, ..Default::default() };
+        assert_eq!(q.wait_factor(Wait::Poll, false), 0.25);
+        assert_eq!(q.wait_factor(Wait::Sound, false), 0.25);
+        let q = Qol { message_delay: 25, ..Default::default() };
+        assert_eq!(q.wait_factor(Wait::Message, false), 0.25);
+        assert_eq!(q.wait_factor(Wait::Poll, false), 1.0, "only the message waits");
+        let q = Qol { message_delay: 0, turbo: true, ..Default::default() };
+        assert_eq!(q.wait_factor(Wait::Message, false), 0.0);
+        let q = Qol { fast_space: true, ..Default::default() };
+        assert_eq!((q.wait_factor(Wait::Poll, true), q.wait_factor(Wait::Poll, false)), (0.5, 1.0));
+        let q = Qol { steady: true, ..Default::default() };
+        assert_eq!(q.wait_factor(Wait::Sound, false), 0.0, "an effect no longer holds the game");
+        assert_eq!(q.wait_factor(Wait::Poll, false), 1.0);
+        let mut q = Qol::default();
+        let seen: Vec<u8> = (0..4).map(|_| {
+            q.cycle_delay(false);
+            q.message_delay
+        }).collect();
+        assert_eq!(seen, [50, 25, 0, 100]);
+        q.cycle_delay(true);
+        assert_eq!(q.message_delay, 0);
+    }
+
+    #[test]
+    fn crt_scanlines() {
+        // A flat grey 2x2 picture: bright first rows, dark gap rows.
+        let rgb = vec![200u8; 2 * 2 * 3];
+        let out = crt(&rgb, 2, 2, 3);
+        assert_eq!(out.len(), 6 * 6 * 3);
+        let at = |x: usize, y: usize| out[(y * 6 + x) * 3];
+        assert_eq!(at(0, 0), 200);
+        assert!(at(0, 2) < 90 && at(0, 2) > 60, "{}", at(0, 2));
+        assert_eq!(at(4, 3), 200, "the next scanline is bright again");
+        assert_eq!(crt_factor(320), 3);
+        assert_eq!(crt_factor(640), 2);
+        // A lone white pixel glows a little into its dark neighbours'
+        // edges, never beyond them.
+        let mut rgb = vec![0u8; 3 * 1 * 3];
+        rgb[3..6].fill(255);
+        let out = crt(&rgb, 3, 1, 2);
+        assert!(out[(1) * 3] > 0 && out[0] == 0);
+    }
+}

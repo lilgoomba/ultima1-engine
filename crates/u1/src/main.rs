@@ -694,7 +694,7 @@ impl SdlIo {
             *age += 1;
             if *age > 2 {
                 self.save_req = None;
-                self.note("Not now: at the command prompt");
+                self.note("Not now (only at the command prompt)");
             }
         }
     }

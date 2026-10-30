@@ -1567,8 +1567,9 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   in that display (a character being made is dropped; nothing is written
   until one is kept); during the "please wait" screen it is the game's.
 * **Box edges.** With the enhanced art on, the screen behind the box is
-  composed with the pack first and only the box's rectangle (31,23)–
-  (287,127) is taken from the menu's copy, so a tile the box only partly
+  composed with the pack first and only the box's rectangle (8,8)–
+  (311,151) (the map viewport less its frame; the engine's windows share
+  it) is taken from the menu's copy, so a tile the box only partly
   covers keeps its art where it shows.
 * **Sound.** Original beeps, Enhanced, Mute (§19.1), switched at once.
 * **Config file.** `$XDG_CONFIG_HOME/ultima1-engine/config.toml`, else
@@ -1583,8 +1584,70 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   original display the game files suggest (§15), no enhanced art, and
   the original beeps. Screenshot runs never read the file.
 
+The optional features of §22 are further rows of the same menu.
 Planned optional quality-of-life features, all off by default, are
 listed in [ROADMAP.md](ROADMAP.md).
+
+## 22. Optional engine features (not original behaviour)
+
+Every one is off by default. Off, the engine behaves exactly as without
+it: the same screens, the same timing, the same records, the same random
+sequence (the tests check the screen and the saved record with all of
+them off). None changes a rule. They are rows of the options menu (§21),
+keys in the config file, and use only keys the original never reads
+(function keys, PgUp/PgDn/Home/End, Alt+Enter).
+
+### 22.1 Display
+
+* **Fullscreen**: SDL's desktop fullscreen; Alt+Enter toggles it and saves
+  it (only the optional-feature keys are rewritten by Alt+Enter and F4).
+* **Scaling**: "whole pixels" scales the logical screen by the largest
+  whole multiple and letterboxes the rest; "fill window" stretches to the
+  window keeping the 8:5 shape.
+* **CRT filter**: the composed frame (320x200 at 3x, the enhanced 640x400
+  at 2x) gets every third (second) row darkened and a slight horizontal
+  glow, then is scaled as usual. A picture effect only; screenshots get
+  it only with `--crt`.
+
+### 22.2 Save slots
+
+* Slot 1 is the character's own player file (the one Quit writes, §13).
+  Slots 2-5 and the quicksave are files beside it, `<name>-slot<n>.<ext>`
+  and `<name>-quick.<ext>`; each is an ordinary 820-byte player record
+  the original can load if renamed.
+* A save or load is asked for by the front end (F2 window, F5, F9) and
+  taken by the game at its next main-loop key poll, so it happens only
+  where the original would read a command (outdoors, in a town or castle,
+  in a dungeon); anywhere else (a question, a shop, space, Mondain's lair)
+  it lapses after two polls with a note.
+* Saving takes the same record Quit writes and is refused outside the
+  overworld ("Saving works outdoors only (as Quit)"), since the record
+  cannot hold a town or dungeon position. Loading parses the record and
+  starts the game again from it, in the current display, as the original
+  does when a character is loaded; the message log starts empty.
+
+### 22.3 Message log
+
+When on, each line that scrolls off the four-line message window is kept
+(without its first column and trailing blanks), up to 500. PgUp opens the
+viewer over the map: the newest 12 lines (those kept plus the window's
+current lines), PgUp/PgDn a page, Up/Down a line, Home/End the ends; PgDn
+on the newest page, Esc or Enter closes. Keeping the log never changes
+what the message window shows.
+
+### 22.4 Speed
+
+Each front-end wait is one of three kinds: a poll or animation wait (key
+polls, `pause`, retrace waits), a message wait (the pause after a
+message: death, shops, towns; the wait-or-key pauses) and a speaker wait
+(the time an effect holds the game, §19). Turbo divides every wait by 4
+(and is also F4). The message delay scales message waits to 50%, 25% or
+0%. Space speed halves poll and message waits during space flight.
+"Steady" CPU timing drops speaker waits: the sound still plays, but the
+game no longer stops for it. The engine's other CPU-dependent timing
+(§3, §11, §18) is already reproduced at one fixed reference speed, so
+there is nothing else for it to change. The idle Pass still comes after
+the same number of key polls, only sooner in turbo.
 
 ## Sources
 

@@ -1018,11 +1018,17 @@ Done in Phase 5 (v0.5):
     frames (one per level set-up) reproduce every frame: view
     pixel-identical, monster movement, attacks, kills, coins, hits and
     experience.
+15. Lord British's castle checked in DOSBox: killing the jester gives the
+    key and the same three messages; the guards then turn hostile, close
+    in and attack with the same messages. With the key, one jail door
+    answered that it was not the correct key and the other opened, so the
+    door that the key opens is chosen at random on each entry. In that
+    run the princess was behind the door that would not open.
 
 Still open:
 
-* Jail/princess rescue and hostile guards: implemented from the
-  executable but not yet compared in DOSBox.
+* The princess rescue reward was not seen in DOSBox (in the run checked,
+  the princess was behind the door the key would not open).
 * Dungeon levels 4–10 not yet compared in DOSBox; same code paths.
 * What 0xB0/0xB2 mean in the space part.
 * Exact monster frame choice (engine uses its own pseudo-random pick).

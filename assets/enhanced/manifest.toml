@@ -8,7 +8,7 @@
 # 1's palette plus 15 colours) and the first-person dungeon (textures,
 # objects and monster sprites of any size, their own 64-colour palette;
 # the force field is unquantized for its translucent blues).
-name = "u1-enhanced 16-bit (batches 1-2)"
+name = "u1-enhanced 16-bit (batches 1-3)"
 tile_size = 32
 license = "CC-BY-SA-4.0"
 
@@ -242,3 +242,113 @@ file = "dungeon/m23.png"
 file = "dungeon/m24.png"
 
 # dmon.20 (invisible seeker) has no picture: it is not seen.
+
+# Batch 3: space flight, original 16-bit-console-style art
+# with its own colours. The frames and backgrounds are stretched over the
+# original's view; ships are drawn nose up and turned to their heading,
+# each fitted to the box the original drew.
+
+[space.frame]     # the top-down view's border
+file = "space/frame.png"
+
+[space.cockpit]   # the front view's border
+file = "space/cockpit.png"
+
+[space.starfield] # top-down background
+file = "space/starfield.png"
+
+[space.deep]      # front view background
+file = "space/deep.png"
+
+[space.earth]
+file = "space/earth.png"
+
+[space.sun]
+file = "space/sun.png"
+
+[space.station]
+file = "space/station.png"
+
+[space.ship0]     # the shuttle
+file = "space/ship0.png"
+
+[space.ship1]
+file = "space/ship1.png"
+
+[space.ship2]
+file = "space/ship2.png"
+
+[space.fighter]   # the enemy, front view
+file = "space/fighter.png"
+
+[space.reticle]
+file = "space/reticle.png"
+
+# Batch 3: Mondain's castle and the endgame.
+
+[mond.0]    # floor
+file = "mond/0.png"
+
+[mond.1]    # time machine
+file = "mond/1.png"
+
+[mond.2]    # Mondain
+file = "mond/2.png"
+
+[mond.3]    # Mondain (second frame)
+file = "mond/3.png"
+
+[mond.4]    # Mondain slain
+file = "mond/4.png"
+
+[mond.5]    # castle wall
+file = "mond/5.png"
+
+[mond.6]    # the gem
+file = "mond/6.png"
+
+[mond.7]    # gem glow 1
+file = "mond/7.png"
+
+[mond.8]    # gem glow 2
+file = "mond/8.png"
+
+[mond.9]    # gem glow 3
+file = "mond/9.png"
+
+[mond.10]   # gem glow 4
+file = "mond/10.png"
+
+[mond.11]   # demon 1
+file = "mond/11.png"
+
+[mond.12]   # demon 2
+file = "mond/12.png"
+
+[mond.13]   # demon 3
+file = "mond/13.png"
+
+[mond.14]   # fire 1
+file = "mond/14.png"
+
+[mond.15]   # fire 2
+file = "mond/15.png"
+
+[mond.16]   # fire 3
+file = "mond/16.png"
+
+[mond.17]   # fire 4
+file = "mond/17.png"
+
+[mond.18]   # fire 5
+file = "mond/18.png"
+
+[mond.19]   # fire 6
+file = "mond/19.png"
+
+[mond.20]   # the player
+file = "world/player.png"
+
+[screen.nif]      # the ending text: a dim picture behind the original words
+file = "screens/nif.png"
+behind = true

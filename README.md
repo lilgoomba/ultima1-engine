@@ -269,7 +269,7 @@ tiles as input), then cut to the pixel grid, made seamless, given a
 shared palette and hand-finished (pennants, smoke, tufts, the
 hand-placed town cottages) with Python/Pillow.
 
-Batch 2 (on review) covers towns and castles: the castle wall, the
+Batch 2 covers towns and castles: the castle wall, the
 cobbled floor, water and its six shore shapes, bush, tree, the six
 counter pieces, the grey brick wall and the people (guard, player,
 jester, king, merchant, princess, wench) as 16×16 pictures; the letters
@@ -280,7 +280,18 @@ the invisible seeker (the mimic uses the chest). Secret doors use the
 wall on purpose. Town pictures were drawn procedurally or by hand; the
 dungeon textures and monsters were made like batch 1 (generated from
 text only, cut out, outlined and given their own 64-colour palette).
-Everything else falls back to the original art.
+
+Batch 3 covers space flight: a riveted gunmetal frame for
+the top-down view and a cockpit frame for the front view, a starfield
+and a nebula behind them, the earth-like planet, the sun, the space
+station, the three player ships, the enemy fighter and the crosshair.
+The sector scan, shots, exhaust and explosions stay original.
+It also covers Mondain's castle and the endgame: the stone floor and red
+walls, the time machine, Mondain (two frames), his corpse, his gem and
+its four glow frames, the demon he becomes (three frames), the six
+frames of his fire spell, and a dim sunrise backdrop behind the closing
+text. The text boxes, the victory box and the title castle stay
+original. Everything else falls back to the original art.
 
 Tests that use your own files are skipped unless you point them at your
 install:
@@ -315,7 +326,7 @@ docs/demo.png      demo screenshot (synthetic art)
 1. Finish the remaining open items in SPEC §11.
 2. Space and the Mondain battle.
 3. Optional quality-of-life features, kept apart from the faithful mode.
-4. Enhanced video mode art: towns, castles and dungeons (batch 2) under review; space and the Mondain battle next.
+4. Enhanced video mode art: the title screens and an optional enhanced sound mode.
 
 ## License
 

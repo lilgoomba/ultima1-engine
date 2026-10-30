@@ -4,7 +4,7 @@
 #
 # Batch 1: overworld terrain and the player on foot, original
 # 16-bit-console-style art, 32x32, one shared 64-colour palette.
-# Batch 2 (for review): towns and castles (16x16 tiles and people, batch
+# Batch 2: towns and castles (16x16 tiles and people, batch
 # 1's palette plus 15 colours) and the first-person dungeon (textures,
 # objects and monster sprites of any size, their own 64-colour palette;
 # the force field is unquantized for its translucent blues).
@@ -351,4 +351,27 @@ file = "world/player.png"
 
 [screen.nif]      # the ending text: a dim picture behind the original words
 file = "screens/nif.png"
+behind = true
+
+# Batch 4 (for review): the start-up screens. The Origin logo, the
+# credits text and every original word stay as drawn; these only replace
+# the castle picture and sit behind the text screens.
+[screen.castle]   # the start-up castle, whole, with its own waving flags
+frames = ["screens/castle0.png", "screens/castle1.png", "screens/castle2.png"]
+fps = 5
+
+[screen.title]    # the text title shown while the castle loads
+file = "screens/title.png"
+behind = true
+
+[screen.intro]    # behind the logo, "Presents", the two pages and the credits
+file = "screens/intro.png"
+behind = true
+
+[screen.menu]     # inside the character menu's border
+file = "screens/menu.png"
+behind = true
+
+[screen.loading]  # inside the "please wait" box
+file = "screens/loading.png"
 behind = true

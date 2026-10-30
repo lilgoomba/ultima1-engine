@@ -290,8 +290,17 @@ It also covers Mondain's castle and the endgame: the stone floor and red
 walls, the time machine, Mondain (two frames), his corpse, his gem and
 its four glow frames, the demon he becomes (three frames), the six
 frames of his fire spell, and a dim sunrise backdrop behind the closing
-text. The text boxes, the victory box and the title castle stay
-original. Everything else falls back to the original art.
+text. The text boxes and the victory box stay original.
+
+Batch 4 (for review) covers the start-up screens: a new castle picture
+for the title with its own "Ultima I" lettering and two waving crimson
+pennants (three frames), a dim starry night behind the text title, a
+dusk mountain panorama behind the Origin logo, "Presents", the two
+story pages and the credits, and a dark leather page behind the
+character menu and the "please wait" box. The Origin logo, every line
+of original text (including the trademark and conversion credits) and
+the menu borders stay original. Everything else falls back to the
+original art.
 
 Tests that use your own files are skipped unless you point them at your
 install:

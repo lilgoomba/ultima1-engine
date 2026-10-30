@@ -420,7 +420,10 @@ impl<'a> Space<'a> {
                 self.show_shield();
                 self.death()?;
             }
-            let mut n = self.slot().shield;
+            // `3bf9`: the idle counter starts at zero; 1500 polls (2 ticks
+            // each in the top-down view) before an automatic Pass, which
+            // DOSBox shows every ~165 s.
+            let mut n: u16 = 0;
             self.prompt();
             let key = loop {
                 self.tick()?;

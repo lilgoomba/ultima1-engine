@@ -241,6 +241,22 @@ fn shuttle_launch_flight_and_landing() {
     assert!(g.term.row_text(21).contains("Hits:"));
 }
 
+/// An idle top-down ship passes on its own after 1500 polls (DOSBox: a
+/// Pass every ~165 s at two ticks a poll), counted from zero each prompt.
+#[test]
+fn idle_space_prompt_passes_after_1500_polls() {
+    let passes = |w: usize| {
+        let g = play_with(40, 40, &format!("B{{w12}}{{w{w}}}"), 1, &[], on_shuttle).unwrap();
+        (0..25).filter(|&r| g.term.row_text(r).contains("Pass")).count()
+    };
+    if play(40, 40, "").is_none() {
+        return;
+    }
+    assert_eq!(passes(1400), 0);
+    assert_eq!(passes(1600), 1);
+    assert_eq!(passes(3100), 2);
+}
+
 /// Standing on the time machine with the four gems.
 fn at_time_machine(r: &mut PlayerRecord) {
     r.set_object(1, &MapObject { kind: 0x12, unknown_02: 1, x: 40, y: 40, hits: 0 });

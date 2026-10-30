@@ -1084,7 +1084,9 @@ side. Strings, the galaxy layout tables and the ship and fighter sprites
   fighters and possibly a star. The sector scan draws the whole grid.
   Hyperjump moves to a neighbouring sector.
 * **Views.** Top-down (turn, thrust, retro; an idle ship keeps drifting
-  and the prompt prints Pass) and the first-person front view (speed 1-8,
+  and the prompt prints Pass by itself after 1500 key polls, counted from
+  zero at each prompt, two ticks per poll in the top-down view: about
+  165 s, measured in DOSBox) and the first-person front view (speed 1-8,
   crosshair, streaming stars). The top-down view matched DOSBox pixel for
   pixel; front-view star positions are random in both.
 * **Fire** works only in front view, costs 10 fuel and draws two laser

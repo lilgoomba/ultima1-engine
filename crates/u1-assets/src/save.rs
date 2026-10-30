@@ -27,6 +27,8 @@ pub mod off {
     pub const READY_SPELL: usize = 0x2C;
     pub const READY_ARMOUR: usize = 0x2E;
     pub const TRANSPORT: usize = 0x30;
+    /// The random seed word the programs start from.
+    pub const SEED: usize = 0x32;
     pub const POS_X: usize = 0x34;
     pub const POS_Y: usize = 0x36;
     pub const GEMS: usize = 0x4C; // 4 x i16: red, green, blue, white

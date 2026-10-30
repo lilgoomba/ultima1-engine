@@ -30,6 +30,8 @@ pub mod keys {
     /// Script-only token: the key that ends a "wait for a key or a while"
     /// pause (the original swallows it).
     pub const WAIT: u8 = 0xFF;
+    /// Script-only: one poll that finds no key (lets time pass).
+    pub const IDLE: u8 = 0xFE;
 }
 
 pub trait Io {
@@ -66,6 +68,20 @@ pub trait Io {
     /// Play one of the original's sound effects (numbers as in the
     /// original). Front ends may ignore it.
     fn sound(&mut self, _n: u8) {}
+
+    /// A keyboard check that does not wait (the space program's polls,
+    /// which are paced by explicit delays instead).
+    fn poll_now(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.poll(t)
+    }
+
+    /// Drop keys typed ahead (front ends with a key buffer).
+    fn flush(&mut self) {}
+
+    /// Wait `n` vertical retraces (70 Hz).
+    fn retrace(&mut self, _t: &Term, _n: u32) -> IoResult<()> {
+        Ok(())
+    }
 }
 
 /// Keys from a list; `Halt` once they run out.
@@ -91,6 +107,14 @@ impl ScriptIo {
                 '~' => out.push(keys::WAIT),
                 '{' => {
                     let name: String = it.by_ref().take_while(|&c| c != '}').collect();
+                    // `{w}` / `{wN}`: N polls without a key.
+                    if let Some(n) = name.strip_prefix('w') {
+                        if n.is_empty() || n.bytes().all(|b| b.is_ascii_digit()) {
+                            let n = n.parse::<usize>().unwrap_or(1);
+                            out.extend(std::iter::repeat(keys::IDLE).take(n));
+                            continue;
+                        }
+                    }
                     out.push(match name.as_str() {
                         "left" => keys::LEFT,
                         "right" => keys::RIGHT,
@@ -116,6 +140,7 @@ impl Io for ScriptIo {
             match self.keys.pop_front() {
                 // A stray wait token where a key is expected is skipped.
                 Some(keys::WAIT) => continue,
+                Some(keys::IDLE) => return Ok(None),
                 Some(k) => return Ok(Some(k)),
                 None => return Err(Halt),
             }

@@ -12,6 +12,8 @@ use crate::rules::DATA_BASE;
 #[derive(Debug, Clone)]
 pub struct Exe {
     data: Vec<u8>,
+    /// File offset of the data segment.
+    base: usize,
 }
 
 impl Exe {
@@ -19,17 +21,30 @@ impl Exe {
         if data.len() != OUT_EXE_SIZE {
             return Err(AssetError::BadSize { what: "OUT.EXE".into(), expected: OUT_EXE_SIZE.to_string(), got: data.len() });
         }
-        Ok(Exe { data })
+        Ok(Exe { data, base: DATA_BASE })
     }
 
     /// Like `new` but without the size check (for synthetic test images).
     pub fn unchecked(data: Vec<u8>) -> Self {
-        Exe { data }
+        Exe { data, base: DATA_BASE }
+    }
+
+    /// Another program of the game (SPACE.EXE, MONDAIN.EXE) whose data
+    /// segment starts at file offset `base`.
+    pub fn with_base(data: Vec<u8>, base: usize) -> Self {
+        Exe { data, base }
+    }
+
+    /// File offset of an MZ program's data segment given its paragraph
+    /// (relative to the load image).
+    pub fn mz_data_base(data: &[u8], para: usize) -> usize {
+        let hdr = data.get(8..10).map_or(0, |b| usize::from(u16::from_le_bytes([b[0], b[1]])));
+        hdr * 16 + para * 16
     }
 
     /// NUL-terminated string at a data-segment offset.
     pub fn s(&self, off: usize) -> String {
-        let start = DATA_BASE + off;
+        let start = self.base + off;
         if start >= self.data.len() {
             return String::new();
         }
@@ -39,7 +54,7 @@ impl Exe {
 
     /// Little-endian word at a data-segment offset.
     pub fn w(&self, off: usize) -> u16 {
-        let o = DATA_BASE + off;
+        let o = self.base + off;
         match self.data.get(o..o + 2) {
             Some(b) => u16::from_le_bytes([b[0], b[1]]),
             None => 0,
@@ -48,7 +63,7 @@ impl Exe {
 
     /// Byte at a data-segment offset.
     pub fn b(&self, off: usize) -> u8 {
-        self.data.get(DATA_BASE + off).copied().unwrap_or(0)
+        self.data.get(self.base + off).copied().unwrap_or(0)
     }
 
     /// Entry `i` of a table of string pointers.

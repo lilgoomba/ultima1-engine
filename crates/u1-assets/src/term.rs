@@ -43,12 +43,17 @@ impl Term {
         t.fill(0, 160, 240, 199, BLACK);
         t.fill(246, 159, 319, 199, WHITE);
         t.fill(247, 160, 319, 199, BLACK);
-        for (i, l) in ["Hits:", "Food:", "Exp.:", "Coin:"].iter().enumerate() {
-            t.print_at_attr(31, 21 + i, l, TEXT);
-        }
-        t.col = 1;
-        t.row = 24;
+        t.restore_labels();
         t
+    }
+
+    /// The four stat labels (cursor left at (1,24)).
+    pub fn restore_labels(&mut self) {
+        for (i, l) in ["Hits:", "Food:", "Exp.:", "Coin:"].iter().enumerate() {
+            self.print_at_attr(31, 21 + i, l, TEXT);
+        }
+        self.col = 1;
+        self.row = 24;
     }
 
     pub fn at(&self, x: usize, y: usize) -> u8 {

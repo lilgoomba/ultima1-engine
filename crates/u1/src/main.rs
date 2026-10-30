@@ -169,6 +169,8 @@ fn load(a: &Args) -> Result<(Game, [Rgb; 16]), String> {
         }
     };
     game.counter = a.counter;
+    // SPACE.EXE is optional: without it boarding a shuttle stops the run.
+    game.space = u1_assets::space::SpaceFiles::load(&g).ok();
     let save_to = a.save_to.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1"));
     let dir = save_to.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     if same_dir(dir, &a.game_dir) {
@@ -285,6 +287,26 @@ impl Io for SdlIo {
             std::thread::sleep(Duration::from_millis(5));
         }
         Ok(())
+    }
+
+    fn poll_now(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.present(t)?;
+        self.pump()?;
+        Ok(self.pending.pop_front())
+    }
+
+    fn retrace(&mut self, t: &Term, n: u32) -> IoResult<()> {
+        self.present(t)?;
+        let end = Instant::now() + Duration::from_micros(14_286) * n;
+        while Instant::now() < end {
+            self.pump()?;
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self) {
+        self.pending.clear();
     }
 
     fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {

@@ -26,6 +26,7 @@ pub mod rng;
 pub mod rules;
 pub mod save;
 pub mod shops;
+pub mod space;
 pub mod tcd;
 pub mod term;
 pub mod tiles;

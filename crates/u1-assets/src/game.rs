@@ -126,6 +126,10 @@ pub struct Game {
     /// Clock values to use, in order, before falling back to `fixed_time`
     /// (lets tests replay a run recorded at known times).
     pub fixed_times: std::collections::VecDeque<u16>,
+    /// SPACE.EXE and its sprites, when present.
+    pub space: Option<crate::space::SpaceFiles>,
+    /// OUT was restarted (after space); the turn ends without a world turn.
+    pub restarted: bool,
 }
 
 impl Game {
@@ -172,6 +176,8 @@ impl Game {
             clock: None,
             fixed_time: seed,
             fixed_times: Default::default(),
+            space: None,
+            restarted: false,
         };
         g.redraw();
         g
@@ -542,6 +548,10 @@ impl Game {
         if self.stopped.is_some() {
             return Ok(());
         }
+        if self.restarted {
+            self.restarted = false;
+            return Ok(());
+        }
         self.end_of_turn(io)
     }
 
@@ -710,7 +720,11 @@ impl Game {
         self.term.println(&name);
         self.draw_world();
         if t == 0x11 {
-            self.stopped = Some("space travel (SPACE.EXE) is not part of this engine yet");
+            if self.space.is_some() {
+                self.launch(io)?;
+            } else {
+                self.stopped = Some("space travel (SPACE.EXE) is not part of this engine yet");
+            }
         } else if t == 0x12 {
             if (0..4).all(|k| self.qty(slot::GEM, k) > 0) {
                 self.stopped = Some("the time machine ending (MONDAIN.EXE) is not part of this engine yet");
@@ -724,6 +738,33 @@ impl Game {
             }
         }
         Ok(())
+    }
+
+    /// Shuttle launch: OUT hands over to SPACE.EXE, which hands back by
+    /// restarting OUT from the record (`ebd`, SPEC §15).
+    fn launch(&mut self, io: &mut dyn Io) -> IoResult<()> {
+        self.sync_record();
+        crate::space::run_space(self, io)?;
+        self.restart_out();
+        Ok(())
+    }
+
+    /// OUT starting again from the record: a new generator seed, fresh
+    /// town maps, the outdoor state rebuilt; the message lines stay.
+    pub fn restart_out(&mut self) {
+        let ts = self.time_seed_now();
+        let seed = self.rec.u16_at(off::SEED).wrapping_add(ts % 999);
+        self.ow = crate::overworld::Overworld::from_save(&self.rec, seed);
+        self.maps = self.a.tcd.maps.clone();
+        let objs = self.rec.objects();
+        let last = usize::from(self.rec.u16_at(off::LAST_OBJECT)).min(39);
+        self.vehicle_objs = objs.iter().take(last + 1).filter(|o| o.kind <= 0x11).count() as i16;
+        self.player_aux = objs[0].unknown_02;
+        self.mode = OUTDOORS;
+        self.prev_mode = OUTDOORS;
+        self.term.restore_labels();
+        self.redraw();
+        self.restarted = true;
     }
 
     fn term_blue(&self) -> u8 {
@@ -1288,7 +1329,7 @@ impl Game {
     }
 
     /// Ztats `bfe6`.
-    fn cmd_ztats(&mut self, io: &mut dyn Io) -> IoResult<()> {
+    pub(crate) fn cmd_ztats(&mut self, io: &mut dyn Io) -> IoResult<()> {
         self.sayln(m::ZTATS);
         self.term.clear_view();
         self.term.ornament_left(13, 0);

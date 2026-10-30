@@ -338,7 +338,7 @@ impl<'a> Space<'a> {
         Ok(())
     }
     fn prompt(&mut self) {
-        self.g.term.print_at(0, 24, ">");
+        self.g.term.ornament_left(0, 24);
         self.g.term.cursor(1, 24);
     }
     fn sec(&self) -> &Sector {
@@ -1556,6 +1556,7 @@ mod real_game {
             world_tiles: g.load_world_tiles(mode).unwrap(),
             town_tiles: g.load_town_tiles(mode).unwrap(),
             tcd: crate::tcd::TownCastleMaps::parse(&g.read("TCD.BIN").unwrap()).unwrap(),
+            video: mode,
         };
         let rec = PlayerRecord::parse(&g.read("PLAYER2.U1").ok()?).unwrap();
         Some((Game::new(assets, rec, 1), SpaceFiles::load(&g).ok()?))

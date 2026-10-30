@@ -36,6 +36,9 @@ pub mod slot {
     pub const TIME_MACHINES: usize = 0xA4;
 }
 
+/// OUT.EXE data: five 8x8 frames of the blinking cursor (`c655`).
+const CURSOR_FRAMES: usize = 0x3a24;
+
 pub const HITS: usize = 0;
 pub const STR: usize = 1;
 pub const AGI: usize = 2;
@@ -68,6 +71,8 @@ pub struct Assets {
     pub world_tiles: TileSet,
     pub town_tiles: TileSet,
     pub tcd: TownCastleMaps,
+    /// The display the original would have picked (SPEC §15).
+    pub video: crate::gamedir::VideoMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -132,11 +137,14 @@ pub struct Game {
     pub mondain: Option<crate::mondain::MondainFiles>,
     /// OUT was restarted (after space); the turn ends without a world turn.
     pub restarted: bool,
+    /// Next blinking-cursor frame (`3a50`).
+    pub cursor_phase: u8,
 }
 
 impl Game {
     pub fn new(a: Assets, rec: PlayerRecord, seed: u16) -> Self {
         let ow = Overworld::from_save(&rec, seed);
+        let cga = a.video == crate::gamedir::VideoMode::Cga;
         let maps = a.tcd.maps.clone();
         let objs = rec.objects();
         let last = usize::from(rec.u16_at(off::LAST_OBJECT)).min(39);
@@ -147,7 +155,7 @@ impl Game {
             maps,
             ow,
             rec,
-            term: Term::new(),
+            term: Term::with_cga(cga),
             mode: OUTDOORS,
             prev_mode: OUTDOORS,
             loc: 0,
@@ -171,6 +179,7 @@ impl Game {
             player_aux,
             redraw_town: false,
             counter: 0,
+            cursor_phase: 0,
             save_to: None,
             stopped: None,
             dungeon: None,
@@ -455,7 +464,33 @@ impl Game {
     // ------------------------------------------------------------ input
 
     pub fn key(&mut self, io: &mut dyn Io) -> IoResult<u8> {
-        io.key(&self.term)
+        loop {
+            if let Some(k) = self.poll_key(io)? {
+                return Ok(k);
+            }
+        }
+    }
+
+    /// `b97f`/`c5bc`: one keyboard poll, drawing the next frame of the
+    /// blinking cursor first (four frames from OUT.EXE `3a24`, in the text
+    /// colour); a key blanks it (frame 4) and the next poll starts at frame 1.
+    pub fn poll_key(&mut self, io: &mut dyn Io) -> IoResult<Option<u8>> {
+        self.draw_cursor(self.cursor_phase);
+        self.cursor_phase = (self.cursor_phase + 1) & 3;
+        let k = io.poll(&self.term)?;
+        if k.is_some() {
+            self.draw_cursor(4);
+            self.cursor_phase = 1;
+        }
+        Ok(k)
+    }
+
+    fn draw_cursor(&mut self, frame: u8) {
+        let mut rows = [0u8; 8];
+        for (r, v) in rows.iter_mut().enumerate() {
+            *v = self.a.exe.b(CURSOR_FRAMES + frame as usize * 8 + r);
+        }
+        self.term.cursor_frame(rows, TEXT);
     }
 
     pub fn key_upper(&mut self, io: &mut dyn Io) -> IoResult<u8> {
@@ -464,7 +499,12 @@ impl Game {
 
     /// `b9b9`: a key, or 0 after 1500 polls.
     pub fn key_timeout(&mut self, io: &mut dyn Io) -> IoResult<u8> {
-        Ok(io.key_timeout(&self.term)?.to_ascii_uppercase())
+        for _ in 0..io.timeout_polls() {
+            if let Some(k) = self.poll_key(io)? {
+                return Ok(k.to_ascii_uppercase());
+            }
+        }
+        Ok(0)
     }
 
     /// `2141`: a key or a short while.
@@ -528,14 +568,14 @@ impl Game {
         if self.hits() <= 0 || self.food() <= 0 {
             self.death(io)?;
         }
-        self.term.print_at(0, 24, ">");
+        self.term.ornament_left(0, 24);
         self.term.cursor(1, 24);
         let mut idle = 0;
         let key = loop {
             if self.mode == OUTDOORS {
                 self.draw_world();
             }
-            match io.poll(&self.term)? {
+            match self.poll_key(io)? {
                 Some(k) => break k,
                 None => {
                     self.counter = self.counter.wrapping_add(1);

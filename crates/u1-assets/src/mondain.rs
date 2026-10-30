@@ -417,7 +417,7 @@ impl Lair<'_> {
     }
 
     fn prompt(&mut self) {
-        self.g.term.print_at(0, 24, ">");
+        self.g.term.ornament_left(0, 24);
         self.g.term.cursor(1, 24);
     }
 

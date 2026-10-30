@@ -34,7 +34,7 @@ const TICK: Duration = Duration::from_micros(54_925);
 const DEFAULT_POS: (u16, u16) = (49, 40);
 
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
-          [--mode ega|t1k|cga] [--scale N] [--save-to FILE]
+          [--mode ega|t1k|cga | C] [--font FILE] [--scale N] [--save-to FILE]
           [--screenshot out.png [--keys TEXT] [--counter N]]
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
@@ -54,6 +54,7 @@ struct Args {
     screenshot: Option<PathBuf>,
     keys: String,
     counter: u32,
+    font: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -70,6 +71,7 @@ fn parse_args() -> Result<Args, String> {
         screenshot: None,
         keys: String::new(),
         counter: 0,
+        font: std::env::var_os("U1_FONT").map(PathBuf::from),
     };
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
@@ -100,8 +102,12 @@ fn parse_args() -> Result<Args, String> {
             "--save-to" => a.save_to = Some(v()?.into()),
             "--screenshot" => a.screenshot = Some(v()?.into()),
             "--keys" => a.keys = v()?,
+            "--font" => a.font = Some(v()?.into()),
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
+            // The original's only video choice: a first argument starting
+            // with C forces CGA (`ULTIMA C`).
+            c if !c.starts_with('-') && c.to_ascii_uppercase().starts_with('C') => a.mode = Some(VideoMode::Cga),
             other => return Err(format!("unknown argument {other}\n{USAGE}")),
         }
     }
@@ -121,6 +127,10 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 
 fn load(a: &Args) -> Result<(Game, [Rgb; 16]), String> {
     let e = |e: u1_assets::error::AssetError| e.to_string();
+    if let Some(p) = &a.font {
+        let b = std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?;
+        u1_assets::font::install(u1_assets::font::Font::parse(&b).map_err(|e| format!("{}: {e}", p.display()))?);
+    }
     let g = GameDir::new(&a.game_dir).map_err(e)?;
     let mode = a.mode.or_else(|| g.detect_video_mode()).ok_or("no tile files found in the game directory")?;
     let exe_bytes = g.read("OUT.EXE").map_err(e)?;
@@ -132,6 +142,7 @@ fn load(a: &Args) -> Result<(Game, [Rgb; 16]), String> {
         world_tiles: g.load_world_tiles(mode).map_err(e)?,
         town_tiles: g.load_town_tiles(mode).map_err(e)?,
         tcd: TownCastleMaps::parse(&g.read("TCD.BIN").map_err(e)?).map_err(e)?,
+        video: mode,
     };
     let palette = if mode == VideoMode::Cga { cga_as_16(&CGA_PALETTE_1_LOW) } else { EGA_PALETTE };
     let save_bytes = match (&a.save, a.player) {

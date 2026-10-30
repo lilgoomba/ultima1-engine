@@ -61,6 +61,12 @@ pub trait Io {
         Ok(0)
     }
 
+    /// How many polls a "key or timeout" read waits (1500 in the original;
+    /// a script's `{w}` stands for the whole timeout).
+    fn timeout_polls(&self) -> u32 {
+        1500
+    }
+
     /// Wait `ticks` of the 18.2 Hz timer.
     fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()>;
 
@@ -153,6 +159,10 @@ impl Io for ScriptIo {
 
     fn key_timeout(&mut self, t: &Term) -> IoResult<u8> {
         Ok(self.poll(t)?.unwrap_or(0))
+    }
+
+    fn timeout_polls(&self) -> u32 {
+        1
     }
 
     fn pause(&mut self, _t: &Term, _ticks: u32) -> IoResult<()> {

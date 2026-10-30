@@ -45,6 +45,7 @@ fn play_with(
         world_tiles: g.load_world_tiles(mode).unwrap(),
         town_tiles: g.load_town_tiles(mode).unwrap(),
         tcd: TownCastleMaps::parse(&g.read("TCD.BIN").unwrap()).unwrap(),
+        video: mode,
     };
     let mut rec = PlayerRecord::parse(&g.read("PLAYER2.U1").ok()?).unwrap();
     rec.set_u16(off::POS_X, x);

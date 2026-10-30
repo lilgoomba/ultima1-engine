@@ -26,6 +26,12 @@ pub struct Term {
     pub pen: (i32, i32),
     /// The EGA palette swapped end for end (MONDAIN.EXE's flash).
     pub inverted: bool,
+    /// CGA mode 4: pixels hold 2-bit values. Colours passed to the drawing
+    /// routines are the EGA ones; [`Term::dc`] turns them into what the
+    /// original's CGA path draws.
+    pub cga: bool,
+    /// Cell holding the blinking cursor's last visible frame, if any.
+    pub blink_at: Option<(usize, usize)>,
 }
 
 impl Default for Term {
@@ -38,9 +44,16 @@ impl Term {
     /// The static frame: blue border, white viewport frame, black viewport,
     /// the message box (left) and the stats box (right) with their labels.
     pub fn new() -> Self {
-        let mut t = Term { px: vec![BLUE; W * H], col: 1, row: 24, pen: (0, 0), inverted: false };
+        Self::with_cga(false)
+    }
+
+    /// The same frame for a CGA (`cga`) or a 16-colour screen.
+    pub fn with_cga(cga: bool) -> Self {
+        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None };
+        t.fill(0, 0, W - 1, H - 1, BLUE);
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
+        t.corners(0, 319);
         t.fill(0, 159, 241, 199, WHITE);
         t.fill(0, 160, 240, 199, BLACK);
         t.fill(246, 159, 319, 199, WHITE);
@@ -58,12 +71,29 @@ impl Term {
         self.row = 24;
     }
 
+    /// Device colour for an EGA colour number. The original keeps its four
+    /// interface colours in variables, set at start-up to 15/1/12/11 on a
+    /// 16-colour screen and 3/2/1/3 on CGA (`b2ae`); any other colour is
+    /// written with only its low two bits on CGA (the plot routine `aa3c`
+    /// masks with 3).
+    pub fn dc(&self, c: u8) -> u8 {
+        if !self.cga {
+            return c;
+        }
+        match c {
+            BLUE => 2,
+            WARN => 1,
+            _ => c & 3,
+        }
+    }
+
     pub fn at(&self, x: usize, y: usize) -> u8 {
         self.px[y * W + x]
     }
 
     /// Filled rectangle, both corners inclusive (clipped to the screen).
     pub fn fill(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, c: u8) {
+        let c = self.dc(c);
         for y in y0..=y1.min(H - 1) {
             for x in x0..=x1.min(W - 1) {
                 self.px[y * W + x] = c;
@@ -73,6 +103,7 @@ impl Term {
 
     /// Straight line between two points (both inclusive).
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: u8) {
+        let c = self.dc(c);
         let (dx, dy) = ((x1 - x0).abs(), -(y1 - y0).abs());
         let (sx, sy) = (if x0 < x1 { 1 } else { -1 }, if y0 < y1 { 1 } else { -1 });
         let (mut x, mut y, mut err) = (x0, y0, dx + dy);
@@ -97,6 +128,7 @@ impl Term {
 
     /// One pixel, set (not mixed), clipped to the screen.
     pub fn plot(&mut self, x: i32, y: i32, c: u8) {
+        let c = self.dc(c);
         if (0..W as i32).contains(&x) && (0..H as i32).contains(&y) {
             self.px[y as usize * W + x as usize] = c;
         }
@@ -160,6 +192,7 @@ impl Term {
             return;
         }
         let (x, y) = (col * 8, row * 8);
+        let attr = self.dc(attr);
         let g = glyph(ch);
         for (r, bits) in g.iter().enumerate() {
             for b in 0..8 {
@@ -243,15 +276,8 @@ impl Term {
 
     fn ornament(&mut self, col: usize, row: usize, mirror: bool) {
         let (x, y) = ((col * 8) as i32, (row * 8) as i32);
-        // A solid triangle in the border colour (the BIOS arrow glyph) ...
-        self.fill(col * 8, row * 8, col * 8 + 7, row * 8 + 7, BLACK);
-        for r in 0..7i32 {
-            let w = 1 + 2 * r.min(6 - r);
-            for i in 0..w.min(7) {
-                let px = if mirror { x + 6 - i } else { x + 1 + i };
-                self.px[(y + r) as usize * W + px as usize] = BLUE;
-            }
-        }
+        // The font's arrow glyph (CP437 0x10 / 0x11) in the border colour ...
+        self.put_char(col, row, if mirror { '\u{11}' } else { '\u{10}' }, BLUE);
         // ... outlined in white, with a blue upright on the flat side.
         if mirror {
             self.line(x + 7, y, x, y + 3, WHITE);
@@ -277,6 +303,29 @@ impl Term {
     pub fn restore_border(&mut self, x0: usize, x1: usize) {
         self.fill(x0, 0, x1, 6, BLUE);
         self.fill(x0, 7, x1, 7, WHITE);
+        self.corners(x0, x1);
+    }
+
+    /// The rounded top corners of the screen (black, 6/4/3/2/1/1 pixels
+    /// wide on rows 0..=5) and the four missing corner pixels of the
+    /// viewport frame, both as the original's frame shows them; only the
+    /// parts inside columns `x0..=x1` are drawn.
+    fn corners(&mut self, x0: usize, x1: usize) {
+        let inside = |x: usize| x >= x0 && x <= x1;
+        for (y, n) in [6usize, 4, 3, 2, 1, 1].into_iter().enumerate() {
+            for i in 0..n {
+                for x in [i, W - 1 - i] {
+                    if inside(x) {
+                        self.px[y * W + x] = self.dc(BLACK);
+                    }
+                }
+            }
+        }
+        for (x, y) in [(7, 7), (312, 7), (7, 152), (312, 152)] {
+            if inside(x) {
+                self.px[y * W + x] = self.dc(BLUE);
+            }
+        }
     }
 
     /// Clear the viewport to black.
@@ -307,6 +356,22 @@ impl Term {
     }
 
     /// Blit an indexed `w`x`h` image at (x,y), colours masked to 4 bits.
+    /// `c655`: one frame of the blinking cursor at the text cursor; `rows`
+    /// as stored in OUT.EXE (bit 0 is the leftmost pixel), unset pixels black.
+    pub fn cursor_frame(&mut self, rows: [u8; 8], colour: u8) {
+        if self.col >= 40 || self.row >= 25 {
+            return;
+        }
+        let (x, y, c) = (self.col * 8, self.row * 8, self.dc(colour));
+        self.blink_at = if rows == [0; 8] { None } else { Some((self.col, self.row)) };
+        for (r, bits) in rows.iter().enumerate() {
+            for b in 0..8 {
+                self.px[(y + r) * W + x + b] = if bits >> b & 1 != 0 { c } else { BLACK };
+            }
+        }
+    }
+
+    /// Tile pixels are device values already (2-bit on CGA).
     pub fn blit(&mut self, x: usize, y: usize, w: usize, h: usize, pixels: &[u8], shift: usize) {
         for py in 0..h {
             for px in 0..w {
@@ -326,14 +391,38 @@ impl Term {
                 for (r, c) in cell.iter_mut().enumerate() {
                     for b in 0..8 {
                         let p = self.px[(row * 8 + r) * W + col * 8 + b];
-                        if p != BLACK && p != BLUE {
+                        if p != BLACK && p != self.dc(BLUE) {
                             *c |= 0x80 >> b;
                         }
                     }
                 }
-                (0x20u8..0x7F).map(char::from).find(|&ch| glyph(ch) == cell).unwrap_or('#')
+                if let Some(ch) = (0x20u8..0x7F).map(char::from).find(|&ch| glyph(ch) == cell) {
+                    ch
+                } else if self.blink_at == Some((col, row)) {
+                    ' '
+                } else if cell == Self::ornament_cell() {
+                    '>'
+                } else {
+                    '#'
+                }
             })
             .collect::<String>()
+    }
+
+    /// The non-blue pixels of the left ornament (read back as '>').
+    fn ornament_cell() -> [u8; 8] {
+        let mut t = Term::new();
+        t.ornament_left(0, 24);
+        let mut cell = [0u8; 8];
+        for (r, c) in cell.iter_mut().enumerate() {
+            for b in 0..8 {
+                let p = t.px[(192 + r) * W + b];
+                if p != BLACK && p != BLUE {
+                    *c |= 0x80 >> b;
+                }
+            }
+        }
+        cell
     }
 
     /// Text of a message-window row (columns 0..30), trailing blanks cut.

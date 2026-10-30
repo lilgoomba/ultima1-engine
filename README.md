@@ -213,6 +213,9 @@ passes by itself, as in the original. Options:
   to end a timed wait. `--counter N` sets the animation counter.
 * `--video enhanced [--pack DIR]`: the optional enhanced video mode
   (below). `--video original` is the default.
+* `--sound original|enhanced|mute`: the original PC-speaker beeps (the
+  default), the optional enhanced sounds (below), or nothing. `--mute` is
+  the same as `--sound mute`.
 
 ```sh
 SDL_VIDEODRIVER=dummy cargo run -p u1 -- --game-dir "/path/to/Ultima1" \
@@ -303,6 +306,37 @@ of original text (including the trademark and conversion credits) and
 the menu borders stay original. Everything else falls back to the
 original art.
 
+### Enhanced sound mode (optional)
+
+The original PC-speaker effects stay the default. `--sound enhanced`
+plays the pack's sounds instead, one per game event:
+
+```sh
+cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --sound enhanced
+cargo run --release -p u1 -- --sound-demo /tmp/demo.wav   # every sound after its original beep
+```
+
+* Sounds are `sounds/<event>.wav` in the pack folder (PCM WAV, any rate;
+  mixed to mono 44.1 kHz by the engine through SDL audio, so they can
+  overlap). Events are finer than the original's ten effects: a hit, a
+  kill and taking damage share effect 2 in the original but have their
+  own sounds here. The list is in `assets/enhanced/sounds/CREDITS`.
+* An event with no file plays the original effect. A few events that are
+  silent in the original (a miss, a dodged blow, launching, docking, the
+  hyperspace jump) only sound in this mode, kept quiet and short.
+* Levels match the beeps: each sound is about as loud as the effect it
+  replaces; footsteps and the star field are soft; townspeople's steps
+  are heard only within 4 squares of you (the original beeps for every
+  one, and still does in the default mode).
+* The game's timing is unchanged: the engine still waits as long as the
+  original effect would have lasted; a longer enhanced sound plays on.
+  The in-game Noise command (N) still turns all sound off and on.
+* There is no music.
+
+Every sound in `assets/enhanced/sounds/` was synthesized for this project
+by a script (oscillators and noise; no recordings or samples, and no
+original game audio) and is licensed CC-BY-SA 4.0 like the art.
+
 Tests that use your own files are skipped unless you point them at your
 install:
 
@@ -327,7 +361,7 @@ crates/u1-assets   asset parsing and game-rules library (no dependencies)
 crates/u1          SDL2 playable overworld
 crates/u1view      SDL2 overworld viewer
 docs/SPEC.md       data-format specification with sources
-assets/enhanced    default asset pack for --video enhanced
+assets/enhanced    default asset pack for --video enhanced and --sound enhanced
 docs/demo.png      demo screenshot (synthetic art)
 ```
 

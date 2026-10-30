@@ -183,6 +183,159 @@ pub fn effect(n: u8) -> Effect {
     b.end()
 }
 
+/// What a sound is for. The original only knows the ten effect numbers;
+/// the engine also says which game event asked for one, so the optional
+/// enhanced sound mode can give each event its own sound. A few events
+/// (`cue_only`) are silent in the original and only sound in the enhanced
+/// mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Sfx {
+    Bump,
+    Crash,
+    Burn,
+    Error,
+    Hit,
+    Kill,
+    Hurt,
+    Death,
+    Alarm,
+    Explosion,
+    MonsterAttack,
+    Step,
+    NpcStep,
+    Magic,
+    Quest,
+    Resurrect,
+    Victory,
+    EnemySpell,
+    SpellFail,
+    Attack,
+    Laser,
+    EnemyLaser,
+    Starfield,
+    Miss,
+    Dodge,
+    Launch,
+    Dock,
+    Hyperjump,
+}
+
+/// How far (in squares, either way) a townsperson's step is heard in the
+/// enhanced sound mode.
+pub const NPC_STEP_RANGE: i32 = 4;
+
+impl Sfx {
+    pub const ALL: [Sfx; 28] = [
+        Sfx::Bump,
+        Sfx::Crash,
+        Sfx::Burn,
+        Sfx::Error,
+        Sfx::Hit,
+        Sfx::Kill,
+        Sfx::Hurt,
+        Sfx::Death,
+        Sfx::Alarm,
+        Sfx::Explosion,
+        Sfx::MonsterAttack,
+        Sfx::Step,
+        Sfx::NpcStep,
+        Sfx::Magic,
+        Sfx::Quest,
+        Sfx::Resurrect,
+        Sfx::Victory,
+        Sfx::EnemySpell,
+        Sfx::SpellFail,
+        Sfx::Attack,
+        Sfx::Laser,
+        Sfx::EnemyLaser,
+        Sfx::Starfield,
+        Sfx::Miss,
+        Sfx::Dodge,
+        Sfx::Launch,
+        Sfx::Dock,
+        Sfx::Hyperjump,
+    ];
+
+    /// The file stem in a sound pack (`sounds/<name>.wav`).
+    pub fn name(self) -> &'static str {
+        match self {
+            Sfx::Bump => "bump",
+            Sfx::Crash => "crash",
+            Sfx::Burn => "burn",
+            Sfx::Error => "error",
+            Sfx::Hit => "hit",
+            Sfx::Kill => "kill",
+            Sfx::Hurt => "hurt",
+            Sfx::Death => "death",
+            Sfx::Alarm => "alarm",
+            Sfx::Explosion => "explosion",
+            Sfx::MonsterAttack => "monster_attack",
+            Sfx::Step => "step",
+            Sfx::NpcStep => "npc_step",
+            Sfx::Magic => "magic",
+            Sfx::Quest => "quest",
+            Sfx::Resurrect => "resurrect",
+            Sfx::Victory => "victory",
+            Sfx::EnemySpell => "enemy_spell",
+            Sfx::SpellFail => "spell_fail",
+            Sfx::Attack => "attack",
+            Sfx::Laser => "laser",
+            Sfx::EnemyLaser => "enemy_laser",
+            Sfx::Starfield => "starfield",
+            Sfx::Miss => "miss",
+            Sfx::Dodge => "dodge",
+            Sfx::Launch => "launch",
+            Sfx::Dock => "dock",
+            Sfx::Hyperjump => "hyperjump",
+        }
+    }
+
+    /// The original effect played for this event, or `None` for the
+    /// events the original leaves silent.
+    pub fn beep(self) -> Option<u8> {
+        Some(match self {
+            Sfx::Bump | Sfx::Crash | Sfx::Burn => 0,
+            Sfx::Error => 1,
+            Sfx::Hit | Sfx::Kill | Sfx::Hurt | Sfx::Death | Sfx::Alarm | Sfx::Explosion => 2,
+            Sfx::MonsterAttack => 3,
+            Sfx::Step | Sfx::NpcStep => 4,
+            Sfx::Magic | Sfx::Quest | Sfx::Resurrect | Sfx::Victory | Sfx::EnemySpell => 5,
+            Sfx::SpellFail => 6,
+            Sfx::Attack => 7,
+            Sfx::Laser | Sfx::EnemyLaser => 8,
+            Sfx::Starfield => 9,
+            Sfx::Miss | Sfx::Dodge | Sfx::Launch | Sfx::Dock | Sfx::Hyperjump => return None,
+        })
+    }
+
+    /// The event assumed for a bare effect number (its commonest use).
+    pub fn default_for(n: u8) -> Sfx {
+        match n {
+            0 => Sfx::Bump,
+            1 => Sfx::Error,
+            2 => Sfx::Hit,
+            3 => Sfx::MonsterAttack,
+            4 => Sfx::Step,
+            5 => Sfx::Magic,
+            6 => Sfx::SpellFail,
+            7 => Sfx::Attack,
+            8 => Sfx::Laser,
+            _ => Sfx::Starfield,
+        }
+    }
+
+    /// Whether a townsperson's step `dx`, `dy` squares from the player
+    /// is near enough for the enhanced sound mode to play (the original
+    /// beeps for every step).
+    pub fn npc_step_heard(dx: i32, dy: i32) -> bool {
+        dx.abs().max(dy.abs()) <= NPC_STEP_RANGE
+    }
+
+    pub fn cue_only(self) -> bool {
+        self.beep().is_none()
+    }
+}
+
 /// Renders an effect as signed 16-bit mono samples at `rate` Hz, `cpu_hz`
 /// cycles per second, with the given amplitude. Each sample is the average
 /// level over its time, which keeps the high-pitched parts from aliasing
@@ -263,6 +416,23 @@ mod tests {
                 hz(*halves.last().unwrap())
             );
         }
+    }
+
+    #[test]
+    fn every_effect_has_an_event_and_names_are_unique() {
+        for n in 0..EFFECTS {
+            assert_eq!(Sfx::default_for(n).beep(), Some(n));
+        }
+        let mut names: Vec<&str> = Sfx::ALL.iter().map(|s| s.name()).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), Sfx::ALL.len());
+    }
+
+    #[test]
+    fn only_near_townspeople_steps_are_heard() {
+        assert!(Sfx::npc_step_heard(0, 1) && Sfx::npc_step_heard(-4, 4) && Sfx::npc_step_heard(4, -2));
+        assert!(!Sfx::npc_step_heard(5, 0) && !Sfx::npc_step_heard(0, -5) && !Sfx::npc_step_heard(-12, 9));
     }
 
     #[test]

@@ -11,6 +11,7 @@
 //! Behaviour marked "verified from original executable" in SPEC §9 was
 //! checked by reference study of the original; the code is our own.
 
+use crate::sound::Sfx;
 use std::path::PathBuf;
 
 use crate::exe::{m, Exe};
@@ -322,8 +323,21 @@ impl Game {
     // ------------------------------------------------------------ output
 
     pub fn snd(&mut self, io: &mut dyn Io, n: u8) {
+        self.snd_ev(io, n, crate::sound::Sfx::default_for(n));
+    }
+
+    /// Effect `n`, played for the event `ev` (only the enhanced sound mode
+    /// tells events apart).
+    pub fn snd_ev(&mut self, io: &mut dyn Io, n: u8, ev: crate::sound::Sfx) {
         if self.rec.u16_at(off::SOUND) != 0 {
-            io.sound(n);
+            io.sound_ev(n, ev);
+        }
+    }
+
+    /// An event the original plays no sound for (enhanced sound only).
+    pub fn cue(&mut self, io: &mut dyn Io, ev: crate::sound::Sfx) {
+        if self.rec.u16_at(off::SOUND) != 0 {
+            io.cue(ev);
         }
     }
 
@@ -790,10 +804,11 @@ impl Game {
                 } else {
                     self.term.print(" ");
                 }
+                self.cue(io, Sfx::Dodge);
                 self.sayln(m::MISSED);
             }
             Some(d) => {
-                self.snd(io, 2);
+                self.snd_ev(io, 2, Sfx::Hurt);
                 if name.len() > 10 {
                     self.nl();
                     self.say(m::HIT_EX);
@@ -883,6 +898,7 @@ impl Game {
     fn launch(&mut self, io: &mut dyn Io) -> IoResult<()> {
         self.ow.transport = self.transport();
         self.sync_record();
+        self.cue(io, crate::sound::Sfx::Launch);
         crate::space::run_space(self, io)?;
         self.restart_out();
         Ok(())
@@ -981,7 +997,7 @@ impl Game {
         self.term.clear_view();
         self.draw_death_picture();
         for _ in 0..3 {
-            self.snd(io, 2);
+            self.snd_ev(io, 2, Sfx::Death);
         }
         let name = self.rec.name();
         let dead = self.s(m::THOU_ART_DEAD);
@@ -1011,7 +1027,7 @@ impl Game {
         self.set(off::READY_WEAPON, 0);
         self.set(off::READY_SPELL, 0);
         self.set(off::READY_ARMOUR, 0);
-        self.snd(io, 5);
+        self.snd_ev(io, 5, Sfx::Resurrect);
         // 8c20: a random grass or forest cell nearby in the same land.
         let (x0, y0) = (self.ow.x, self.ow.y);
         for _ in 0..10_000 {
@@ -1154,7 +1170,7 @@ impl Game {
             if self.w(slot::QUEST + 2 * k) == -1 {
                 self.set(slot::QUEST + 2 * k, 1);
                 self.say(m::QUEST_COMPLETED);
-                self.snd(io, 5);
+                self.snd_ev(io, 5, Sfx::Quest);
                 self.nl();
             }
         }
@@ -1301,11 +1317,13 @@ impl Game {
             }
         }
         if t < 0x13 {
+            self.cue(io, Sfx::Miss);
             self.sayln(m::MISS);
             return Ok(());
         }
         let name = self.a.t.monster_names[rules::monster_kind(t)].clone();
         if self.r(1, 100) > hit {
+            self.cue(io, Sfx::Miss);
             self.say(m::MISSED_THE);
             self.term.print(&name);
             self.sayln(m::EXCL);
@@ -1335,7 +1353,7 @@ impl Game {
         let gold = self.r(1, base * 4) + 10;
         let xp = self.r(2, base * 5);
         self.add(off::EXPERIENCE, xp as i16);
-        self.snd(io, 2);
+        self.snd_ev(io, 2, Sfx::Kill);
         self.draw_world_cell(col, row);
         self.loot(gold as i16, name.len());
         self.show_exp();

@@ -4,6 +4,7 @@
 //! Everything runs on the player record; the strings and bitmaps come
 //! from the user's SPACE.EXE, EGASPACE.BIN and EGAFIGHT.BIN at runtime.
 
+use crate::sound::Sfx;
 use crate::exe::Exe;
 use crate::game::Game;
 use crate::gamedir::GameDir;
@@ -331,6 +332,12 @@ impl<'a> Space<'a> {
     }
     fn snd(&mut self, n: u8) {
         self.g.snd(self.io, n);
+    }
+    fn snd_ev(&mut self, n: u8, ev: Sfx) {
+        self.g.snd_ev(self.io, n, ev);
+    }
+    fn cue(&mut self, ev: Sfx) {
+        self.g.cue(self.io, ev);
     }
     fn rnd(&mut self, lo: i16, hi: i16) -> i16 {
         self.rng.range(lo as u16, hi as u16) as i16
@@ -1080,12 +1087,12 @@ impl<'a> Space<'a> {
         let x0 = self.ex + self.wd(d::HIT_W + 2 * sz) / 2;
         let y0 = self.ey + self.wd(d::HIT_H + 2 * sz);
         self.g.term.line_u1(x0.into(), y0.into(), tx, ty, C_RED);
-        self.snd(8);
+        self.snd_ev(8, Sfx::EnemyLaser);
         self.delay(2)?;
         self.g.term.line_u1(x0.into(), y0.into(), tx, ty, BLACK);
         if r < 64 {
             self.println(d::BEEN_HIT);
-            self.snd(2);
+            self.snd_ev(2, Sfx::Hurt);
             let n = self.slot().shield.min(321);
             self.use_shield(n);
             if self.slot().shield == 0 {
@@ -1151,7 +1158,7 @@ impl<'a> Space<'a> {
         }
         if self.docked_port(self.cur).is_some() && dir != 4 {
             self.println(d::CRUNCH);
-            self.snd(0);
+            self.snd_ev(0, Sfx::Crash);
             self.crash_damage();
             if self.slot().shield == 0 {
                 self.println(d::DRAINED);
@@ -1212,7 +1219,7 @@ impl<'a> Space<'a> {
         }
         self.println(d::CRUNCH);
         self.prompt();
-        self.snd(0);
+        self.snd_ev(0, Sfx::Crash);
         self.crash_damage();
         if self.slot().shield == 0 {
             self.println(d::DRAINED);
@@ -1227,6 +1234,7 @@ impl<'a> Space<'a> {
     fn dock(&mut self) -> R<()> {
         let count = self.sec().slots.iter().filter(|s| s.ty > -1).count();
         self.println(d::DOCKED);
+        self.cue(Sfx::Dock);
         self.vx = 0;
         self.vy = 0;
         if self.g.rec.u16_at(off::READY_ARMOUR) < 4 {
@@ -1404,7 +1412,7 @@ impl<'a> Space<'a> {
         }
         let (x0, y0) = (self.wd(d::HIT_X0 + 2 * sz), self.wd(d::HIT_Y0 + 2 * sz));
         if x0 <= dx && dx <= w && y0 <= dy && dy <= h {
-            self.snd(2);
+            self.snd_ev(2, Sfx::Explosion);
             self.println(d::HIT);
             self.g.add(off::EXPERIENCE, 100);
             self.show_exp();
@@ -1460,6 +1468,7 @@ impl<'a> Space<'a> {
         }
         self.grow = 20;
         self.puts(d::DOTS3);
+        self.cue(Sfx::Hyperjump);
         let s = self.timer() | 0xbbbb;
         self.dvx = 0;
         self.dvy = 0;

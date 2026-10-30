@@ -356,9 +356,10 @@ behind = true
 # Batch 4 (for review): the start-up screens. The Origin logo, the
 # credits text and every original word stay as drawn; these only replace
 # the castle picture and sit behind the text screens.
-[screen.castle]   # the start-up castle, whole, with its own waving flags
+[screen.castle]   # the start-up castle, whole; frame N has both pennants in
+                  # the original's flag frame N, and each flag follows the
+                  # original's random choice for it (EGA only)
 frames = ["screens/castle0.png", "screens/castle1.png", "screens/castle2.png"]
-fps = 5
 
 [screen.title]    # the text title shown while the castle loads
 file = "screens/title.png"

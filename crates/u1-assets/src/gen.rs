@@ -258,8 +258,6 @@ impl<'a> Gen<'a> {
     fn key(&mut self, t: &mut Term, io: &mut dyn Io, colour: u8) -> IoResult<u8> {
         loop {
             self.cursor(t, colour);
-            // The inside of the border, for the enhanced pack's backdrop.
-            t.mark(ArtId::Screen("menu"), None, 0, 8, 8, 0x130, 0xb8);
             match io.poll_now(t)? {
                 None => io.pause(t, 3)?,
                 Some(k) => {
@@ -277,6 +275,10 @@ impl<'a> Gen<'a> {
     pub fn run(&mut self, t: &mut Term, io: &mut dyn Io) -> IoResult<GenEnd> {
         t.fill(0, 0, 0x13f, 0xc7, BLACK);
         self.border(t);
+        // The inside of the border, for the enhanced pack's backdrop: it
+        // stands through every screen of the menu, so none shows the
+        // original black first.
+        t.backdrop = Some((ArtId::Screen("menu"), 8, 8, 0x130, 0xb8));
         loop {
             let k = self.menu(t, io)?;
             match k {
@@ -421,7 +423,7 @@ impl<'a> Gen<'a> {
         }
         self.at(t, 11, 8, o::WAIT[0], w);
         self.at(t, 13, 10, o::WAIT[1], w);
-        t.mark(ArtId::Screen("loading"), None, 0, 8, 8, 0x130, 0x90);
+        t.backdrop = Some((ArtId::Screen("loading"), 8, 8, 0x130, 0x90));
     }
 
     fn stat(&self, i: usize) -> u16 {

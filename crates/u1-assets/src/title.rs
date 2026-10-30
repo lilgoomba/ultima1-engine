@@ -248,9 +248,10 @@ impl Intro<'_> {
         self.castle(t, io)
     }
 
-    /// `3e9`: one flag frame at x.
-    fn flag(&mut self, t: &mut Term, x: i32) {
-        let frame = o::FLAGS[(self.rand(1, 0xef) / 0x50).min(2) as usize];
+    /// `3e9`: one flag frame at x; returns which of the three it drew.
+    fn flag(&mut self, t: &mut Term, x: i32) -> u16 {
+        let k = (self.rand(1, 0xef) / 0x50).min(2);
+        let frame = o::FLAGS[k as usize];
         let (on, off) = if self.f.mode == 0 { (2 | RAW, 1 | RAW) } else { (0xa, 0xb) };
         for row in 0..7 {
             for col in 0..7 {
@@ -258,6 +259,7 @@ impl Intro<'_> {
                 t.plot(x + col as i32, 0x37 + row as i32, c);
             }
         }
+        k
     }
 
     /// `b65`: the castle picture with waving flags, about 17 s.
@@ -267,21 +269,27 @@ impl Intro<'_> {
             t.remap = Some(self.f.castle_remap());
         }
         t.px.copy_from_slice(&self.f.castle);
-        keep(t, "castle");
-        let mut key = false;
-        for _ in 0..100 {
-            io.pause(t, 3)?;
-            self.flag(t, 0x7b);
-            keep(t, "castle");
-            if io.poll_now(t)?.is_some() {
-                key = true;
-                break;
+        // The enhanced castle is an EGA picture: CGA and Tandy keep the
+        // original art (the pack has no picture for their castles).
+        let enh = self.f.mode == 1;
+        let mut shown = [0u16; 2];
+        let mark = |t: &mut Term, shown: [u16; 2]| {
+            if enh {
+                keep(t, "castle");
+                t.art_pos((shown[0], shown[1]));
             }
-            self.flag(t, 0xc4);
-            keep(t, "castle");
-            if io.poll_now(t)?.is_some() {
-                key = true;
-                break;
+        };
+        mark(t, shown);
+        let mut key = false;
+        'flags: for _ in 0..100 {
+            io.pause(t, 3)?;
+            for (i, x) in [0x7b, 0xc4].into_iter().enumerate() {
+                shown[i] = self.flag(t, x);
+                mark(t, shown);
+                if io.poll_now(t)?.is_some() {
+                    key = true;
+                    break 'flags;
+                }
             }
         }
         clear(t);

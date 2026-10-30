@@ -293,8 +293,9 @@ frames of his fire spell, and a dim sunrise backdrop behind the closing
 text. The text boxes and the victory box stay original.
 
 Batch 4 (for review) covers the start-up screens: a new castle picture
-for the title with its own "Ultima I" lettering and two waving crimson
-pennants (three frames), a dim starry night behind the text title, a
+for the title with its own "Ultima I" lettering and two crimson
+pennants that wave exactly when the original's flags do (on EGA; the
+CGA and Tandy castles stay original), a dim starry night behind the text title, a
 dusk mountain panorama behind the Origin logo, "Presents", the two
 story pages and the credits, and a dark leather page behind the
 character menu and the "please wait" box. The Origin logo, every line

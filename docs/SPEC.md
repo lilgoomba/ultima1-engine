@@ -1428,16 +1428,24 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   (renewed on every dissolve frame, after "Presents", after each text
   page and on the credits page) and `castle` for the castle picture. The
   castle op is renewed after each flag the original draws, so it stays
-  intact; with it, the pack's picture replaces the whole screen even
-  though the castle uses a palette remap, and the picture's own `frames`
-  (at `fps`) wave its flags instead of the original's random flag
-  frames. The character program (§17) records `menu` over the inside of
-  its border each time it waits for a key (after the cursor frame) and
-  `loading` inside the "please wait" box. `title`, `intro`, `menu` and
-  `loading` are meant as backdrops (`behind = true`), so every original
-  word, line and the logo stay exactly as drawn. Screens drawn between
-  waits (a stat being rolled, a roster being written) show the original
-  until the next wait.
+  intact, and carries which of the three flag frames the original chose
+  for the left and the right flag (its `pos`). With it, the pack's
+  picture replaces the whole screen even though the castle uses a
+  palette remap: the pack's frame N shows both pennants in the
+  original's flag frame N, and the left half of the screen (x < 160) is
+  taken from the left flag's frame, the right half from the right
+  flag's, so each pennant changes exactly when the original's does (no
+  clock). Only the EGA castle is noted: the pack's picture is an EGA
+  picture and, like every picture the pack has no version of, the CGA
+  and Tandy castles (their own pictures and colours) stay original. The
+  character program (§17) sets a standing *backdrop* (`menu` over the
+  inside of its border from its first screen; `loading` inside the
+  "please wait" box): unlike an op it is not dropped by drawing, and
+  shows wherever the region is black until replaced, so screens being
+  drawn between key waits (a stat being rolled, a roster being written)
+  keep it too. `title`, `intro`, `menu` and `loading` are backdrops
+  (`behind = true`), so every original word, line and the logo stay
+  exactly as drawn.
 * **Dungeon view.** The first-person view (§6) is still drawn as the
   original's lines. While drawing, the engine also notes each surface
   between two of the view's vertical edges (wall faces ahead and at the
@@ -1485,8 +1493,7 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   Shots, exhaust, explosions and anything without a picture keep their
   original pixels, over the new background.
 * **Limitations.** The NIF reveal shows the original art until the
-  picture is complete. The castle picture's flags wave by the clock, not
-  in step with the original's random frame choice.
+  picture is complete.
 
 ## Sources
 

@@ -174,6 +174,11 @@ pub struct Term {
     pub dscene: Option<Box<crate::dview::DScene>>,
     /// The space view as pictures, for the enhanced renderer.
     pub sscene: Option<Box<SScene>>,
+    /// A standing backdrop for the enhanced renderer: the pack's
+    /// `behind` picture `id` shows wherever the rectangle (x, y, w, h) is
+    /// black, whatever is drawn there, until it is cleared (the character
+    /// program's screens, which redraw their insides between key waits).
+    pub backdrop: Option<(ArtId, usize, usize, usize, usize)>,
 }
 
 impl Default for Term {
@@ -191,7 +196,7 @@ impl Term {
 
     /// The same frame for a CGA (`cga`) or a 16-colour screen.
     pub fn with_cga(cga: bool) -> Self {
-        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new(), dscene: None, sscene: None };
+        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new(), dscene: None, sscene: None, backdrop: None };
         t.fill(0, 0, W - 1, H - 1, BLUE);
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);

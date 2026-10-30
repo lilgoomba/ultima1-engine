@@ -583,6 +583,24 @@ fn dungeon(out: &mut [u8], orig: &[u8], s: usize, sc: &crate::dview::DScene, pac
                     (bw, bh, x0, y0)
                 };
                 let k = light(o.plane as f32 * 0.7);
+                if let Some([tl, tr, br, bl]) = o.quad {
+                    // A hole keeps the original's four-sided outline: each
+                    // row runs between the slanted sides, and the picture's
+                    // rows run from the top edge to the bottom edge.
+                    let (ty, by) = (tl.1 as f32, br.1 as f32 + 1.0);
+                    let (c, d) = (((ty * sf) as usize).max(cy0), ((by * sf) as usize).min(cy1));
+                    for oy in c..d {
+                        let v = (((oy as f32 + 0.5) / sf - ty) / (by - ty)).clamp(0.0, 0.999);
+                        let xl = tl.0 as f32 + v * (bl.0 - tl.0) as f32;
+                        let xr = tr.0 as f32 + 1.0 + v * (br.0 - tr.0) as f32;
+                        let (a, b) = (((xl * sf) as usize).max(cx0), ((xr * sf) as usize).min(cx1));
+                        for ox in a..b {
+                            let u = (((ox as f32 + 0.5) / sf - xl) / (xr - xl).max(0.5)).clamp(0.0, 0.999);
+                            blend(out, ow, ox, oy, texel(img, u, v), k);
+                        }
+                    }
+                    continue;
+                }
                 let (a, b) = (((l * sf) as usize).max(cx0), (((l + w) * sf) as usize).min(cx1));
                 let (c, d) = (((t * sf) as usize).max(cy0), (((t + h) * sf) as usize).min(cy1));
                 for oy in c..d {

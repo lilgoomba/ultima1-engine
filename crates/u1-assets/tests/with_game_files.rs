@@ -803,6 +803,57 @@ fn enhanced_dungeon_textures_with_fallbacks() {
 }
 
 #[test]
+fn enhanced_dungeon_holes_keep_the_original_outline() {
+    use u1_assets::dungeon::{Cell, DungeonLevel, Item, DUNGEON_SIZE};
+    use u1_assets::dview::{self, DPiece, ViewTables, SOUTH};
+    use u1_assets::enhanced::compose;
+    use u1_assets::term::{dun, ArtId};
+    let Some(g) = game_dir() else { return };
+    let exe = Exe::new(g.read("OUT.EXE").unwrap()).unwrap();
+    let vt = ViewTables::from_exe(&exe);
+    let pal = &u1_assets::palette::EGA_PALETTE;
+    for (cell, id, sec) in [(Cell::LadderUp, dun::HOLE_UP, "dungeon.hole_up"), (Cell::LadderDown, dun::HOLE_DOWN, "dungeon.hole_down")] {
+        let mut lv = DungeonLevel {
+            level: 1,
+            cells: [[Cell::Wall; DUNGEON_SIZE]; DUNGEON_SIZE],
+            items: [[Item::None; DUNGEON_SIZE]; DUNGEON_SIZE],
+            monsters: [[-1; DUNGEON_SIZE]; DUNGEON_SIZE],
+            hp: [[0; DUNGEON_SIZE]; DUNGEON_SIZE],
+            used: [false; 5],
+        };
+        for b in 1..DUNGEON_SIZE - 2 {
+            lv.cells[5][b] = Cell::Empty;
+        }
+        lv.cells[5][3] = cell;
+        let mut t = Term::new();
+        dview::draw(&mut t, &exe, &vt, &lv, 5, 2, SOUTH);
+        let sc = t.dscene.as_ref().unwrap();
+        let Some(DPiece::Obj(h)) = sc.pieces.iter().map(|p| &p.1).find(|p| matches!(p, DPiece::Obj(o) if o.id == ArtId::Dun(id))) else {
+            panic!("no hole")
+        };
+        // Four sides, level top and bottom; the far edge is the narrow one.
+        let [tl, tr, br, bl] = h.quad.expect("hole outline");
+        assert_eq!((tl.1, tr.1, br.1, bl.1), (h.y0, h.y0, h.y1, h.y1));
+        let (top, bot) = (tr.0 - tl.0, br.0 - bl.0);
+        if id == dun::HOLE_UP {
+            assert!(top > bot, "{h:?}");
+        } else {
+            assert!(bot > top, "{h:?}");
+        }
+        let out = compose(&t, pal, &colour_pack(&[("dungeon.wall", [200, 0, 0, 255]), (sec, [0, 0, 230, 255])]), 0);
+        let blue = |x: i32, y: i32| {
+            let p = &out[((y as usize * 2) * 640 + x as usize * 2) * 3..][..3];
+            p[2] > 60 && p[0] == 0 && p[1] == 0
+        };
+        // Inside the outline (left of the ladder) the picture shows; the
+        // box's corners beside the narrow edge stay as they were.
+        assert!(blue((tl.0 + bl.0) / 2 + 4, (h.y0 + h.y1) / 2), "{h:?}");
+        let (cx, cy) = if id == dun::HOLE_UP { (h.x0, h.y1) } else { (h.x0, h.y0) };
+        assert!(!blue(cx, cy), "{h:?}");
+    }
+}
+
+#[test]
 fn enhanced_town_tiles_and_people() {
     use u1_assets::enhanced::compose;
     let Some(g) = play(66, 41, "e") else { return };

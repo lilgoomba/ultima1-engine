@@ -2,9 +2,13 @@
 # docs/SPEC.md §20). Every tile or screen not listed here is drawn from
 # the original art, scaled up nearest-neighbour.
 #
-# Batch 1 (for review): overworld terrain and the player on foot, original
+# Batch 1: overworld terrain and the player on foot, original
 # 16-bit-console-style art, 32x32, one shared 64-colour palette.
-name = "u1-enhanced 16-bit (batch 1)"
+# Batch 2 (for review): towns and castles (16x16 tiles and people, batch
+# 1's palette plus 15 colours) and the first-person dungeon (textures,
+# objects and monster sprites of any size, their own 64-colour palette;
+# the force field is unquantized for its translucent blues).
+name = "u1-enhanced 16-bit (batches 1-2)"
 tile_size = 32
 license = "CC-BY-SA-4.0"
 
@@ -45,3 +49,196 @@ file = "world/dungeon.png"
 
 [world.0x0A] # the player on foot (transparent background)
 file = "world/player.png"
+
+# --- Batch 2: towns and castles. 16x16 pictures (town tiles are 8x8 in
+# the original). Letters (0x18-0x31) stay original. The palette is batch
+# 1's plus 15 colours (purples, pinks, stone and skin tones).
+
+[town.0]    # white castle wall: limestone blocks
+file = "town/wall.png"
+
+[town.1]    # floor: slate cobbles
+file = "town/floor.png"
+
+[town.2]    # water
+file = "town/water.png"
+
+[town.3]    # water shore
+file = "town/water3.png"
+
+[town.4]    # water shore
+file = "town/water4.png"
+
+[town.5]    # water shore
+file = "town/water5.png"
+
+[town.6]    # water shore
+file = "town/water6.png"
+
+[town.7]    # water shore
+file = "town/water7.png"
+
+[town.8]    # water shore
+file = "town/water8.png"
+
+[town.9]    # bush
+file = "town/bush.png"
+
+[town.0xa]  # tree
+file = "town/tree.png"
+
+[town.0xb] # counter, across
+file = "town/counterb.png"
+
+[town.0xc] # counter, down
+file = "town/counterc.png"
+
+[town.0xd] # counter, top end
+file = "town/counterd.png"
+
+[town.0xe] # counter, bottom end
+file = "town/countere.png"
+
+[town.0xf] # counter, left end
+file = "town/counterf.png"
+
+[town.0x10] # counter, right end
+file = "town/counter10.png"
+
+[town.0x11] # guard
+file = "town/guard.png"
+
+[town.0x12] # player
+file = "town/player.png"
+
+[town.0x13] # jester / bard
+file = "town/bard.png"
+
+[town.0x14] # king
+file = "town/king.png"
+
+[town.0x15] # merchant
+file = "town/merchant.png"
+
+[town.0x16] # princess
+file = "town/princess.png"
+
+[town.0x32] # wench
+file = "town/wench.png"
+
+[town.0x17] # grey brick town wall
+file = "town/brick.png"
+
+# --- Batch 2: the first-person dungeon view. Textures are stretched over
+# the original wall, door and floor geometry and shaded by depth; sprites
+# are fitted to the box the original outline covers. Any size is allowed.
+# No [dungeon.secret]: secret doors look exactly like walls, as they do in
+# the original. Traps are invisible in the original and have no art.
+
+[dungeon.wall]
+file = "dungeon/wall.png"
+
+[dungeon.door]
+file = "dungeon/door.png"
+
+[dungeon.floor]
+file = "dungeon/floor.png"
+
+[dungeon.ceiling]
+file = "dungeon/ceiling.png"
+
+[dungeon.ladder_up]
+file = "dungeon/ladder.png"
+
+[dungeon.ladder_down]
+file = "dungeon/ladder.png"
+
+[dungeon.hole_up]
+file = "dungeon/hole_up.png"
+
+[dungeon.hole_down]
+file = "dungeon/hole_down.png"
+
+[dungeon.chest]
+file = "dungeon/chest.png"
+
+[dungeon.coffin]
+file = "dungeon/coffin.png"
+
+[dungeon.field]   # force field, shimmering
+frames = ["dungeon/field0.png", "dungeon/field1.png", "dungeon/field2.png", "dungeon/field3.png"]
+fps = 6
+
+[dmon.11]   # mimic: looks like a chest, as in the original
+file = "dungeon/chest.png"
+
+[dmon.0]   # ranger
+file = "dungeon/m00.png"
+
+[dmon.1]   # skeleton
+file = "dungeon/m01.png"
+
+[dmon.2]   # thief
+file = "dungeon/m02.png"
+
+[dmon.3]   # giant_rat
+file = "dungeon/m03.png"
+
+[dmon.4]   # bat
+file = "dungeon/m04.png"
+
+[dmon.5]   # spider
+file = "dungeon/m05.png"
+
+[dmon.6]   # viper
+file = "dungeon/m06.png"
+
+[dmon.7]   # orc
+file = "dungeon/m07.png"
+
+[dmon.8]   # cyclops
+file = "dungeon/m08.png"
+
+[dmon.9]   # gelatinous_cube
+file = "dungeon/m09.png"
+
+[dmon.10]   # ettin
+file = "dungeon/m10.png"
+
+[dmon.12]   # lizard_man
+file = "dungeon/m12.png"
+
+[dmon.13]   # minotaur
+file = "dungeon/m13.png"
+
+[dmon.14]   # carrion_creeper
+file = "dungeon/m14.png"
+
+[dmon.15]   # tangler
+file = "dungeon/m15.png"
+
+[dmon.16]   # gremlin
+file = "dungeon/m16.png"
+
+[dmon.17]   # wandering_eyes
+file = "dungeon/m17.png"
+
+[dmon.18]   # wraith
+file = "dungeon/m18.png"
+
+[dmon.19]   # lich
+file = "dungeon/m19.png"
+
+[dmon.21]   # mind_whipper
+file = "dungeon/m21.png"
+
+[dmon.22]   # zorn
+file = "dungeon/m22.png"
+
+[dmon.23]   # daemon
+file = "dungeon/m23.png"
+
+[dmon.24]   # balron
+file = "dungeon/m24.png"
+
+# dmon.20 (invisible seeker) has no picture: it is not seen.

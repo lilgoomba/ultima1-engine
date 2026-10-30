@@ -267,8 +267,20 @@ tiles seamlessly; the engine picks one per map cell. The pictures were
 made with an image generator from text descriptions only (no original
 tiles as input), then cut to the pixel grid, made seamless, given a
 shared palette and hand-finished (pennants, smoke, tufts, the
-hand-placed town cottages) with Python/Pillow. Everything else falls back
-to the original art.
+hand-placed town cottages) with Python/Pillow.
+
+Batch 2 (on review) covers towns and castles: the castle wall, the
+cobbled floor, water and its six shore shapes, bush, tree, the six
+counter pieces, the grey brick wall and the people (guard, player,
+jester, king, merchant, princess, wench) as 16×16 pictures; the letters
+of shop signs stay original. It also covers the dungeon view: wall,
+door, floor and ceiling textures, ladders, ceiling and floor holes,
+chest, coffin, an animated force field and sprites for every monster but
+the invisible seeker (the mimic uses the chest). Secret doors use the
+wall on purpose. Town pictures were drawn procedurally or by hand; the
+dungeon textures and monsters were made like batch 1 (generated from
+text only, cut out, outlined and given their own 64-colour palette).
+Everything else falls back to the original art.
 
 Tests that use your own files are skipped unless you point them at your
 install:
@@ -303,7 +315,7 @@ docs/demo.png      demo screenshot (synthetic art)
 1. Finish the remaining open items in SPEC §11.
 2. Space and the Mondain battle.
 3. Optional quality-of-life features, kept apart from the faithful mode.
-4. Enhanced video mode art: towns, castles and dungeons next.
+4. Enhanced video mode art: towns, castles and dungeons (batch 2) under review; space and the Mondain battle next.
 
 ## License
 

@@ -870,3 +870,39 @@ fn enhanced_town_tiles_and_people() {
     assert!(count(&out, [0, 0, 220]) >= 16 * 16);
     assert_eq!(count(&out, [0, 220, 0]), 16 * 16);
 }
+
+/// The space view is noted as pictures for the enhanced renderer: the home
+/// sector's Earth, sun, station and ships (turned to their headings), the
+/// front view's crosshair; none while the sector scan is up.
+#[test]
+fn space_scene_notes_the_pictures_drawn() {
+    use u1_assets::enhanced::compose;
+    use u1_assets::term::space_part as sp;
+    let Some(g) = play_with(40, 40, "B{w12}", 1, &[], on_shuttle) else { return };
+    let sc = g.term.sscene.as_ref().expect("scene kept");
+    assert!(!sc.fp && sc.frame.intact(&g.term));
+    let find = |p| sc.objs.iter().find(|o| o.part == p).unwrap();
+    let e = find(sp::EARTH);
+    assert_eq!((e.x, e.y, e.w, e.h), (60, 75, 21, 18));
+    assert_eq!((find(sp::SUN).x, find(sp::SUN).y, find(sp::STATION).x, find(sp::STATION).y), (140, 70, 200, 100));
+    // The shuttle points west, the docked ships east and north.
+    assert_eq!((find(sp::SHIP0).rot, find(sp::SHIP0 + 1).rot, find(sp::SHIP0 + 2).rot), (3, 1, 0));
+    assert!(sc.objs.iter().all(|o| o.shown(&g.term)));
+    let pal = &u1_assets::palette::EGA_PALETTE;
+    let out = compose(&g.term, pal, &colour_pack(&[("space.starfield", [200, 0, 0, 255]), ("space.earth", [0, 200, 0, 255])]), 0);
+    let at = |x: usize, y: usize| out[(y * 2 * 640 + x * 2) * 3..][..3].to_vec();
+    assert_eq!(at(30, 30), [200, 0, 0]);
+    assert_eq!(at(70, 84), [0, 200, 0]);
+    // The shuttle has no picture: its pixels stay; the frame too.
+    let s0 = find(sp::SHIP0);
+    let i = s0.lit.iter().find(|&&i| g.term.px[i as usize] == 15).unwrap();
+    assert_eq!(at(*i as usize % 320, *i as usize / 320), pal[15].to_vec());
+    assert_eq!(at(9, 9), pal[g.term.at(9, 9) as usize].to_vec());
+    let g = play_with(40, 40, "B{w12}V{w2}", 1, &[], on_shuttle).unwrap();
+    let sc = g.term.sscene.as_ref().unwrap();
+    assert!(sc.fp);
+    let r = sc.objs.iter().find(|o| o.part == sp::RETICLE).unwrap();
+    assert_eq!((r.x, r.y, r.w, r.h), (157, 77, 5, 5));
+    let g = play_with(40, 40, "B{w12}I", 1, &[], on_shuttle).unwrap();
+    assert!(g.term.sscene.is_none());
+}

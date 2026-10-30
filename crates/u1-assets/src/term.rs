@@ -32,6 +32,66 @@ pub enum ArtId {
     Dun(u16),
     /// A dungeon monster seen in the first-person view (monster id).
     DMon(u16),
+    /// A part of the space view ([`SPACE_PARTS`]).
+    Space(u16),
+}
+
+/// Names of the [`ArtId::Space`] parts, by number (manifest `[space.NAME]`).
+pub const SPACE_PARTS: [&str; 12] =
+    ["frame", "cockpit", "starfield", "deep", "earth", "sun", "station", "ship0", "ship1", "ship2", "fighter", "reticle"];
+
+/// [`ArtId::Space`] numbers.
+pub mod space_part {
+    /// The dotted frame around the top-down view.
+    pub const FRAME: u16 = 0;
+    /// The same frame in the front view.
+    pub const COCKPIT: u16 = 1;
+    /// What the black of the top-down view shows.
+    pub const STARFIELD: u16 = 2;
+    /// What the black of the front view shows.
+    pub const DEEP: u16 = 3;
+    pub const EARTH: u16 = 4;
+    pub const SUN: u16 = 5;
+    pub const STATION: u16 = 6;
+    /// Ship types 0-2 (shuttle, ...), pictured nose up.
+    pub const SHIP0: u16 = 7;
+    pub const FIGHTER: u16 = 10;
+    /// The front view's crosshair.
+    pub const RETICLE: u16 = 11;
+}
+
+/// One picture drawn into the space view: which part, turned how, and
+/// the pixels it lit (screen offsets).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SObj {
+    pub part: u16,
+    /// Quarter turns clockwise from nose up.
+    pub rot: u8,
+    pub x: usize,
+    pub y: usize,
+    pub w: usize,
+    pub h: usize,
+    pub lit: Vec<u32>,
+}
+
+impl SObj {
+    /// Most of its pixels are still lit (stars and shots may cross it;
+    /// an erased picture is gone).
+    pub fn shown(&self, t: &Term) -> bool {
+        let on = self.lit.iter().filter(|&&i| t.px[i as usize] != 0).count();
+        !self.lit.is_empty() && on * 4 >= self.lit.len() * 3
+    }
+}
+
+/// The space view as pictures, for the enhanced renderer (used while its
+/// frame is intact).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SScene {
+    /// Front view (else top-down).
+    pub fp: bool,
+    /// The top bar of the frame as drawn.
+    pub frame: ArtOp,
+    pub objs: Vec<SObj>,
 }
 
 /// Names of the [`ArtId::Dun`] parts, by number (manifest `[dungeon.NAME]`).
@@ -112,6 +172,8 @@ pub struct Term {
     /// The last first-person dungeon view as surfaces and objects, for the
     /// enhanced renderer (shown while its `Screen("dungeon")` note is intact).
     pub dscene: Option<Box<crate::dview::DScene>>,
+    /// The space view as pictures, for the enhanced renderer.
+    pub sscene: Option<Box<SScene>>,
 }
 
 impl Default for Term {
@@ -129,7 +191,7 @@ impl Term {
 
     /// The same frame for a CGA (`cga`) or a 16-colour screen.
     pub fn with_cga(cga: bool) -> Self {
-        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new(), dscene: None };
+        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new(), dscene: None, sscene: None };
         t.fill(0, 0, W - 1, H - 1, BLUE);
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
@@ -492,6 +554,50 @@ impl Term {
     pub fn art_pos(&mut self, pos: (u16, u16)) {
         if let Some(o) = self.art.last_mut() {
             o.pos = Some(pos);
+        }
+    }
+
+    /// Start a new space scene once its frame is drawn (`fp`: front view).
+    pub fn space_begin(&mut self, fp: bool) {
+        let (x, y, w, h) = (8, 8, 304, 8);
+        let mut px = Vec::with_capacity(w * h);
+        for r in y..y + h {
+            px.extend_from_slice(&self.px[r * W + x..r * W + x + w]);
+        }
+        let frame = ArtOp { id: ArtId::Space(space_part::FRAME), under: None, shift: 0, pos: None, x, y, w, h, px };
+        self.sscene = Some(Box::new(SScene { fp, frame, objs: Vec::new() }));
+    }
+
+    /// Note a space picture drawn over the pixels `lit`. With `toggle`
+    /// (XOR drawing) the same picture drawn again is its erasure; `only`
+    /// keeps one picture of this part.
+    pub fn space_obj(&mut self, part: u16, rot: u8, lit: Vec<u32>, toggle: bool, only: bool) {
+        let Some(sc) = self.sscene.as_mut() else { return };
+        if lit.is_empty() {
+            return;
+        }
+        let (mut x0, mut y0, mut x1, mut y1) = (W, H, 0, 0);
+        for &i in &lit {
+            let (x, y) = (i as usize % W, i as usize / W);
+            (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+        }
+        let o = SObj { part, rot, x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, lit };
+        if toggle {
+            if let Some(i) = sc.objs.iter().position(|p| p.part == part && p.rot == rot && p.lit == o.lit) {
+                sc.objs.remove(i);
+                return;
+            }
+        }
+        if only {
+            sc.objs.retain(|p| p.part != part);
+        }
+        sc.objs.push(o);
+    }
+
+    /// Forget space pictures of `part` (erased).
+    pub fn space_drop(&mut self, part: u16) {
+        if let Some(sc) = self.sscene.as_mut() {
+            sc.objs.retain(|p| p.part != part);
         }
     }
 

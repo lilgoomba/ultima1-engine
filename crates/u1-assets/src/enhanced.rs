@@ -39,12 +39,15 @@
 //!
 //! Sections are `world.N`, `town.N`, `mond.N` (decimal or `0x` tile
 //! numbers as in SPEC §3.2-3.4), `screen.NAME`, `dungeon.PART`
-//! ([`crate::term::DUN_PARTS`]) and `dmon.N` (monster kinds 0-24).
+//! ([`crate::term::DUN_PARTS`]), `dmon.N` (monster kinds 0-24) and
+//! `space.PART` ([`crate::term::SPACE_PARTS`]; any size: the frame and the
+//! backgrounds are stretched over theirs, ships are drawn nose up and
+//! turned to their heading).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::term::{dun, ArtId, Term, DUN_PARTS, H, W};
+use crate::term::{dun, space_part as sp, ArtId, Term, DUN_PARTS, H, SPACE_PARTS, W};
 
 /// An RGBA picture.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -237,6 +240,7 @@ pub fn parse_id(section: &str) -> Option<ArtId> {
         },
         "dungeon" => DUN_PARTS.iter().position(|p| *p == n).map(|i| ArtId::Dun(i as u16)),
         "dmon" => num().filter(|&i| i < 25).map(ArtId::DMon),
+        "space" => SPACE_PARTS.iter().position(|p| *p == n).map(|i| ArtId::Space(i as u16)),
         _ => None,
     }
 }
@@ -344,7 +348,7 @@ impl Pack {
                 ArtId::World(_) | ArtId::Mond(_) => Some((16 * s, 16 * s)),
                 ArtId::Town(_) => Some((8 * s, 8 * s)),
                 ArtId::Screen(_) => Some((W * s, 168 * s)),
-                ArtId::Dun(_) | ArtId::DMon(_) => None,
+                ArtId::Dun(_) | ArtId::DMon(_) | ArtId::Space(_) => None,
             };
             let mut files = Vec::new();
             let mut vfiles = Vec::new();
@@ -615,6 +619,89 @@ fn dungeon(out: &mut [u8], orig: &[u8], s: usize, sc: &crate::dview::DScene, pac
     }
 }
 
+/// Draw `img` stretched over the screen rectangle `(x, y, w, h)` (original
+/// pixels; `rot` quarter turns clockwise), only where `keep` allows.
+#[allow(clippy::too_many_arguments)]
+fn stretch(out: &mut [u8], s: usize, img: &Rgba, r: (f32, f32, f32, f32), rot: u8, keep: impl Fn(usize, usize) -> bool) {
+    let ow = W * s;
+    let sf = s as f32;
+    let (x, y, w, h) = r;
+    let (a, b) = (((x * sf).max(0.0)) as usize, (((x + w) * sf).min(ow as f32)) as usize);
+    let (c, d) = (((y * sf).max(0.0)) as usize, (((y + h) * sf).min((H * s) as f32)) as usize);
+    for oy in c..d {
+        let v = ((oy as f32 + 0.5) / sf - y) / h;
+        for ox in a..b {
+            if !keep(ox / s, oy / s) {
+                continue;
+            }
+            let u = ((ox as f32 + 0.5) / sf - x) / w;
+            let (su, sv) = match rot & 3 {
+                0 => (u, v),
+                1 => (v, 1.0 - u),
+                2 => (1.0 - u, 1.0 - v),
+                _ => (1.0 - v, u),
+            };
+            blend(out, ow, ox, oy, texel(img, su.clamp(0.0, 0.999), sv.clamp(0.0, 0.999)), 1.0);
+        }
+    }
+}
+
+/// Repaint the space view from its scene: the frame, a background where
+/// the original is black (and under the pictures it has), the pictures
+/// turned and fitted to the boxes the original drew, and soft stars.
+/// Shots, flames and anything unknown keep their original pixels.
+fn space(out: &mut [u8], s: usize, t: &Term, sc: &crate::term::SScene, pack: &Pack, ms: u64) {
+    let get = |p: u16| pack.entries.get(&ArtId::Space(p)).map(|e| Pack::pick(e, None, 0, 0, ms));
+    let interior = |x: usize, y: usize| (16..=303).contains(&x) && (16..=143).contains(&y);
+    let frame = if sc.fp { get(sp::COCKPIT).or_else(|| get(sp::FRAME)) } else { get(sp::FRAME) };
+    if let Some(f) = frame {
+        stretch(out, s, f, (8.0, 8.0, 304.0, 144.0), 0, |x, y| !interior(x, y));
+    }
+    let shown: Vec<_> = sc.objs.iter().filter(|o| o.shown(t) && pack.entries.contains_key(&ArtId::Space(o.part))).collect();
+    let mut under = vec![false; W * H];
+    for o in &shown {
+        for &i in &o.lit {
+            under[i as usize] = true;
+        }
+    }
+    let back = if sc.fp { get(sp::DEEP).or_else(|| get(sp::STARFIELD)) } else { get(sp::STARFIELD) };
+    if let Some(b) = back {
+        stretch(out, s, b, (16.0, 16.0, 288.0, 128.0), 0, |x, y| interior(x, y) && (t.px[y * W + x] == 0 || under[y * W + x]));
+        // Lone white pixels (the front view's stars) as soft points.
+        let ow = W * s;
+        for y in 17..143 {
+            for x in 17..303 {
+                let i = y * W + x;
+                if t.px[i] != 15 || under[i] {
+                    continue;
+                }
+                if [i - W - 1, i - W, i - W + 1, i - 1, i + 1, i + W - 1, i + W, i + W + 1].iter().any(|&j| t.px[j] != 0) {
+                    continue;
+                }
+                let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
+                for oy in (y - 1) * s..(y + 2) * s {
+                    for ox in (x - 1) * s..(x + 2) * s {
+                        let (dx, dy) = ((ox as f32 + 0.5) / s as f32 - cx, (oy as f32 + 0.5) / s as f32 - cy);
+                        let a = (1.0 - (dx * dx + dy * dy).sqrt() / 1.3).clamp(0.0, 1.0);
+                        blend(out, ow, ox, oy, [235, 240, 255, (a * 255.0) as u8], 1.0);
+                    }
+                }
+            }
+        }
+    }
+    for o in &shown {
+        let Some(img) = get(o.part) else { continue };
+        // The crosshair's picture is a little larger than its plus.
+        let g = if o.part == sp::RETICLE { 3.0 } else { 0.0 };
+        let (bw, bh) = (o.w as f32 + 2.0 * g, o.h as f32 + 2.0 * g);
+        let (iw, ih) = if o.rot & 1 == 1 { (img.h as f32, img.w as f32) } else { (img.w as f32, img.h as f32) };
+        let k = (bw / iw).min(bh / ih);
+        let (w, h) = (iw * k, ih * k);
+        let r = (o.x as f32 - g + (bw - w) / 2.0, o.y as f32 - g + (bh - h) / 2.0, w, h);
+        stretch(out, s, img, r, o.rot, |x, y| interior(x, y));
+    }
+}
+
 /// The screen at `pack.scale()` times 320x200 as RGB: the original scaled
 /// up nearest-neighbour, with the pack's art over every intact region
 /// whose picture it has. `ms` drives clock animations.
@@ -647,6 +734,11 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
             }
         }
     };
+    if let Some(sc) = &t.sscene {
+        if sc.frame.intact(t) {
+            space(&mut out, s, t, sc, pack, ms);
+        }
+    }
     for op in &t.art {
         if op.id == ArtId::Screen("dungeon") {
             if let Some(sc) = &t.dscene {
@@ -755,6 +847,13 @@ file = "x.png"
         // The 8x8 town tile was given at 8x8 and is blown up to 16x16.
         assert_eq!((p.entries[&ArtId::Town(1)].frames[0].w, p.entries[&ArtId::Town(1)].frames[0].h), (16, 16));
         assert_eq!(p.warnings.len(), 2, "{:?}", p.warnings);
+    }
+
+    #[test]
+    fn space_sections() {
+        assert_eq!(parse_id("space.ship1"), Some(ArtId::Space(8)));
+        assert_eq!(parse_id("space.reticle"), Some(ArtId::Space(sp::RETICLE)));
+        assert_eq!(parse_id("space.planet"), None);
     }
 
     #[test]

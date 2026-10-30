@@ -10,7 +10,7 @@ use crate::gamedir::GameDir;
 use crate::io::{Halt, Io, IoResult};
 use crate::rng::U1Rng;
 use crate::save::off;
-use crate::term::{BLACK, RAW, TEXT, W};
+use crate::term::{space_part as sp, BLACK, RAW, TEXT, W};
 
 /// Size of the supported SPACE.EXE.
 pub const SPACE_EXE_SIZE: usize = 39824;
@@ -259,6 +259,9 @@ pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
     let mut s = Space::new(g, io, &files);
     let r = s.main();
     let died = s.g.hits() <= 0;
+    if !matches!(r, Err(Stop::Halt)) {
+        s.g.term.sscene = None;
+    }
     drop(s);
     g.space = Some(files);
     match r {
@@ -493,6 +496,7 @@ impl<'a> Space<'a> {
             b'N' => self.cmd_noise(),
             b'V' => self.cmd_view(),
             b'Z' => {
+                self.g.term.sscene = None;
                 self.g.cmd_ztats(self.io)?;
                 self.redraw = true;
                 self.redrew = true;
@@ -680,15 +684,23 @@ impl<'a> Space<'a> {
         }
     }
 
-    fn bitmap(&mut self, base: usize, w: usize, h: usize, x: i16, y: i16, col: impl Fn(i16) -> Option<u8>) {
+    /// Plot a picture from SPACE.EXE and note it as space part `part`.
+    #[allow(clippy::too_many_arguments)]
+    fn bitmap(&mut self, part: u16, base: usize, w: usize, h: usize, x: i16, y: i16, col: impl Fn(i16) -> Option<u8>) {
+        let mut lit = Vec::new();
         for r in 0..h {
             for c in 0..w {
                 let v = self.wd(base + 2 * (r * w + c));
                 if let Some(cl) = col(v) {
-                    self.g.term.plot(i32::from(x) + c as i32, i32::from(y) + r as i32, cl);
+                    let (px, py) = (i32::from(x) + c as i32, i32::from(y) + r as i32);
+                    self.g.term.plot(px, py, cl);
+                    if (0..320).contains(&px) && (0..200).contains(&py) {
+                        lit.push((py as usize * W + px as usize) as u32);
+                    }
                 }
             }
         }
+        self.g.term.space_obj(part, 0, lit, false, false);
     }
 
     /// `259e`: clear and redraw the view.
@@ -696,6 +708,7 @@ impl<'a> Space<'a> {
         self.redraw = false;
         self.g.term.fill(16, 16, 303, 143, BLACK);
         self.frame();
+        self.g.term.space_begin(self.fp);
         if self.fp {
             self.new_stars();
             self.crosshair(C_WHITE);
@@ -704,7 +717,7 @@ impl<'a> Space<'a> {
         if (self.gx, self.gy) == (3, 3) {
             // `528`: 1, 10, 7, or the CGA colour variables 1, 2, 3.
             let [c1, c2, c3] = if self.f.mode == 0 { [1 | RAW, 2 | RAW, 3 | RAW] } else { [1, 10, 7] };
-            self.bitmap(d::EARTH, 21, 18, 60, 75, |v| match v {
+            self.bitmap(sp::EARTH, d::EARTH, 21, 18, 60, 75, |v| match v {
                 1 | 2 => Some(c1),
                 3 => Some(c2),
                 4 => Some(c3),
@@ -715,14 +728,14 @@ impl<'a> Space<'a> {
         if s.sx != 0 {
             // `426`: 14 and 12, or the CGA colour variables 3 and 2.
             let [c1, c2] = if self.f.mode == 0 { [3 | RAW, 2 | RAW] } else { [14, 12] };
-            self.bitmap(d::STAR, 19, 18, s.sx, s.sy, |v| match v {
+            self.bitmap(sp::SUN, d::STAR, 19, 18, s.sx, s.sy, |v| match v {
                 1 => Some(c1),
                 2 => Some(c2),
                 _ => None,
             });
         }
         if s.stx != 0 {
-            self.bitmap(d::STATION, 20, 20, s.stx, s.sty, |v| (v != 0).then_some(C_WHITE));
+            self.bitmap(sp::STATION, d::STATION, 20, 20, s.stx, s.sty, |v| (v != 0).then_some(C_WHITE));
         }
         for sl in s.slots {
             if sl.ty > -1 {
@@ -763,6 +776,7 @@ impl<'a> Space<'a> {
         let bx = i32::from(x & !mask);
         let ega = self.f.mode == 1;
         let mut hit = false;
+        let mut lit = Vec::new();
         for r in 0..19 {
             let py = i32::from(y) + r;
             if !(18..=141).contains(&py) {
@@ -780,9 +794,13 @@ impl<'a> Space<'a> {
                         hit = true;
                     }
                     self.g.term.px[i] = old ^ x;
+                    lit.push(i as u32);
                 }
             }
         }
+        // Headings 0-3 point west, east, north, south.
+        let rot = [3, 1, 0, 2][(hd & 3) as usize];
+        self.g.term.space_obj(sp::SHIP0 + ty.clamp(0, 2) as u16, rot, lit, true, false);
         hit
     }
 
@@ -792,6 +810,7 @@ impl<'a> Space<'a> {
         let base = (size.clamp(0, 6) as usize) * 0x1c8 + ((x & mask) as usize) * step;
         let bx = i32::from(x & !mask);
         let ega = self.f.mode == 1;
+        let mut lit = Vec::new();
         for r in 0..19 {
             let py = i32::from(y) + r as i32;
             for (dx, v) in Self::sprite_row(&self.f.fighter, base + r * row, row, bpp) {
@@ -804,8 +823,14 @@ impl<'a> Space<'a> {
                         (_, false) => if ega { BLACK } else { old & !v },
                         (false, true) => old | v,
                     };
+                    lit.push(i as u32);
                 }
             }
+        }
+        if on {
+            self.g.term.space_obj(sp::FIGHTER, 0, lit, false, true);
+        } else {
+            self.g.term.space_drop(sp::FIGHTER);
         }
     }
 
@@ -836,6 +861,13 @@ impl<'a> Space<'a> {
         let (x, y) = (i32::from(self.cx), i32::from(self.cy));
         self.g.term.line_u1(x - 2, y, x + 2, y, c);
         self.g.term.line_u1(x, y - 2, x, y + 2, c);
+        if c == BLACK {
+            self.g.term.space_drop(sp::RETICLE);
+        } else {
+            let mut lit: Vec<u32> = (-2..=2).map(|d| ((y as usize) * W + (x + d) as usize) as u32).collect();
+            lit.extend([-2, -1, 1, 2].map(|d| (((y + d) as usize) * W + x as usize) as u32));
+            self.g.term.space_obj(sp::RETICLE, 0, lit, false, true);
+        }
     }
 
     // ------------------------------------------------------- starfield
@@ -1521,6 +1553,7 @@ impl<'a> Space<'a> {
     /// `14e5`: the sector scan of the galaxy.
     fn cmd_inform(&mut self) -> R<()> {
         self.puts(d::INFORM);
+        self.g.term.sscene = None;
         self.g.term.boxed(C_BLUE);
         let t = self.s(d::SCAN);
         self.g.term.print_at_attr(5, 4, &t, TEXT);

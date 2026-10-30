@@ -1368,8 +1368,10 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   `town.N` (§3.3), `mond.N` (§3.4), `screen.nif`, a part of the
   first-person dungeon view `dungeon.NAME` (`wall`, `door`, `secret`,
   `floor`, `ceiling`, `ladder_up`, `ladder_down`, `hole_up`, `hole_down`,
-  `chest`, `coffin`, `field`) or a dungeon monster `dmon.N` (N = the
-  monster kind 0–24, §6). It holds `file`,
+  `chest`, `coffin`, `field`), a dungeon monster `dmon.N` (N = the
+  monster kind 0–24, §6) or a part of the space view `space.NAME`
+  (`frame`, `cockpit`, `starfield`, `deep`, `earth`, `sun`, `station`,
+  `ship0`–`ship2`, `fighter`, `reticle`). It holds `file`,
   `frames` or `variants` (PNG paths relative to the pack), and optionally
   `scroll` and `fps`. An unknown section is skipped with a warning, and a wrong-sized
   PNG is resized nearest-neighbour with a warning. A malformed line, an
@@ -1377,8 +1379,8 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   error, and the pack is not loaded.
 * **Sizes.** With S = tile_size / 16 the internal screen is 320S×200S.
   World and Mondain tiles are (16S)², town tiles (8S)², and `screen.nif`
-  is 320S×168S. Dungeon pictures may have any size; they are stretched
-  over the view's geometry.
+  is 320S×168S. Dungeon and space pictures may have any size; they are
+  stretched over the view's geometry.
 * **Recording.** The game draws exactly as before. Every tile blit also
   records an *art op*: the picture's id, the screen rectangle, the
   pixels it drew, the map cell it shows (world map x,y outdoors, town
@@ -1434,6 +1436,25 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   original lines. A secret door without `dungeon.secret` uses the wall
   picture, so it stays hidden as in the original; traps are not drawn
   in the original view and get no picture. The geometry is unchanged.
+* **Space view.** Space flight (§ space) still XORs its pictures into
+  the screen. Each redraw of the view starts a scene (top-down or front
+  view) that keeps the frame's top bar as drawn; every picture plotted
+  into it is noted with the pixels it lit: Earth, the sun and the
+  station; each ship with its type and heading (an XOR redraw of the
+  same pixels erases the note); the front view's fighter and crosshair.
+  The scan of `Inform`, `Ztats` and leaving space drop the scene. While
+  the frame bar is unchanged, the frame (`frame`, or `cockpit` in the
+  front view if present) is stretched over the frame ring; the
+  background (`starfield`, or `deep` in the front view, else
+  `starfield`) is stretched over the view wherever the original is
+  black and under the noted pictures the pack has; a lone white pixel
+  (a star) becomes a soft point; and each noted picture still at least
+  three-quarters lit is fitted, keeping its proportions, into the box
+  of the pixels it lit — ships are drawn nose up and turned a quarter
+  turn per heading (west, east, north, south: 3, 1, 0, 2 turns
+  clockwise), the crosshair's picture is 3 pixels larger on each side.
+  Shots, exhaust, explosions and anything without a picture keep their
+  original pixels, over the new background.
 * **Limitations.** Only the NIF screen is supported among full screens;
   the castle title picture is not overlaid because its flag animation
   changes its pixels. The NIF reveal shows the original art until the

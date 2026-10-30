@@ -1494,6 +1494,45 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   changes its pixels. The NIF reveal shows the original art until the
   picture is complete.
 
+## 21. Options menu and config file (engine feature, not original behaviour)
+
+* **Key.** F1 opens it. None of the original's commands or prompts uses a
+  function key (the command keys are letters, Space and the arrows);
+  Esc is not used because the character program reads it (leave a
+  menu). Keys typed
+  while it is open go to the menu, never to the game.
+* **Pause.** The menu runs inside the front end's screen update, so the
+  game is suspended mid-call: no turn passes, no monster moves, timed
+  waits resume with the time they had left, and the next key poll starts
+  a full 130 ms later.
+* **Look.** The shops' and the king's black box framed in blue (`21c2`),
+  drawn over a copy of the screen in the interface colours
+  (text colour; the selected value in the warning colour; the CP437
+  arrow glyph marks the line). On CGA it uses the CGA interface colours.
+* **Video.** Enhanced (the pack's art over EGA), EGA, CGA, Tandy, offered
+  only when the game directory has that display's tile files. Turning
+  the enhanced art on or off changes the internal resolution at once
+  (and the window to the same multiple of 320x200 it started at). A new
+  original display is handed to the game at its next main-loop key poll:
+  it takes that display's world, town, space and Mondain pictures,
+  converts the pixels already on screen to the other screen's colours
+  (CGA has the four interface colours 3/2/1/3 for 15/1/12/11; back on a
+  16-colour screen, colour 3 is the text colour inside the text windows
+  and white elsewhere), and redraws the view. The game state is
+  untouched. Inside space or Mondain's lair the switch waits until the
+  player is back in OUT; the title and character screens keep their
+  display, and the game starts in the chosen one.
+* **Sound.** Original beeps, Enhanced, Mute (§19.1), switched at once.
+* **Config file.** `$XDG_CONFIG_HOME/ultima1-engine/config.toml`, else
+  `~/.config/ultima1-engine/config.toml`: `video = "enhanced|ega|cga|tandy"`
+  and `sound = "original|enhanced|mute"` (quotes optional, `#` comments,
+  other keys and tables ignored; an unusable line is reported and
+  skipped). The menu rewrites the file whole on every change. Each
+  command-line option (`--video`, `--mode`/`C`, `--sound`/`--mute`)
+  overrides only its own part for that run; the defaults are the
+  original display the game files suggest (§15), no enhanced art, and
+  the original beeps. Screenshot runs never read the file.
+
 ## Sources
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.

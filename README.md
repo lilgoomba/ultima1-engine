@@ -323,6 +323,34 @@ Every sound in `assets/enhanced/sounds/` was synthesized for this project
 by a script (oscillators and noise; no recordings or samples, and no
 original game audio) and is licensed CC-BY-SA 4.0 like the art.
 
+### Options menu (F1)
+
+F1 pauses the game and opens a small options window, drawn like the
+original's own shop and king windows:
+
+* **Video**: Enhanced, EGA, CGA or Tandy (only the displays your game
+  files include are offered; Enhanced is the pack's art over EGA).
+* **Sound**: Original beeps, Enhanced or Mute.
+
+Up/Down chooses a line, Left/Right changes it, and F1, Enter or Esc
+returns to the game. Changes apply at once without restarting (a new
+display's tiles appear at the next command prompt; in space or Mondain's
+lair, when you are back on the ground). F1 is not one of the original's
+keys; Esc is not used to open the menu because the character program
+uses it.
+
+The choice is saved to `~/.config/ultima1-engine/config.toml`
+(`$XDG_CONFIG_HOME/ultima1-engine/config.toml` if that is set):
+
+```toml
+video = "enhanced"   # enhanced | ega | cga | tandy
+sound = "original"   # original | enhanced | mute
+```
+
+`--video`, `--mode` (or `C`) and `--sound`/`--mute` override the file for
+one run. Screenshots (`--screenshot`) ignore it; `--options` draws the menu
+over a screenshot.
+
 Tests that use your own files are skipped unless you point them at your
 install:
 
@@ -347,6 +375,7 @@ crates/u1-assets   asset parsing and game-rules library (no dependencies)
 crates/u1          SDL2 playable overworld
 crates/u1view      SDL2 overworld viewer
 docs/SPEC.md       data-format specification with sources
+docs/ROADMAP.md    optional quality-of-life features (planned)
 assets/enhanced    default asset pack for --video enhanced and --sound enhanced
 docs/demo.png      demo screenshot (synthetic art)
 ```
@@ -355,8 +384,9 @@ docs/demo.png      demo screenshot (synthetic art)
 
 1. Finish the remaining open items in SPEC §11.
 2. Space and the Mondain battle.
-3. Optional quality-of-life features, kept apart from the faithful mode.
-4. Enhanced video mode art: the title screens and an optional enhanced sound mode.
+3. Optional quality-of-life features, kept apart from the faithful mode
+   (see [docs/ROADMAP.md](docs/ROADMAP.md)).
+4. Enhanced video mode art: the title screens.
 
 ## License
 

@@ -1423,7 +1423,8 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   perspective-correct across side walls, darkened by depth (light
   0.95 · 0.78^depth) and given a dark edge; force fields use the alpha of
   their picture; sprites keep their proportions and stand on the bottom
-  of their box (ladders and holes are stretched to it, a ladder seen
+  of their box (chests, coffins and the mimic, low wide boxes in the
+  original, fill the box's width and may rise to twice its height; ladders and holes are stretched to it, a ladder seen
   edge-on gets a rail's width). The outer walls are extended to the
   edges of the view. A surface or object without a picture keeps its
   original lines. A secret door without `dungeon.secret` uses the wall

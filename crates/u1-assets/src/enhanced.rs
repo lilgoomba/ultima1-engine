@@ -568,10 +568,15 @@ fn dungeon(out: &mut [u8], orig: &[u8], s: usize, sc: &crate::dview::DScene, pac
                 };
                 // Monsters, chests and coffins keep their proportions and
                 // stand on the box's bottom; ladders and holes stretch.
+                // The original draws chests and coffins as low, wide boxes,
+                // so their pictures fill the box's width and may rise up
+                // to twice its height.
                 let fit = !matches!(o.id, ArtId::Dun(d) if (dun::LADDER_UP..=dun::HOLE_DOWN).contains(&d)) && o.id != ArtId::DMon(9);
+                let wide = matches!(o.id, ArtId::Dun(dun::CHEST | dun::COFFIN) | ArtId::DMon(11));
                 let (bw, bh) = (x1 - x0, y1 - y0);
                 let (w, h, l, t) = if fit {
-                    let z = (bw / img.w as f32).min(bh / img.h as f32);
+                    let tall = if wide { 2.0 * bh } else { bh };
+                    let z = (bw / img.w as f32).min(tall / img.h as f32);
                     let (w, h) = (img.w as f32 * z, img.h as f32 * z);
                     (w, h, x0 + (bw - w) / 2.0, y1 - h)
                 } else {

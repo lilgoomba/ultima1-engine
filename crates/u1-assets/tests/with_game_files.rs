@@ -785,6 +785,21 @@ fn enhanced_dungeon_textures_with_fallbacks() {
     let sk = colour_pack(&[("dungeon.wall", red), ("dmon.1", [0, 0, 220, 255])]);
     let out2 = compose(&t, pal, &sk, 0);
     assert!(out2.chunks(3).any(|p| p[0] == 0 && p[1] == 0 && p[2] > 100));
+    // A chest is a low, wide box in the original: a square picture fills
+    // the box's width (rising above it) rather than shrinking to its height.
+    let Some(DPiece::Obj(c)) = sc.pieces.iter().map(|p| &p.1).find(|p| matches!(p, DPiece::Obj(o) if o.id == ArtId::Dun(u1_assets::term::dun::CHEST))) else {
+        panic!("no chest")
+    };
+    assert!(c.x1 - c.x0 > c.y1 - c.y0, "{c:?}");
+    let ch = colour_pack(&[("dungeon.wall", red), ("dungeon.chest", [0, 230, 0, 255])]);
+    let out3 = compose(&t, pal, &ch, 0);
+    let y = (c.y1 as usize) * 2;
+    let green: Vec<usize> = (0..640).filter(|&x| {
+        let p = &out3[(y * 640 + x) * 3..][..3];
+        p[1] > 60 && p[0] == 0 && p[2] == 0
+    }).collect();
+    let span = green.last().unwrap() - green.first().unwrap() + 1;
+    assert!(span as i32 >= 2 * (c.x1 - c.x0), "{span} vs {c:?}");
 }
 
 #[test]

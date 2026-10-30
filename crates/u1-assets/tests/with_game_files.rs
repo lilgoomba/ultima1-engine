@@ -352,3 +352,43 @@ fn intro_runs_to_the_credits_in_every_video_mode() {
         assert!(matches!(run_intro(&f, &mut t, &mut io), Ok(IntroEnd::ToMenu)));
     }
 }
+
+#[test]
+fn character_program_writes_the_original_record_and_selects_it() {
+    use u1_assets::gamedir::VideoMode;
+    use u1_assets::gen::{Gen, GenEnd, GenFiles};
+    use u1_assets::term::Term;
+    let Some(g) = game_dir() else { return };
+    // Same keys as the DOSBox run the record was compared with (SPEC §17):
+    // Str 25 and Agi 25, Elf, male fighter "Hero", kept; then play slot 1.
+    let s = format!(
+        "a{{right}}{{right}}{{down}}{{right}}{{up}}{}{{down}}{} baaHero{{enter}}yb1",
+        "{right}".repeat(13),
+        "{right}".repeat(14)
+    );
+    for v in [VideoMode::Ega, VideoMode::Cga, VideoMode::Tandy] {
+        let dir = std::env::temp_dir().join(format!("u1-gen-test-{}-{v:?}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = GenFiles::load(&g, v).unwrap();
+        let mut gen = Gen::new(&f, &dir, Box::new(|| [0, 0, 0, 0]));
+        let mut t = Term::with_cga(v == VideoMode::Cga);
+        let mut io = ScriptIo::from_text(&s);
+        let end = gen.run(&mut t, &mut io).unwrap();
+        let GenEnd::Play { slot, path } = end;
+        assert_eq!(slot, 1);
+        let b = std::fs::read(&path).unwrap();
+        assert_eq!(b.len(), 820);
+        let w = |o: usize| u16::from_le_bytes([b[o], b[o + 1]]);
+        assert_eq!(&b[..5], b"Hero\0");
+        assert_eq!((w(0x10), w(0x12), w(0x14)), (1, 0, 0), "elf male fighter");
+        assert_eq!([w(0x16), w(0x18), w(0x1a), w(0x1c), w(0x1e), w(0x20), w(0x22)], [150, 35, 40, 10, 10, 10, 10]);
+        assert_eq!([w(0x24), w(0x28), w(0x34), w(0x36), w(0xb8), w(0xba)], [100, 200, 49, 40, 49, 40]);
+        // Seed: the clock value for 00:00:00.00 plus Wisdom and class.
+        assert_eq!(w(0x32), (0x91eb & 0xfff) + 10);
+        assert!(t.row_text(10).contains("thy game loads"));
+        let r = PlayerRecord::parse(&b).unwrap();
+        assert_eq!(r.u16_at(0x16), 150);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}

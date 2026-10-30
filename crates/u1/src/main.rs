@@ -24,6 +24,7 @@ use u1_assets::rules::ExeTables;
 use u1_assets::save::PlayerRecord;
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::{Term, H, W};
+use u1_assets::gen::{Gen, GenEnd, GenFiles};
 use u1_assets::title::{self, TitleFiles};
 
 /// One keyboard/animation poll of the original main loop, measured in
@@ -35,12 +36,15 @@ const TICK: Duration = Duration::from_micros(54_925);
 const DEFAULT_POS: (u16, u16) = (49, 40);
 
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
-          [--mode ega|t1k|cga | C] [--font FILE] [--intro] [--scale N] [--save-to FILE]
+          [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
           [--screenshot out.png [--keys TEXT] [--counter N]]
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
 Space passes). --keys is typed text; {up} {down} {left} {right} {enter}
-{esc} {bs} {space} name special keys and ~ ends a timed wait.";
+{esc} {bs} {space} name special keys and ~ ends a timed wait.
+--intro starts with the title sequence and the character menu, --gen with
+the menu; characters are kept in --roster DIR (default: the --save-to
+directory, never the game directory) and the chosen one is saved back there.";
 
 struct Args {
     game_dir: PathBuf,
@@ -57,6 +61,8 @@ struct Args {
     counter: u32,
     font: Option<PathBuf>,
     intro: bool,
+    gen: bool,
+    roster: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -75,6 +81,8 @@ fn parse_args() -> Result<Args, String> {
         counter: 0,
         font: std::env::var_os("U1_FONT").map(PathBuf::from),
         intro: false,
+        gen: false,
+        roster: None,
     };
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
@@ -108,6 +116,8 @@ fn parse_args() -> Result<Args, String> {
             "--font" => a.font = Some(v()?.into()),
             // Start with the title sequence (ULTIMA.EXE) like the original.
             "--intro" => a.intro = true,
+            "--gen" => a.gen = true,
+            "--roster" => a.roster = Some(v()?.into()),
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
             // The original's only video choice: a first argument starting
@@ -130,14 +140,81 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     }
 }
 
-fn load(a: &Args) -> Result<(Game, [Rgb; 16]), String> {
-    let e = |e: u1_assets::error::AssetError| e.to_string();
+fn install_font(a: &Args) -> Result<(), String> {
     if let Some(p) = &a.font {
         let b = std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?;
         u1_assets::font::install(u1_assets::font::Font::parse(&b).map_err(|e| format!("{}: {e}", p.display()))?);
     }
+    Ok(())
+}
+
+fn video_mode(a: &Args) -> Result<VideoMode, String> {
+    let g = GameDir::new(&a.game_dir).map_err(|e| e.to_string())?;
+    a.mode.or_else(|| g.detect_video_mode()).ok_or_else(|| "no tile files found in the game directory".into())
+}
+
+fn palette_for(mode: VideoMode) -> [Rgb; 16] {
+    if mode == VideoMode::Cga { cga_as_16(&CGA_PALETTE_1_LOW) } else { EGA_PALETTE }
+}
+
+/// The directory the character program keeps its roster in.
+fn roster_dir(a: &Args) -> Result<PathBuf, String> {
+    let dir = match (&a.roster, &a.save_to) {
+        (Some(d), _) => d.clone(),
+        (None, Some(p)) => p.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")).to_path_buf(),
+        (None, None) => PathBuf::from("."),
+    };
+    if same_dir(&dir, &a.game_dir) {
+        return Err("--roster must not be the game directory (originals are never overwritten)".into());
+    }
+    Ok(dir)
+}
+
+/// What the start-up programs decided.
+enum Front {
+    /// No --intro / --gen: straight into the game.
+    Skip,
+    /// The script ran out on one of their screens.
+    Halted(Term),
+    /// Play this roster file.
+    Play(PathBuf),
+}
+
+/// The title sequence (with --intro) and the character program.
+fn front(a: &Args, mode: VideoMode, io: &mut dyn Io) -> Result<Front, String> {
+    if !a.intro && !a.gen {
+        return Ok(Front::Skip);
+    }
+    let g = GameDir::new(&a.game_dir).map_err(|e| e.to_string())?;
+    if a.intro {
+        let tf = TitleFiles::load(&g, mode).map_err(|e| e.to_string())?;
+        let mut t = title::blank_term(&tf);
+        if title::run_intro(&tf, &mut t, io).is_err() {
+            return Ok(Front::Halted(t));
+        }
+    }
+    let gf = GenFiles::load(&g, mode).map_err(|e| e.to_string())?;
+    let dir = roster_dir(a)?;
+    let fixed = a.seed.is_some();
+    let clock: Box<dyn FnMut() -> [u8; 4]> = if fixed { Box::new(|| [0, 0, 0, 0]) } else { Box::new(local_time) };
+    let mut gen = Gen::new(&gf, &dir, clock);
+    let mut t = Term::with_cga(mode == VideoMode::Cga);
+    match gen.run(&mut t, io) {
+        Ok(GenEnd::Play { path, .. }) => {
+            // The "please wait" screen stays up while the game loads.
+            if io.pause(&t, 9).is_err() {
+                return Ok(Front::Halted(t));
+            }
+            Ok(Front::Play(path))
+        }
+        Err(Halt) => Ok(Front::Halted(t)),
+    }
+}
+
+fn load(a: &Args, chosen: Option<&Path>) -> Result<(Game, [Rgb; 16]), String> {
+    let e = |e: u1_assets::error::AssetError| e.to_string();
     let g = GameDir::new(&a.game_dir).map_err(e)?;
-    let mode = a.mode.or_else(|| g.detect_video_mode()).ok_or("no tile files found in the game directory")?;
+    let mode = video_mode(a)?;
     let exe_bytes = g.read("OUT.EXE").map_err(e)?;
     let assets = Assets {
         t: ExeTables::from_out_exe(&exe_bytes).map_err(e)?,
@@ -149,10 +226,11 @@ fn load(a: &Args) -> Result<(Game, [Rgb; 16]), String> {
         tcd: TownCastleMaps::parse(&g.read("TCD.BIN").map_err(e)?).map_err(e)?,
         video: mode,
     };
-    let palette = if mode == VideoMode::Cga { cga_as_16(&CGA_PALETTE_1_LOW) } else { EGA_PALETTE };
-    let save_bytes = match (&a.save, a.player) {
-        (Some(p), _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
-        (None, Some(n)) => Some(g.read(&format!("PLAYER{n}.U1")).map_err(e)?),
+    let palette = palette_for(mode);
+    let save_bytes = match (chosen, &a.save, a.player) {
+        (Some(p), _, _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
+        (None, Some(p), _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
+        (None, None, Some(n)) => Some(g.read(&format!("PLAYER{n}.U1")).map_err(e)?),
         _ => None,
     };
     let mut rec = match save_bytes {
@@ -188,7 +266,11 @@ fn load(a: &Args) -> Result<(Game, [Rgb; 16]), String> {
     // SPACE.EXE is optional: without it boarding a shuttle stops the run.
     game.space = u1_assets::space::SpaceFiles::load(&g, game.a.video).ok();
     game.mondain = u1_assets::mondain::MondainFiles::load(&g, game.a.video).ok();
-    let save_to = a.save_to.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1"));
+    // A character chosen in the menu is saved back to its roster file.
+    let save_to = match chosen {
+        Some(p) => p.to_path_buf(),
+        None => a.save_to.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1")),
+    };
     let dir = save_to.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     if same_dir(dir, &a.game_dir) {
         return Err("--save-to must not point into the game directory (originals are never overwritten)".into());
@@ -207,25 +289,21 @@ fn write_png(path: &Path, w: u32, h: u32, rgb: &[u8]) -> Result<(), String> {
 }
 
 /// The start-up program's files, when `--intro` asks for them.
-fn title_files(a: &Args, mode: VideoMode) -> Result<Option<TitleFiles>, String> {
-    if !a.intro {
-        return Ok(None);
-    }
-    let g = GameDir::new(&a.game_dir).map_err(|e| e.to_string())?;
-    TitleFiles::load(&g, mode).map(Some).map_err(|e| e.to_string())
-}
-
-fn screenshot(mut g: Game, palette: &[Rgb; 16], a: &Args, out: &Path) -> Result<(), String> {
+fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
     let mut io = ScriptIo::from_text(&a.keys);
     let scale = 2; // the size of a 640x400 DOSBox capture
-    if let Some(tf) = title_files(a, g.a.video)? {
-        let mut t = title::blank_term(&tf);
-        if title::run_intro(&tf, &mut t, &mut io).is_err() {
-            write_png(out, (W * scale) as u32, (H * scale) as u32, &t.to_rgb(palette, scale))?;
-            println!("{}: intro", out.display());
+    let mode = video_mode(a)?;
+    let chosen = match front(a, mode, &mut io)? {
+        Front::Halted(t) => {
+            write_png(out, (W * scale) as u32, (H * scale) as u32, &t.to_rgb(&palette_for(mode), scale))?;
+            println!("{}: start-up", out.display());
             return Ok(());
         }
-    }
+        Front::Play(p) => Some(p),
+        Front::Skip => None,
+    };
+    let (mut g, palette) = load(a, chosen.as_deref())?;
+    let palette = &palette;
     let _ = g.run(&mut io);
     write_png(out, (W * scale) as u32, (H * scale) as u32, &g.term.to_rgb(palette, scale))?;
     println!("{}: mode={} loc={} at ({},{}) town ({},{})", out.display(), g.mode, g.loc, g.ow.x, g.ow.y, g.px, g.py);
@@ -354,7 +432,9 @@ impl Io for SdlIo {
     }
 }
 
-fn play(mut g: Game, palette: [Rgb; 16], a: &Args) -> Result<(), String> {
+fn play(a: &Args) -> Result<(), String> {
+    let mode = video_mode(a)?;
+    let palette = palette_for(mode);
     use sdl2::pixels::PixelFormatEnum;
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
@@ -369,12 +449,12 @@ fn play(mut g: Game, palette: [Rgb; 16], a: &Args) -> Result<(), String> {
     let tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, W as u32, H as u32).map_err(|e| e.to_string())?;
     let events = sdl.event_pump()?;
     let mut io = SdlIo { canvas, tex, events, palette, next: Instant::now(), pending: Default::default() };
-    if let Some(tf) = title_files(a, g.a.video)? {
-        let mut t = title::blank_term(&tf);
-        if title::run_intro(&tf, &mut t, &mut io).is_err() {
-            return Ok(());
-        }
-    }
+    let chosen = match front(a, mode, &mut io)? {
+        Front::Halted(_) => return Ok(()),
+        Front::Play(p) => Some(p),
+        Front::Skip => None,
+    };
+    let (mut g, _) = load(a, chosen.as_deref())?;
     let _ = g.run(&mut io);
     if let Some(s) = g.stopped {
         eprintln!("stopped: {s}");
@@ -384,10 +464,10 @@ fn play(mut g: Game, palette: [Rgb; 16], a: &Args) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let res = parse_args().and_then(|a| {
-        let (g, pal) = load(&a)?;
+        install_font(&a)?;
         match &a.screenshot {
-            Some(out) => screenshot(g, &pal, &a, out),
-            None => play(g, pal, &a),
+            Some(out) => screenshot(&a, out),
+            None => play(&a),
         }
     });
     match res {

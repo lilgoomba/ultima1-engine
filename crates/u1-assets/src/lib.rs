@@ -15,6 +15,7 @@ pub mod exe;
 pub mod font;
 pub mod game;
 pub mod gamedir;
+pub mod gen;
 pub mod images;
 pub mod io;
 pub mod locations;

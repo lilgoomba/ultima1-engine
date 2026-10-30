@@ -1127,6 +1127,63 @@ VERIFIED (original executable) [DOSBox].
   armour are cleared before the player is placed back on land. The
   picture matched DOSBox pixel for pixel.
 
+## 17. Start-up programs: title sequence (`ULTIMA.EXE`) and character program (`GEN.EXE`): Phase 7
+
+Run with `--intro` (title sequence, then the character program) or `--gen`
+(character program only). Text, name tables and the cursor shapes are read
+from the user's `ULTIMA.EXE` / `GEN.EXE` at run time; nothing is copied.
+Characters live in a roster directory (`--roster DIR`, default the
+`--save-to` directory; the game directory is refused). The chosen
+character's file is loaded and the game saves back into that same file,
+as the original does.
+
+**Title sequence**: verified pixel-identical in EGA, CGA and Tandy (castle
+with flag frames, pages, credits). The title text screen stays up for 12
+ticks, which stands in for the original's file-load time (a guess).
+
+**Character program** (`crates/u1-assets/src/gen.rs`), in the original's
+drawing order:
+
+- Border: blue bands around a white rectangle, rounded black corners.
+  Menu: title and three lines in white, options and "Thy choice:" in the
+  text colour (EGA/Tandy light cyan, CGA colour 3). A, B or Q is accepted;
+  Q only redraws the menu.
+- Keys are read with an animated cursor: four 8x8 shapes from `GEN.EXE`
+  drawn at the text cursor, the next one every 3 timer ticks while no key
+  is waiting; after a key the cell is blanked. Point allocation shows no
+  cursor.
+- Generation: 30 points over six attributes starting at 10 (range 10..25);
+  up/down move the ornamented markers (wrapping), right/left spend or
+  refund a point; Space continues only at 0 points (otherwise a beep),
+  Escape returns to the menu. Then race (Human +5 Int, Elf +5 Agi,
+  Dwarf +5 Str, Bobbit +10 Wis -5 Str), sex, class (Fighter +10 Str and
+  Agi, Cleric +10 Wis, Wizard +10 Int, Thief +10 Agi), name (up to 14
+  characters; no leading space; Backspace/left moves back without
+  erasing), and "Save this character? (Y-N)": N starts over.
+- Saved record (820 bytes, race/class/sex as 0-based indexes): hits 150,
+  coin 100, food 200, weapon/armour 1 ready, position (49,40) in both
+  places, the fixed object-table defaults, and seed = clock value + Wisdom
+  + class, where the clock value mixes the DOS time
+  (`((sec<<3 & 0xff)<<8 | hundredths) + ((hour<<1 & 0xff)<<8 | (min<<2 & 0xff))`,
+  xor 0x91eb, low 12 bits). The rest of the buffer carries over from an
+  earlier character in the same session, as in the original. With
+  `--seed` the clock reads 00:00:00.00.
+- Full roster: "Character Replacement" lists the four names; 1-4 picks a
+  slot, Escape returns. Selection: an empty roster offers Enter to
+  generate into slot 1; otherwise 1-4 picks an existing character and the
+  "Please wait whilst thy game loads" screen is shown before the game.
+
+Verified against DOSBox (EGA, CGA, `machine=tandy`) with the same keys:
+menu, empty selection, points, race, sex, class, name, save prompt,
+menu after saving and the selection list are pixel-identical once the
+cursor is at the same animation frame; the written PLAYER1.U1 matched the
+original's byte for byte apart from the clock-dependent seed. Shots:
+`/workspace/u1-shots/phase7/gen/`.
+
+Approximations: the "please wait" screen is held for 9 ticks (the original
+shows it for as long as DOS takes to load OUT.EXE, too short to capture in
+DOSBox); the cursor's phase depends on real time, as in the original.
+
 ## Sources
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.

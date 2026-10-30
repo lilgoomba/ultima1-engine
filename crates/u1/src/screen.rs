@@ -7,7 +7,7 @@ use u1_assets::overworld::Overworld;
 use u1_assets::rules::{self, VIEW_COLS, VIEW_ROWS};
 use u1_assets::tiles::TileSet;
 
-use crate::font::glyph;
+use u1_assets::font::glyph;
 
 pub const W: usize = 320;
 pub const H: usize = 200;

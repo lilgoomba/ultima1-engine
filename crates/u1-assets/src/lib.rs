@@ -9,8 +9,11 @@
 pub mod demo;
 pub mod dungeon;
 pub mod error;
+pub mod exe;
+pub mod font;
 pub mod gamedir;
 pub mod images;
+pub mod io;
 pub mod locations;
 pub mod map;
 pub mod overworld;
@@ -20,6 +23,7 @@ pub mod rng;
 pub mod rules;
 pub mod save;
 pub mod tcd;
+pub mod term;
 pub mod tiles;
 
 pub use error::{AssetError, Result};

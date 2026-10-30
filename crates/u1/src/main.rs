@@ -7,7 +7,6 @@
 //! The save file is only read, never written. Tables (monster, food and
 //! spawn tables, names, messages) come from the user's OUT.EXE at start-up.
 
-mod font;
 mod screen;
 
 use std::path::PathBuf;

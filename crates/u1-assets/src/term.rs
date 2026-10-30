@@ -1,0 +1,337 @@
+//! The 320x200 game screen as palette indices, with the text-mode helpers
+//! the original program uses on top of its graphics (SPEC §9.2): BIOS-style
+//! character cells (40x25), the four-line scrolling message window, right
+//! justified numbers, the title ornaments and the shop/king box.
+//! All positions and colours are "verified from original executable".
+
+use crate::font::glyph;
+
+pub const W: usize = 320;
+pub const H: usize = 200;
+pub const BLACK: u8 = 0;
+pub const BLUE: u8 = 1;
+pub const WARN: u8 = 12;
+pub const TEXT: u8 = 11;
+pub const WHITE: u8 = 15;
+
+/// Viewport rectangle (inclusive), cleared to black by the original.
+pub const VIEW: (usize, usize, usize, usize) = (8, 8, 311, 151);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Term {
+    pub px: Vec<u8>,
+    pub col: usize,
+    pub row: usize,
+}
+
+impl Default for Term {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Term {
+    /// The static frame: blue border, white viewport frame, black viewport,
+    /// the message box (left) and the stats box (right) with their labels.
+    pub fn new() -> Self {
+        let mut t = Term { px: vec![BLUE; W * H], col: 1, row: 24 };
+        t.fill(7, 7, 312, 152, WHITE);
+        t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
+        t.fill(0, 159, 241, 199, WHITE);
+        t.fill(0, 160, 240, 199, BLACK);
+        t.fill(246, 159, 319, 199, WHITE);
+        t.fill(247, 160, 319, 199, BLACK);
+        for (i, l) in ["Hits:", "Food:", "Exp.:", "Coin:"].iter().enumerate() {
+            t.print_at_attr(31, 21 + i, l, TEXT);
+        }
+        t.col = 1;
+        t.row = 24;
+        t
+    }
+
+    pub fn at(&self, x: usize, y: usize) -> u8 {
+        self.px[y * W + x]
+    }
+
+    /// Filled rectangle, both corners inclusive (clipped to the screen).
+    pub fn fill(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, c: u8) {
+        for y in y0..=y1.min(H - 1) {
+            for x in x0..=x1.min(W - 1) {
+                self.px[y * W + x] = c;
+            }
+        }
+    }
+
+    /// Straight line between two points (both inclusive).
+    pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: u8) {
+        let (dx, dy) = ((x1 - x0).abs(), -(y1 - y0).abs());
+        let (sx, sy) = (if x0 < x1 { 1 } else { -1 }, if y0 < y1 { 1 } else { -1 });
+        let (mut x, mut y, mut err) = (x0, y0, dx + dy);
+        loop {
+            if (0..W as i32).contains(&x) && (0..H as i32).contains(&y) {
+                self.px[y as usize * W + x as usize] = c;
+            }
+            if x == x1 && y == y1 {
+                break;
+            }
+            let e2 = 2 * err;
+            if e2 >= dy {
+                err += dy;
+                x += sx;
+            }
+            if e2 <= dx {
+                err += dx;
+                y += sy;
+            }
+        }
+    }
+
+    pub fn cursor(&mut self, col: usize, row: usize) {
+        self.col = col;
+        self.row = row;
+    }
+
+    /// One character cell: glyph in `attr` on black.
+    pub fn put_char(&mut self, col: usize, row: usize, ch: char, attr: u8) {
+        if col >= 40 || row >= 25 {
+            return;
+        }
+        let (x, y) = (col * 8, row * 8);
+        let g = glyph(ch);
+        for (r, bits) in g.iter().enumerate() {
+            for b in 0..8 {
+                let on = bits & (0x80 >> b) != 0;
+                self.px[(y + r) * W + x + b] = if on { attr } else { BLACK };
+            }
+        }
+    }
+
+    /// Print at the cursor, advancing it (BIOS teletype: wraps at column 40).
+    pub fn print_attr(&mut self, s: &str, attr: u8) {
+        for ch in s.chars() {
+            if self.col >= 40 {
+                self.col = 0;
+                self.row = (self.row + 1).min(24);
+            }
+            self.put_char(self.col, self.row, ch, attr);
+            self.col += 1;
+        }
+    }
+
+    /// `a043`: print in the text colour at the cursor.
+    pub fn print(&mut self, s: &str) {
+        self.print_attr(s, TEXT);
+    }
+
+    /// `21e7`: move the cursor to (col,row) and print in the text colour.
+    pub fn print_at(&mut self, col: usize, row: usize, s: &str) {
+        self.print_at_attr(col, row, s, TEXT);
+    }
+
+    pub fn print_at_attr(&mut self, col: usize, row: usize, s: &str, attr: u8) {
+        self.cursor(col, row);
+        self.print_attr(s, attr);
+    }
+
+    /// `ac0a`: print, then scroll the message window (rows 21..=24, columns
+    /// 0..=29) up one line and put the cursor at (1,24).
+    pub fn println(&mut self, s: &str) {
+        self.print(s);
+        self.scroll();
+    }
+
+    pub fn scroll(&mut self) {
+        let (x0, x1) = (0, 30 * 8);
+        for y in 21 * 8..24 * 8 {
+            for x in x0..x1 {
+                self.px[y * W + x] = self.px[(y + 8) * W + x];
+            }
+        }
+        for y in 24 * 8..25 * 8 {
+            self.px[y * W + x0..y * W + x1].fill(BLACK);
+        }
+        self.cursor(1, 24);
+    }
+
+    /// `a966`: unsigned number right-justified in `width` with `pad`.
+    /// With `advance == false` the cursor stays on the last digit.
+    pub fn num(&mut self, v: u16, width: usize, pad: char, attr: u8, advance: bool) {
+        let s = v.to_string();
+        let mut out = String::new();
+        for _ in s.len()..width {
+            out.push(pad);
+        }
+        out.push_str(&s);
+        self.print_attr(&out, attr);
+        if !advance {
+            self.col -= 1;
+        }
+    }
+
+    /// `a3ea`: the left title ornament at a character cell.
+    pub fn ornament_left(&mut self, col: usize, row: usize) {
+        self.ornament(col, row, false);
+    }
+
+    /// `a48c`: the right (mirrored) title ornament.
+    pub fn ornament_right(&mut self, col: usize, row: usize) {
+        self.ornament(col, row, true);
+    }
+
+    fn ornament(&mut self, col: usize, row: usize, mirror: bool) {
+        let (x, y) = ((col * 8) as i32, (row * 8) as i32);
+        // A solid triangle in the border colour (the BIOS arrow glyph) ...
+        self.fill(col * 8, row * 8, col * 8 + 7, row * 8 + 7, BLACK);
+        for r in 0..7i32 {
+            let w = 1 + 2 * r.min(6 - r);
+            for i in 0..w.min(7) {
+                let px = if mirror { x + 6 - i } else { x + 1 + i };
+                self.px[(y + r) as usize * W + px as usize] = BLUE;
+            }
+        }
+        // ... outlined in white, with a blue upright on the flat side.
+        if mirror {
+            self.line(x + 7, y, x, y + 3, WHITE);
+            self.line(x, y + 3, x + 7, y + 7, WHITE);
+            self.line(x + 7, y + 1, x + 7, y + 6, BLUE);
+        } else {
+            self.line(x, y, x + 7, y + 3, WHITE);
+            self.line(x + 7, y + 3, x, y + 7, WHITE);
+            self.line(x, y + 1, x, y + 6, BLUE);
+        }
+        self.cursor(col + 1, row);
+    }
+
+    /// A title in the top border between two ornaments, e.g. " Ready ".
+    pub fn title(&mut self, left: usize, text: &str) {
+        self.ornament_left(left, 0);
+        self.print(text);
+        let right = self.col;
+        self.ornament_right(right, 0);
+    }
+
+    /// Restore the top border after a title (fill blue, white line at y=7).
+    pub fn restore_border(&mut self, x0: usize, x1: usize) {
+        self.fill(x0, 0, x1, 6, BLUE);
+        self.fill(x0, 7, x1, 7, WHITE);
+    }
+
+    /// Clear the viewport to black.
+    pub fn clear_view(&mut self) {
+        self.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
+    }
+
+    /// `21c2`: the black box used by shops and the king, framed in
+    /// `frame`; cursor (5,4).
+    pub fn boxed(&mut self, frame: u8) {
+        self.fill(31, 23, 287, 127, BLACK);
+        self.line(34, 26, 284, 26, frame);
+        self.line(284, 26, 284, 124, frame);
+        self.line(284, 124, 34, 124, frame);
+        self.line(34, 124, 34, 26, frame);
+        self.cursor(5, 4);
+    }
+
+    /// One stat value at column 36: clamped to 0..=9999, warning colour
+    /// below 100, cursor left at (1,24).
+    pub fn stat(&mut self, row: usize, v: i32) {
+        let v = v.clamp(0, 9999) as u16;
+        let attr = if v < 100 { WARN } else { TEXT };
+        self.cursor(36, row);
+        self.num(v, 4, ' ', attr, false);
+        self.cursor(1, 24);
+    }
+
+    /// Blit an indexed `w`x`h` image at (x,y), colours masked to 4 bits.
+    pub fn blit(&mut self, x: usize, y: usize, w: usize, h: usize, pixels: &[u8], shift: usize) {
+        for py in 0..h {
+            for px in 0..w {
+                if x + px < W && y + py < H {
+                    self.px[(y + py) * W + x + px] = pixels[py * w + (px + shift) % w] & 0x0F;
+                }
+            }
+        }
+    }
+
+    /// Text currently shown in a character row (glyphs matched back to
+    /// characters; for tests and debugging).
+    pub fn row_text(&self, row: usize) -> String {
+        (0..40)
+            .map(|col| {
+                let mut cell = [0u8; 8];
+                for (r, c) in cell.iter_mut().enumerate() {
+                    for b in 0..8 {
+                        let p = self.px[(row * 8 + r) * W + col * 8 + b];
+                        if p != BLACK && p != BLUE {
+                            *c |= 0x80 >> b;
+                        }
+                    }
+                }
+                (0x20u8..0x7F).map(char::from).find(|&ch| glyph(ch) == cell).unwrap_or('#')
+            })
+            .collect::<String>()
+    }
+
+    /// Text of a message-window row (columns 0..30), trailing blanks cut.
+    pub fn msg_text(&self, row: usize) -> String {
+        self.row_text(row)[..30].trim_end().to_string()
+    }
+
+    /// Message window as lines (rows 21..=24).
+    pub fn messages(&self) -> Vec<String> {
+        (21..25).map(|r| self.msg_text(r)).collect()
+    }
+
+    pub fn to_rgb(&self, palette: &[[u8; 3]; 16], scale: usize) -> Vec<u8> {
+        let mut out = vec![0u8; W * H * 3 * scale * scale];
+        for y in 0..H * scale {
+            for x in 0..W * scale {
+                let c = palette[(self.px[(y / scale) * W + x / scale] & 15) as usize];
+                let o = (y * W * scale + x) * 3;
+                out[o..o + 3].copy_from_slice(&c);
+            }
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn println_scrolls_the_message_window_only() {
+        let mut t = Term::new();
+        t.cursor(1, 24);
+        t.println("North");
+        assert_eq!(t.msg_text(23), " North");
+        assert_eq!((t.col, t.row), (1, 24));
+        assert!(t.row_text(21).starts_with("      "));
+        // stats labels untouched
+        assert!(t.row_text(21).contains("Hits:"));
+    }
+
+    #[test]
+    fn numbers_are_right_justified() {
+        let mut t = Term::new();
+        t.cursor(0, 10);
+        t.num(42, 4, ' ', TEXT, true);
+        assert_eq!(&t.row_text(10)[..4], "  42");
+        assert_eq!(t.col, 4);
+        t.cursor(0, 11);
+        t.num(7, 3, '.', TEXT, false);
+        assert_eq!(&t.row_text(11)[..3], "..7");
+        assert_eq!(t.col, 2);
+    }
+
+    #[test]
+    fn box_and_stats() {
+        let mut t = Term::new();
+        t.boxed(BLUE);
+        assert_eq!(t.at(34, 26), BLUE);
+        assert_eq!(t.at(40, 40), BLACK);
+        t.stat(21, 50);
+        assert_eq!(&t.row_text(21)[31..40], "Hits:  50");
+        assert!((168..176).any(|y| (36 * 8..40 * 8).any(|x| t.at(x, y) == WARN)));
+    }
+}

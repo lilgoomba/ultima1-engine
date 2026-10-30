@@ -283,3 +283,72 @@ file = "space/fighter.png"
 
 [space.reticle]
 file = "space/reticle.png"
+
+# Batch 3 (for review): Mondain's castle and the endgame.
+
+[mond.0]    # floor
+file = "mond/0.png"
+
+[mond.1]    # time machine
+file = "mond/1.png"
+
+[mond.2]    # Mondain
+file = "mond/2.png"
+
+[mond.3]    # Mondain (second frame)
+file = "mond/3.png"
+
+[mond.4]    # Mondain slain
+file = "mond/4.png"
+
+[mond.5]    # castle wall
+file = "mond/5.png"
+
+[mond.6]    # the gem
+file = "mond/6.png"
+
+[mond.7]    # gem glow 1
+file = "mond/7.png"
+
+[mond.8]    # gem glow 2
+file = "mond/8.png"
+
+[mond.9]    # gem glow 3
+file = "mond/9.png"
+
+[mond.10]   # gem glow 4
+file = "mond/10.png"
+
+[mond.11]   # demon 1
+file = "mond/11.png"
+
+[mond.12]   # demon 2
+file = "mond/12.png"
+
+[mond.13]   # demon 3
+file = "mond/13.png"
+
+[mond.14]   # fire 1
+file = "mond/14.png"
+
+[mond.15]   # fire 2
+file = "mond/15.png"
+
+[mond.16]   # fire 3
+file = "mond/16.png"
+
+[mond.17]   # fire 4
+file = "mond/17.png"
+
+[mond.18]   # fire 5
+file = "mond/18.png"
+
+[mond.19]   # fire 6
+file = "mond/19.png"
+
+[mond.20]   # the player
+file = "world/player.png"
+
+[screen.nif]      # the ending text: a dim picture behind the original words
+file = "screens/nif.png"
+behind = true

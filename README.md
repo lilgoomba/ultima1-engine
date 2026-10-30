@@ -286,7 +286,12 @@ the top-down view and a cockpit frame for the front view, a starfield
 and a nebula behind them, the earth-like planet, the sun, the space
 station, the three player ships, the enemy fighter and the crosshair.
 The sector scan, shots, exhaust and explosions stay original.
-Everything else falls back to the original art.
+It also covers Mondain's castle and the endgame: the stone floor and red
+walls, the time machine, Mondain (two frames), his corpse, his gem and
+its four glow frames, the demon he becomes (three frames), the six
+frames of his fire spell, and a dim sunrise backdrop behind the closing
+text. The text boxes, the victory box and the title castle stay
+original. Everything else falls back to the original art.
 
 Tests that use your own files are skipped unless you point them at your
 install:

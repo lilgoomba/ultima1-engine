@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::exe::Exe;
 use crate::gamedir::{GameDir, VideoMode};
 use crate::io::{keys, Io, IoResult};
-use crate::term::{Term, RAW};
+use crate::term::{ArtId, Term, RAW};
 
 /// GEN.EXE's data segment (paragraph from the start of the load image).
 const DS_PARA: usize = 0x426;
@@ -275,6 +275,10 @@ impl<'a> Gen<'a> {
     pub fn run(&mut self, t: &mut Term, io: &mut dyn Io) -> IoResult<GenEnd> {
         t.fill(0, 0, 0x13f, 0xc7, BLACK);
         self.border(t);
+        // The inside of the border, for the enhanced pack's backdrop: it
+        // stands through every screen of the menu, so none shows the
+        // original black first.
+        t.backdrop = Some((ArtId::Screen("menu"), 8, 8, 0x130, 0xb8));
         loop {
             let k = self.menu(t, io)?;
             match k {
@@ -419,6 +423,7 @@ impl<'a> Gen<'a> {
         }
         self.at(t, 11, 8, o::WAIT[0], w);
         self.at(t, 13, 10, o::WAIT[1], w);
+        t.backdrop = Some((ArtId::Screen("loading"), 8, 8, 0x130, 0x90));
     }
 
     fn stat(&self, i: usize) -> u16 {

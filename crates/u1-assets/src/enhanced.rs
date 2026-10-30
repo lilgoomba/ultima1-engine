@@ -238,11 +238,32 @@ pub fn parse_id(section: &str) -> Option<ArtId> {
         "mond" => num().map(ArtId::Mond),
         "screen" => match n {
             "nif" => Some(ArtId::Screen("nif")),
+            "title" => Some(ArtId::Screen("title")),
+            "intro" => Some(ArtId::Screen("intro")),
+            "castle" => Some(ArtId::Screen("castle")),
+            "menu" => Some(ArtId::Screen("menu")),
+            "loading" => Some(ArtId::Screen("loading")),
             _ => None,
         },
         "dungeon" => DUN_PARTS.iter().position(|p| *p == n).map(|i| ArtId::Dun(i as u16)),
         "dmon" => num().filter(|&i| i < 25).map(ArtId::DMon),
         "space" => SPACE_PARTS.iter().position(|p| *p == n).map(|i| ArtId::Space(i as u16)),
+        _ => None,
+    }
+}
+
+/// The start-up castle picture's left flag is left of this column, its
+/// right flag right of it (original pixels).
+pub const CASTLE_SPLIT: usize = 160;
+
+/// The original-pixel size of each `screen.NAME` region (the pictures
+/// are this times the pack's scale).
+pub fn screen_size(name: &str) -> Option<(usize, usize)> {
+    match name {
+        "nif" => Some((W, 168)),
+        "title" | "intro" | "castle" => Some((W, H)),
+        "menu" => Some((0x130, 0xb8)),
+        "loading" => Some((0x130, 0x90)),
         _ => None,
     }
 }
@@ -353,7 +374,7 @@ impl Pack {
             let want = match id {
                 ArtId::World(_) | ArtId::Mond(_) => Some((16 * s, 16 * s)),
                 ArtId::Town(_) => Some((8 * s, 8 * s)),
-                ArtId::Screen(_) => Some((W * s, 168 * s)),
+                ArtId::Screen(n) => screen_size(n).map(|(w, h)| (w * s, h * s)),
                 ArtId::Dun(_) | ArtId::DMon(_) | ArtId::Space(_) => None,
             };
             let mut files = Vec::new();
@@ -748,8 +769,9 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
     let s = pack.scale();
     let mut out = t.to_rgb(palette, s);
     // Palette tricks (Mondain's flash, the start-up castle's registers)
-    // stay original.
-    if t.inverted || t.remap.is_some() {
+    // stay original, except under the castle picture, which the pack
+    // replaces whole (with its own flags).
+    if t.inverted || (t.remap.is_some() && !t.art.iter().any(|o| o.id == ArtId::Screen("castle"))) {
         return out;
     }
     let ow = W * s;
@@ -778,7 +800,35 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
             space(&mut out, s, t, sc, pack, ms);
         }
     }
+    if let Some((id, x, y, w, h)) = t.backdrop {
+        if let Some(e) = pack.entries.get(&id) {
+            let op = crate::term::ArtOp { id, under: None, shift: 0, pos: None, x, y, w, h, px: Vec::new() };
+            backdrop(&mut out, s, t, &op, Pack::frame(e, 0, 1, ms));
+        }
+    }
     for op in &t.art {
+        if op.id == ArtId::Screen("castle") {
+            // The start-up castle: each flag shows the pack frame of the
+            // original's flag frame there (`pos` = left, right).
+            let Some(e) = pack.entries.get(&op.id) else { continue };
+            if !op.intact(t) {
+                continue;
+            }
+            let n = e.frames.len();
+            let (l, r) = op.pos.map_or((0, 0), |(l, r)| (usize::from(l) % n, usize::from(r) % n));
+            put(&mut out, &e.frames[l], 0, 0, 0);
+            if r != l {
+                let img = &e.frames[r];
+                let x0 = img.w * CASTLE_SPLIT / W;
+                for y in 0..img.h.min(H * s) {
+                    for x in x0..img.w.min(ow) {
+                        let src = (y * img.w + x) * 4;
+                        out[(y * ow + x) * 3..(y * ow + x) * 3 + 3].copy_from_slice(&img.px[src..src + 3]);
+                    }
+                }
+            }
+            continue;
+        }
         if op.id == ArtId::Screen("dungeon") {
             if let Some(sc) = &t.dscene {
                 if pack.entries.contains_key(&ArtId::Dun(dun::WALL)) && op.intact(t) {
@@ -914,6 +964,73 @@ file = "x.png"
         assert_eq!(px(&rgb, 2, 22, 22), [10, 20, 30]);
         // Below the screen region: original.
         assert_eq!(px(&rgb, 2, 0, 2 * 170), [0, 0, 0]);
+    }
+
+    #[test]
+    fn the_castle_picture_replaces_the_remapped_original() {
+        let mut t = Term::new();
+        t.remap = Some([0; 16]);
+        t.px.fill(3);
+        let p = Pack::parse("tile_size = 32\n[screen.castle]\nfile = \"c.png\"", |_| Ok(solid(640, 400, [9, 8, 7, 255]))).unwrap();
+        // Unmarked: the palette trick stays original.
+        assert_ne!(px(&compose(&t, &EGA_PALETTE, &p, 0), 2, 5, 5), [9, 8, 7]);
+        t.mark(ArtId::Screen("castle"), None, 0, 0, 0, W, H);
+        assert_eq!(px(&compose(&t, &EGA_PALETTE, &p, 0), 2, 5, 5), [9, 8, 7]);
+        // A flag drawn after the mark: original again until re-marked.
+        t.plot(0x7b, 0x37, 5);
+        assert_ne!(px(&compose(&t, &EGA_PALETTE, &p, 0), 2, 5, 5), [9, 8, 7]);
+    }
+
+    #[test]
+    fn each_castle_flag_follows_the_originals_frame() {
+        let mut t = Term::new();
+        t.remap = Some([0; 16]);
+        let cols = [[10, 0, 0, 255], [0, 20, 0, 255], [0, 0, 30, 255]];
+        let mut i = 0;
+        let p = Pack::parse("[screen.castle]\nframes = [\"a.png\", \"b.png\", \"c.png\"]", |_| {
+            i += 1;
+            Ok(solid(640, 400, cols[i - 1]))
+        })
+        .unwrap();
+        t.mark(ArtId::Screen("castle"), None, 0, 0, 0, W, H);
+        t.art_pos((1, 2));
+        let out = compose(&t, &EGA_PALETTE, &p, 0);
+        assert_eq!(px(&out, 2, 2 * 100, 2 * 60), [0, 20, 0]);
+        assert_eq!(px(&out, 2, 2 * 190, 2 * 60), [0, 0, 30]);
+        // Same frames at any clock: the flags move only when the original's do.
+        assert_eq!(compose(&t, &EGA_PALETTE, &p, 12345), out);
+        t.art_pos((2, 2));
+        assert_eq!(px(&compose(&t, &EGA_PALETTE, &p, 0), 2, 2 * 100, 2 * 60), [0, 0, 30]);
+    }
+
+    #[test]
+    fn a_standing_backdrop_survives_redraws() {
+        let mut t = Term::new();
+        t.fill(0, 0, W - 1, H - 1, 0);
+        t.backdrop = Some((ArtId::Screen("menu"), 8, 8, 0x130, 0xb8));
+        let p = Pack::parse("[screen.menu]\nfile = \"m.png\"\nbehind = true", |_| Ok(solid(608, 368, [50, 40, 30, 255]))).unwrap();
+        // Drawing inside (which drops any noted region there) keeps it.
+        t.fill(10, 10, 0x12c, 0xbe, 0);
+        t.plot(100, 100, 15);
+        let out = compose(&t, &EGA_PALETTE, &p, 0);
+        assert_eq!(px(&out, 2, 2 * 50, 2 * 50), [50, 40, 30]);
+        assert_ne!(px(&out, 2, 2 * 100, 2 * 100), [50, 40, 30]);
+        t.backdrop = None;
+        assert_eq!(px(&compose(&t, &EGA_PALETTE, &p, 0), 2, 2 * 50, 2 * 50), [0, 0, 0]);
+    }
+
+    #[test]
+    fn start_up_screen_sizes() {
+        for n in ["nif", "title", "intro", "castle", "menu", "loading"] {
+            assert_eq!(parse_id(&format!("screen.{n}")), Some(ArtId::Screen(n)));
+            assert!(screen_size(n).is_some());
+        }
+        assert_eq!(screen_size("menu"), Some((0x130, 0xb8)));
+        assert_eq!(parse_id("screen.logo"), None);
+        // A wrong-size castle is fitted to the whole screen.
+        let p = Pack::parse("[screen.castle]\nfile = \"c.png\"", |_| Ok(solid(320, 168, [1, 1, 1, 255]))).unwrap();
+        let f = &p.entries[&ArtId::Screen("castle")].frames[0];
+        assert_eq!((f.w, f.h), (640, 400));
     }
 
     #[test]

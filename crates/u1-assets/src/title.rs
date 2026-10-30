@@ -11,7 +11,7 @@
 use crate::exe::Exe;
 use crate::gamedir::{GameDir, VideoMode};
 use crate::io::{Io, IoResult};
-use crate::term::{Term, H, RAW, W};
+use crate::term::{ArtId, Term, H, RAW, W};
 
 /// Data segment paragraph of ULTIMA.EXE (relative to the load image).
 const DS_PARA: usize = 0x3ed;
@@ -187,6 +187,7 @@ impl Intro<'_> {
             state = if state & 1 != 0 { (state >> 1) ^ taps } else { state >> 1 };
             steps += 1;
             if steps % DISSOLVE_STEPS_PER_FRAME == 0 || state == 1 {
+                keep(t, "intro");
                 if io.poll_now(t)?.is_some() {
                     return Ok(true);
                 }
@@ -197,6 +198,7 @@ impl Intro<'_> {
             }
         }
         t.plot(0x59, 0x33, c);
+        keep(t, "intro");
         Ok(false)
     }
 
@@ -208,6 +210,7 @@ impl Intro<'_> {
         t.cursor(14, 13);
         io.pause(t, 5)?;
         t.print_attr(&self.f.exe.s(o::PRESENTS), self.f.c_page());
+        keep(t, "intro");
         io.pause(t, 0x2d)?;
         Ok(false)
     }
@@ -230,6 +233,7 @@ impl Intro<'_> {
         for (i, &s) in o::PAGE1.iter().enumerate() {
             t.print_at_attr(5, 12 + i, &self.f.exe.s(s), c);
         }
+        keep(t, "intro");
         if self.page_wait(t, io)? {
             return Ok(true);
         }
@@ -237,15 +241,17 @@ impl Intro<'_> {
         for (i, &s) in o::PAGE2.iter().enumerate() {
             t.print_at_attr(6, 12 + i, &self.f.exe.s(s), c);
         }
+        keep(t, "intro");
         if self.page_wait(t, io)? {
             return Ok(true);
         }
         self.castle(t, io)
     }
 
-    /// `3e9`: one flag frame at x.
-    fn flag(&mut self, t: &mut Term, x: i32) {
-        let frame = o::FLAGS[(self.rand(1, 0xef) / 0x50).min(2) as usize];
+    /// `3e9`: one flag frame at x; returns which of the three it drew.
+    fn flag(&mut self, t: &mut Term, x: i32) -> u16 {
+        let k = (self.rand(1, 0xef) / 0x50).min(2);
+        let frame = o::FLAGS[k as usize];
         let (on, off) = if self.f.mode == 0 { (2 | RAW, 1 | RAW) } else { (0xa, 0xb) };
         for row in 0..7 {
             for col in 0..7 {
@@ -253,6 +259,7 @@ impl Intro<'_> {
                 t.plot(x + col as i32, 0x37 + row as i32, c);
             }
         }
+        k
     }
 
     /// `b65`: the castle picture with waving flags, about 17 s.
@@ -262,18 +269,27 @@ impl Intro<'_> {
             t.remap = Some(self.f.castle_remap());
         }
         t.px.copy_from_slice(&self.f.castle);
-        let mut key = false;
-        for _ in 0..100 {
-            io.pause(t, 3)?;
-            self.flag(t, 0x7b);
-            if io.poll_now(t)?.is_some() {
-                key = true;
-                break;
+        // The enhanced castle is an EGA picture: CGA and Tandy keep the
+        // original art (the pack has no picture for their castles).
+        let enh = self.f.mode == 1;
+        let mut shown = [0u16; 2];
+        let mark = |t: &mut Term, shown: [u16; 2]| {
+            if enh {
+                keep(t, "castle");
+                t.art_pos((shown[0], shown[1]));
             }
-            self.flag(t, 0xc4);
-            if io.poll_now(t)?.is_some() {
-                key = true;
-                break;
+        };
+        mark(t, shown);
+        let mut key = false;
+        'flags: for _ in 0..100 {
+            io.pause(t, 3)?;
+            for (i, x) in [0x7b, 0xc4].into_iter().enumerate() {
+                shown[i] = self.flag(t, x);
+                mark(t, shown);
+                if io.poll_now(t)?.is_some() {
+                    key = true;
+                    break 'flags;
+                }
             }
         }
         clear(t);
@@ -300,12 +316,20 @@ impl Intro<'_> {
         t.print_at_attr(2, 18, &self.f.exe.s(o::TM2), tc);
         t.print_at_attr(11, 19, &self.f.exe.s(o::TM3), tc);
         t.print_at_attr(6, 23, &self.f.exe.s(o::CONVERSION), tc);
+        keep(t, "intro");
         io.pause(t, 0x3c)
     }
 }
 
 fn clear(t: &mut Term) {
     t.fill(0, 0, W - 1, H - 1, RAW);
+}
+
+/// Note the whole screen as the enhanced pack's `screen.NAME` picture as
+/// it now stands (redone after each change the original makes, so the
+/// region stays intact).
+fn keep(t: &mut Term, name: &'static str) {
+    t.mark(ArtId::Screen(name), None, 0, 0, 0, W, H);
 }
 
 /// A black screen for the start-up programs.
@@ -326,6 +350,7 @@ pub fn title_screen(f: &TitleFiles, t: &mut Term) {
     t.print_at_attr(16, 8, &f.exe.s(o::ULTIMA_I), f.c_text());
     t.print_at_attr(8, 11, &f.exe.s(o::FIRST_AGE), f.c_text());
     t.print_at_attr(0, 21, &f.exe.s(o::COPYRIGHT), f.c_text());
+    keep(t, "title");
 }
 
 /// The whole start-up sequence, repeating until a key is pressed; returns

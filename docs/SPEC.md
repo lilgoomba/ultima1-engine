@@ -1365,7 +1365,8 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   `license`, `tile_size` (16–128, a multiple of 16; default 32) and a
   `[palette]` table of free-form notes per video mode. Each other section
   names an original picture: `world.N` (overworld tile set, §3.2),
-  `town.N` (§3.3), `mond.N` (§3.4), `screen.nif`, a part of the
+  `town.N` (§3.3), `mond.N` (§3.4), a full screen `screen.NAME`
+  (`nif`, `title`, `intro`, `castle`, `menu`, `loading`), a part of the
   first-person dungeon view `dungeon.NAME` (`wall`, `door`, `secret`,
   `floor`, `ceiling`, `ladder_up`, `ladder_down`, `hole_up`, `hole_down`,
   `chest`, `coffin`, `field`), a dungeon monster `dmon.N` (N = the
@@ -1378,8 +1379,10 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   unknown key in a picture section or a missing or unreadable PNG is an
   error, and the pack is not loaded.
 * **Sizes.** With S = tile_size / 16 the internal screen is 320S×200S.
-  World and Mondain tiles are (16S)², town tiles (8S)², and `screen.nif`
-  is 320S×168S. Dungeon and space pictures may have any size; they are
+  World and Mondain tiles are (16S)², town tiles (8S)². Screens:
+  `nif` 320S×168S; `title`, `intro` and `castle` 320S×200S; `menu`
+  304S×184S and `loading` 304S×144S (the insides of the character
+  program's borders). Dungeon and space pictures may have any size; they are
   stretched over the view's geometry.
 * **Recording.** The game draws exactly as before. Every tile blit also
   records an *art op*: the picture's id, the screen rectangle, the
@@ -1418,7 +1421,31 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   clock. Castle (4/5) and town (7/8) frames are separate ids, so they
   keep the original's frame choice (§3.5).
 * **Palette effects.** While the screen is drawn with a changed palette
-  (the inverted flash, palette remaps), no overlays are drawn.
+  (the inverted flash, palette remaps), no overlays are drawn, with one
+  exception: the start-up castle (below).
+* **Start-up screens.** The title sequence (§17) records whole-screen ops
+  as it draws: `title` for the text title, `intro` for the logo screen
+  (renewed on every dissolve frame, after "Presents", after each text
+  page and on the credits page) and `castle` for the castle picture. The
+  castle op is renewed after each flag the original draws, so it stays
+  intact, and carries which of the three flag frames the original chose
+  for the left and the right flag (its `pos`). With it, the pack's
+  picture replaces the whole screen even though the castle uses a
+  palette remap: the pack's frame N shows both pennants in the
+  original's flag frame N, and the left half of the screen (x < 160) is
+  taken from the left flag's frame, the right half from the right
+  flag's, so each pennant changes exactly when the original's does (no
+  clock). Only the EGA castle is noted: the pack's picture is an EGA
+  picture and, like every picture the pack has no version of, the CGA
+  and Tandy castles (their own pictures and colours) stay original. The
+  character program (§17) sets a standing *backdrop* (`menu` over the
+  inside of its border from its first screen; `loading` inside the
+  "please wait" box): unlike an op it is not dropped by drawing, and
+  shows wherever the region is black until replaced, so screens being
+  drawn between key waits (a stat being rolled, a roster being written)
+  keep it too. `title`, `intro`, `menu` and `loading` are backdrops
+  (`behind = true`), so every original word, line and the logo stay
+  exactly as drawn.
 * **Dungeon view.** The first-person view (§6) is still drawn as the
   original's lines. While drawing, the engine also notes each surface
   between two of the view's vertical edges (wall faces ahead and at the
@@ -1465,9 +1492,7 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   it) so a tall picture is not squeezed into the original's flat H.
   Shots, exhaust, explosions and anything without a picture keep their
   original pixels, over the new background.
-* **Limitations.** Only the NIF screen is supported among full screens;
-  the castle title picture is not overlaid because its flag animation
-  changes its pixels. The NIF reveal shows the original art until the
+* **Limitations.** The NIF reveal shows the original art until the
   picture is complete.
 
 ## Sources

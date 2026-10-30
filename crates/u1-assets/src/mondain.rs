@@ -12,7 +12,7 @@ use crate::gamedir::GameDir;
 use crate::io::{keys, Halt, Io, IoResult};
 use crate::rng::U1Rng;
 use crate::save::off;
-use crate::term::{BLACK, BLUE, RAW, TEXT, WHITE};
+use crate::term::{ArtId, BLACK, BLUE, RAW, TEXT, WHITE};
 use crate::tiles::{TileSet, CGA_MOND, EGA_MOND, T1K_MOND};
 
 /// Size of the supported MONDAIN.EXE.
@@ -327,8 +327,9 @@ impl Lair<'_> {
 
     /// `355d`: one 16x16 tile at arena cell (x,y).
     fn draw_tile(&mut self, t: i16, x: i16, y: i16) {
-        let px = &self.f.tiles[(t.clamp(0, 20)) as usize];
-        self.g.term.blit(8 + 16 * x as usize, 8 + 16 * y as usize, 16, 16, px, 0);
+        let i = t.clamp(0, 20) as usize;
+        let px = &self.f.tiles[i];
+        self.g.term.blit_art(ArtId::Mond(i as u16), None, 8 + 16 * x as usize, 8 + 16 * y as usize, 16, 16, px, 0);
     }
     fn draw_cell(&mut self, x: i16, y: i16) {
         let c = self.cell(x, y);
@@ -1095,6 +1096,7 @@ impl Lair<'_> {
                 self.delay(1)?;
             }
         }
+        self.g.term.mark(ArtId::Screen("nif"), None, 0, 0, 0, 320, NIF_SIZE / 40);
         self.delay(75)?;
         let t = self.s(d::RESTART);
         self.g.term.print_at(4, 24, &t);

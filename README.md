@@ -211,11 +211,44 @@ passes by itself, as in the original. Options:
   `--keys TEXT` types those keys first. Use `{up}` `{down}` `{left}`
   `{right}` `{enter}` `{esc}` `{bs}` `{space}` for special keys and `~`
   to end a timed wait. `--counter N` sets the animation counter.
+* `--video enhanced [--pack DIR]`: the optional enhanced video mode
+  (below). `--video original` is the default.
 
 ```sh
 SDL_VIDEODRIVER=dummy cargo run -p u1 -- --game-dir "/path/to/Ultima1" \
     --player 2 --seed 2 --keys "{up}{up}e" --screenshot /tmp/u1.png
 ```
+
+### Enhanced video mode (optional)
+
+The faithful 320×200 picture stays the default. `--video enhanced` draws
+the same game at a higher internal resolution and paints the art of an
+*asset pack* over each original tile it recognises:
+
+```sh
+cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --video enhanced
+cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --video enhanced --pack my-pack/
+```
+
+* The default pack is `assets/enhanced/` (looked up in the current
+  directory, then in the source tree). On `main` it is empty, so every
+  tile is the original art scaled up nearest-neighbour.
+* A pack is a directory with `manifest.toml` and PNG files. The manifest
+  declares `tile_size` (pixels per original 16-pixel tile: 32 gives a
+  640×400 internal screen, 64 gives 1280×800), and maps tile ids
+  (`world.N`, `town.N`, `mond.N`, `screen.nif`) to a `file` or a list of
+  animation `frames`, with optional `scroll` (water) and `fps`. An
+  optional `[palette]` table holds free-form notes per video mode. See
+  SPEC §20 and the docs at the top of `crates/u1-assets/src/enhanced.rs`.
+* Any id the pack does not list, and any tile the game has drawn over
+  (text, cursor, effects), falls back to the original picture. Game
+  logic, screen layout and the viewport are unchanged.
+* The window is always a whole multiple of the internal resolution.
+  `--screenshot` writes the internal resolution.
+
+Pack art in this repository is original work, not derived from Origin's
+tiles, and is licensed CC-BY-SA 4.0 (see `assets/enhanced/LICENSE` where
+present); the engine code remains GPL-3.0-or-later.
 
 Tests that use your own files are skipped unless you point them at your
 install:
@@ -241,6 +274,7 @@ crates/u1-assets   asset parsing and game-rules library (no dependencies)
 crates/u1          SDL2 playable overworld
 crates/u1view      SDL2 overworld viewer
 docs/SPEC.md       data-format specification with sources
+assets/enhanced    default asset pack for --video enhanced
 docs/demo.png      demo screenshot (synthetic art)
 ```
 
@@ -249,6 +283,8 @@ docs/demo.png      demo screenshot (synthetic art)
 1. Finish the remaining open items in SPEC §11.
 2. Space and the Mondain battle.
 3. Optional quality-of-life features, kept apart from the faithful mode.
+4. Enhanced video mode art (first batch under review on the
+   `enhanced-art-review` branch).
 
 ## License
 

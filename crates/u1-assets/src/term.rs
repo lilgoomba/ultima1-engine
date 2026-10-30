@@ -16,6 +16,48 @@ pub const WHITE: u8 = 15;
 /// Flag on a colour: a device value used as is (no CGA mapping).
 pub const RAW: u8 = 0x10;
 
+/// Which original picture a drawn region shows, for the enhanced video
+/// mode (`crate::enhanced`); the faithful renderer ignores it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ArtId {
+    /// Overworld tile (`???TILES.BIN`, SPEC §3.2).
+    World(u16),
+    /// Town/castle tile (`???TOWN.BIN`, SPEC §3.3).
+    Town(u16),
+    /// Mondain's lair tile (`???MOND.BIN`, SPEC §3.4).
+    Mond(u16),
+    /// A full-screen picture (`"nif"`).
+    Screen(&'static str),
+}
+
+/// A region of the screen known to show one original picture: kept while
+/// the pixels there are still the ones drawn (checked when composing).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtOp {
+    pub id: ArtId,
+    /// What the original shows behind a sprite there (outdoors: the
+    /// terrain under the player or a monster).
+    pub under: Option<ArtId>,
+    /// Horizontal scroll of the tile (the water).
+    pub shift: u16,
+    pub x: usize,
+    pub y: usize,
+    pub w: usize,
+    pub h: usize,
+    /// The pixels as drawn.
+    pub px: Vec<u8>,
+}
+
+impl ArtOp {
+    /// Still on screen: nothing has been drawn over it since.
+    pub fn intact(&self, t: &Term) -> bool {
+        (0..self.h).all(|r| {
+            let o = (self.y + r) * W + self.x;
+            t.px[o..o + self.w] == self.px[r * self.w..(r + 1) * self.w]
+        })
+    }
+}
+
 /// Viewport rectangle (inclusive), cleared to black by the original.
 pub const VIEW: (usize, usize, usize, usize) = (8, 8, 311, 151);
 
@@ -37,6 +79,9 @@ pub struct Term {
     /// Palette registers reprogrammed (the start-up castle picture):
     /// pixel value -> standard colour index.
     pub remap: Option<[u8; 16]>,
+    /// Regions showing known pictures (newest last), for the enhanced
+    /// renderer.
+    pub art: Vec<ArtOp>,
 }
 
 impl Default for Term {
@@ -54,7 +99,7 @@ impl Term {
 
     /// The same frame for a CGA (`cga`) or a 16-colour screen.
     pub fn with_cga(cga: bool) -> Self {
-        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None };
+        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new() };
         t.fill(0, 0, W - 1, H - 1, BLUE);
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
@@ -388,6 +433,29 @@ impl Term {
                 }
             }
         }
+    }
+
+    /// [`Term::blit`] that also notes which tile was drawn there.
+    #[allow(clippy::too_many_arguments)]
+    pub fn blit_art(&mut self, id: ArtId, under: Option<ArtId>, x: usize, y: usize, w: usize, h: usize, pixels: &[u8], shift: usize) {
+        self.blit(x, y, w, h, pixels, shift);
+        self.mark(id, under, shift, x, y, w, h);
+    }
+
+    /// Note that the region now shows picture `id`; older notes it
+    /// overlaps are dropped.
+    #[allow(clippy::too_many_arguments)]
+    pub fn mark(&mut self, id: ArtId, under: Option<ArtId>, shift: usize, x: usize, y: usize, w: usize, h: usize) {
+        let (w, h) = (w.min(W.saturating_sub(x)), h.min(H.saturating_sub(y)));
+        if w == 0 || h == 0 {
+            return;
+        }
+        self.art.retain(|o| o.x >= x + w || x >= o.x + o.w || o.y >= y + h || y >= o.y + o.h);
+        let mut px = Vec::with_capacity(w * h);
+        for r in y..y + h {
+            px.extend_from_slice(&self.px[r * W + x..r * W + x + w]);
+        }
+        self.art.push(ArtOp { id, under, shift: shift as u16, x, y, w, h, px });
     }
 
     /// Text currently shown in a character row (glyphs matched back to

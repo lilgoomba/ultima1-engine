@@ -4,6 +4,7 @@
 //!   u1 --game-dir <path> [--player N | --save FILE | --pos X,Y] [--mode ega|t1k|cga]
 //!      [--scale N] [--save-to FILE]
 //!   u1 --game-dir <path> ... --screenshot out.png [--keys TEXT] [--counter N]
+//!   u1 --game-dir <path> ... --video enhanced [--pack DIR]
 //!
 //! Game files are only read. Quit (Q, outdoors) writes the 820-byte player
 //! record to `--save-to` (default `./PLAYER1.U1` in the current directory,
@@ -14,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use u1_assets::enhanced::{self, Pack};
 use u1_assets::exe::Exe;
 use u1_assets::game::{Assets, Game};
 use u1_assets::gamedir::{GameDir, VideoMode};
@@ -38,6 +40,7 @@ const DEFAULT_POS: (u16, u16) = (49, 40);
 
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
           [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE] [--mute]
+          [--video original|enhanced [--pack DIR]]
           [--screenshot out.png [--keys TEXT] [--counter N]]
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
@@ -45,7 +48,10 @@ Space passes). --keys is typed text; {up} {down} {left} {right} {enter}
 {esc} {bs} {space} name special keys and ~ ends a timed wait.
 --intro starts with the title sequence and the character menu, --gen with
 the menu; characters are kept in --roster DIR (default: the --save-to
-directory, never the game directory) and the chosen one is saved back there.";
+directory, never the game directory) and the chosen one is saved back there.
+--video enhanced draws the art of an asset pack (default: assets/enhanced in
+the source tree) over the original tiles at a higher resolution; tiles the
+pack lacks are the original scaled up. The game itself is unchanged.";
 
 struct Args {
     game_dir: PathBuf,
@@ -65,6 +71,8 @@ struct Args {
     gen: bool,
     roster: Option<PathBuf>,
     mute: bool,
+    enhanced: bool,
+    pack: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -86,6 +94,8 @@ fn parse_args() -> Result<Args, String> {
         gen: false,
         roster: None,
         mute: false,
+        enhanced: false,
+        pack: None,
     };
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
@@ -123,6 +133,14 @@ fn parse_args() -> Result<Args, String> {
             "--roster" => a.roster = Some(v()?.into()),
             // No speaker output; effects still take their original time.
             "--mute" => a.mute = true,
+            "--video" => {
+                a.enhanced = match v()?.as_str() {
+                    "original" => false,
+                    "enhanced" => true,
+                    _ => return Err("--video wants original or enhanced".into()),
+                }
+            }
+            "--pack" => a.pack = Some(v()?.into()),
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
             // The original's only video choice: a first argument starting
@@ -135,7 +153,45 @@ fn parse_args() -> Result<Args, String> {
         return Err(USAGE.into());
     }
     a.scale = a.scale.clamp(1, 6);
+    if a.pack.is_some() && !a.enhanced {
+        return Err("--pack needs --video enhanced".into());
+    }
     Ok(a)
+}
+
+/// The enhanced mode's pack: `--pack`, else `assets/enhanced` in the
+/// current directory or the source tree; with none, no art (everything
+/// is the original, scaled up).
+fn load_pack(a: &Args) -> Result<Option<Pack>, String> {
+    if !a.enhanced {
+        return Ok(None);
+    }
+    let dir = match &a.pack {
+        Some(d) => Some(d.clone()),
+        None => [PathBuf::from("assets/enhanced"), Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/enhanced")]
+            .into_iter()
+            .find(|d| d.join("manifest.toml").is_file()),
+    };
+    let pack = match dir {
+        Some(d) => Pack::load(&d)?,
+        None => {
+            eprintln!("no asset pack found (assets/enhanced); showing the original art scaled up");
+            Pack::empty(32)
+        }
+    };
+    for w in &pack.warnings {
+        eprintln!("pack: {w}");
+    }
+    Ok(Some(pack))
+}
+
+/// The screen as RGB at the output resolution: the original, or composed
+/// with the pack (`scale` is the original's factor).
+fn frame_rgb(t: &Term, palette: &[Rgb; 16], pack: Option<&Pack>, scale: usize, ms: u64) -> (usize, usize, Vec<u8>) {
+    match pack {
+        Some(p) => (W * p.scale(), H * p.scale(), enhanced::compose(t, palette, p, ms)),
+        None => (W * scale, H * scale, t.to_rgb(palette, scale)),
+    }
 }
 
 fn same_dir(a: &Path, b: &Path) -> bool {
@@ -298,9 +354,14 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
     let mut io = ScriptIo::from_text(&a.keys);
     let scale = 2; // the size of a 640x400 DOSBox capture
     let mode = video_mode(a)?;
+    let pack = load_pack(a)?;
+    let shot = |t: &Term, pal: &[Rgb; 16]| -> Result<(), String> {
+        let (w, h, rgb) = frame_rgb(t, pal, pack.as_ref(), scale, 0);
+        write_png(out, w as u32, h as u32, &rgb)
+    };
     let chosen = match front(a, mode, &mut io)? {
         Front::Halted(t) => {
-            write_png(out, (W * scale) as u32, (H * scale) as u32, &t.to_rgb(&palette_for(mode), scale))?;
+            shot(&t, &palette_for(mode))?;
             println!("{}: start-up", out.display());
             return Ok(());
         }
@@ -310,7 +371,7 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
     let (mut g, palette) = load(a, chosen.as_deref())?;
     let palette = &palette;
     let _ = g.run(&mut io);
-    write_png(out, (W * scale) as u32, (H * scale) as u32, &g.term.to_rgb(palette, scale))?;
+    shot(&g.term, palette)?;
     println!("{}: mode={} loc={} at ({},{}) town ({},{})", out.display(), g.mode, g.loc, g.ow.x, g.ow.y, g.px, g.py);
     for l in g.term.messages() {
         println!("| {l}");
@@ -332,12 +393,16 @@ struct SdlIo {
     pending: std::collections::VecDeque<u8>,
     /// The PC speaker (none with `--mute` or without an audio device).
     audio: Option<(sdl2::audio::AudioQueue<i16>, u32)>,
+    /// The enhanced mode's art.
+    pack: Option<Pack>,
+    start: Instant,
 }
 
 impl SdlIo {
     fn present(&mut self, t: &Term) -> IoResult<()> {
-        let rgb = t.to_rgb(&self.palette, 1);
-        self.tex.update(None, &rgb, W * 3).map_err(|_| Halt)?;
+        let ms = self.start.elapsed().as_millis() as u64;
+        let (w, _, rgb) = frame_rgb(t, &self.palette, self.pack.as_ref(), 1, ms);
+        self.tex.update(None, &rgb, w * 3).map_err(|_| Halt)?;
         self.canvas.copy(&self.tex, None, None).map_err(|_| Halt)?;
         self.canvas.present();
         Ok(())
@@ -474,18 +539,27 @@ fn play(a: &Args) -> Result<(), String> {
     use sdl2::pixels::PixelFormatEnum;
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
+    let pack = load_pack(a)?;
+    // Internal resolution: 320x200, or the pack's multiple of it; the
+    // window is a whole multiple of that and stays integer-scaled.
+    let k = pack.as_ref().map_or(1, |p| p.scale()) as u32;
+    let (iw, ih) = (W as u32 * k, H as u32 * k);
+    let n = (a.scale / k).max(1);
     let window = video
-        .window("u1 - Ultima I", W as u32 * a.scale, H as u32 * a.scale)
+        .window("u1 - Ultima I", iw * n, ih * n)
         .position_centered()
+        .resizable()
         .build()
         .map_err(|e| e.to_string())?;
-    let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+    let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+    canvas.set_logical_size(iw, ih).map_err(|e| e.to_string())?;
+    canvas.set_integer_scale(true).map_err(|e| e.to_string())?;
     // The texture creator lives for the whole program.
     let tc: &'static _ = Box::leak(Box::new(canvas.texture_creator()));
-    let tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, W as u32, H as u32).map_err(|e| e.to_string())?;
+    let tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, iw, ih).map_err(|e| e.to_string())?;
     let events = sdl.event_pump()?;
     let audio = if a.mute { None } else { open_speaker(&sdl) };
-    let mut io = SdlIo { canvas, tex, events, palette, next: Instant::now(), pending: Default::default(), audio };
+    let mut io = SdlIo { canvas, tex, events, palette, next: Instant::now(), pending: Default::default(), audio, pack, start: Instant::now() };
     let chosen = match front(a, mode, &mut io)? {
         Front::Halted(_) => return Ok(()),
         Front::Play(p) => Some(p),

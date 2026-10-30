@@ -1,0 +1,6 @@
+# Enhanced video mode asset pack (see README "Enhanced video mode" and
+# docs/SPEC.md §20). Every tile or screen not listed here is drawn from
+# the original art, scaled up nearest-neighbour.
+name = "u1-enhanced (empty)"
+tile_size = 32
+license = "CC-BY-SA-4.0"

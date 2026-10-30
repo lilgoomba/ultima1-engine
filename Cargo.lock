@@ -136,6 +136,9 @@ dependencies = [
 [[package]]
 name = "u1-assets"
 version = "0.1.0"
+dependencies = [
+ "png",
+]
 
 [[package]]
 name = "u1view"

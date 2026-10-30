@@ -10,6 +10,7 @@ pub mod demo;
 pub mod dgame;
 pub mod dungeon;
 pub mod dview;
+pub mod enhanced;
 pub mod error;
 pub mod exe;
 pub mod font;

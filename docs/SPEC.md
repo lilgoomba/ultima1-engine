@@ -1354,6 +1354,50 @@ VERIFIED (original executables, reference reading).
   cycles=530. Effect 4 (the step click) is too short to resolve at
   44.1 kHz in the capture.
 
+## 20. Enhanced video mode (engine feature, not original behaviour)
+
+This section describes an optional feature of this engine. It is not part
+of the original game; the faithful 320×200 output (§3) stays the default.
+
+* **Asset pack.** A directory with `manifest.toml`, a small TOML subset
+  (top-level keys, `[section]` headers, strings, integers including `0x`,
+  booleans, lists of strings, `#` comments). Top-level keys: `name`,
+  `license`, `tile_size` (16–128, a multiple of 16; default 32) and a
+  `[palette]` table of free-form notes per video mode. Each other section
+  names an original picture: `world.N` (overworld tile set, §3.2),
+  `town.N` (§3.3), `mond.N` (§3.4) or `screen.nif`. It holds `file` or
+  `frames` (PNG paths relative to the pack), and optionally `scroll` and
+  `fps`. An unknown section is skipped with a warning, and a wrong-sized
+  PNG is resized nearest-neighbour with a warning. A malformed line, an
+  unknown key in a picture section or a missing or unreadable PNG is an
+  error, and the pack is not loaded.
+* **Sizes.** With S = tile_size / 16 the internal screen is 320S×200S.
+  World and Mondain tiles are (16S)², town tiles (8S)², and `screen.nif`
+  is 320S×168S.
+* **Recording.** The game draws exactly as before. Every tile blit also
+  records an *art op*: the picture's id, the screen rectangle, the
+  pixels it drew and, for a world sprite (tile > 9), the terrain under it.
+  A later blit that overlaps an op removes it.
+* **Composition.** The 320×200 screen is scaled up by S
+  nearest-neighbour. Then each op whose rectangle still holds exactly the
+  pixels it drew, and whose id is in the pack, is replaced by the pack's
+  picture. A sprite PNG with alpha is drawn over the pack's picture of the
+  terrain under it, or over black if the pack lacks that terrain. So
+  anything that has been drawn over (text, the cursor, hit flashes, the
+  map reveal) automatically shows the original art.
+* **Animation.** With `scroll = true` (water) the frame is chosen from
+  the original scroll offset (frame = offset · n / 16 for n frames) and
+  the picture is shifted by offset·S pixels, so the motion keeps the
+  original timing. Otherwise, a `frames` list cycles at `fps` by the wall
+  clock. Castle (4/5) and town (7/8) frames are separate ids, so they
+  keep the original's frame choice (§3.5).
+* **Palette effects.** While the screen is drawn with a changed palette
+  (the inverted flash, palette remaps), no overlays are drawn.
+* **Limitations.** Only the NIF screen is supported among full screens;
+  the castle title picture is not overlaid because its flag animation
+  changes its pixels. The NIF reveal shows the original art until the
+  picture is complete.
+
 ## Sources
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.

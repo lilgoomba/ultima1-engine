@@ -21,7 +21,7 @@ use crate::overworld::{tile_for_transport, Entity, Overworld};
 use crate::rules::{self, Dir, ExeTables, VIEW_COLS, VIEW_ROWS};
 use crate::save::{off, MapObject, PlayerRecord, SAVE_SIZE};
 use crate::tcd::{LocalMap, TownCastleMaps, TCD_HEIGHT, TCD_WIDTH};
-use crate::term::{Term, BLACK, BLUE, TEXT, WARN, WHITE};
+use crate::term::{ArtId, Term, BLACK, BLUE, TEXT, WARN, WHITE};
 use crate::tiles::TileSet;
 
 /// Save-record offsets of the inventory arrays (item k at base + 2k).
@@ -401,11 +401,16 @@ impl Game {
     }
 
     fn tile(&mut self, set: bool, idx: usize, x: usize, y: usize, shift: usize) {
+        self.tile_over(set, idx, None, x, y, shift);
+    }
+
+    fn tile_over(&mut self, set: bool, idx: usize, under: Option<ArtId>, x: usize, y: usize, shift: usize) {
         let tiles = if set { &self.a.town_tiles } else { &self.a.world_tiles };
         let Some(px) = tiles.tiles.get(idx) else { return };
         let (w, h) = (tiles.width, tiles.height);
         let px = px.clone();
-        self.term.blit(x, y, w, h, &px, shift);
+        let id = if set { ArtId::Town(idx as u16) } else { ArtId::World(idx as u16) };
+        self.term.blit_art(id, under, x, y, w, h, &px, shift);
     }
 
     /// Outdoor viewport: 19x9 tiles of the world around the player.
@@ -448,7 +453,13 @@ impl Game {
         let tw = self.a.world_tiles.width.max(1);
         let th = self.a.world_tiles.height.max(1);
         let (sx, sy) = (8 + col as usize * tw, 8 + row as usize * th);
-        self.tile(false, t, sx, sy, shift);
+        // Objects stand on terrain (tiles 0-9): note which, for the
+        // enhanced renderer's sprites.
+        let under = (t > 9).then(|| {
+            let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
+            ArtId::World(Terrain::from_cell(self.a.map.cell(mx as usize, my as usize)).tile().0 as u16)
+        });
+        self.tile_over(false, t, under, sx, sy, shift);
     }
 
     /// `af57(p)`: the per-poll outdoor animation, `p` counting the polls

@@ -123,6 +123,9 @@ pub struct Game {
     /// time-of-day seeds; `None` uses `fixed_time` (tests, `--seed`).
     pub clock: Option<fn() -> [u8; 4]>,
     pub fixed_time: u16,
+    /// Clock values to use, in order, before falling back to `fixed_time`
+    /// (lets tests replay a run recorded at known times).
+    pub fixed_times: std::collections::VecDeque<u16>,
 }
 
 impl Game {
@@ -168,6 +171,7 @@ impl Game {
             view_tables: None,
             clock: None,
             fixed_time: seed,
+            fixed_times: Default::default(),
         };
         g.redraw();
         g

@@ -79,14 +79,14 @@ impl Game {
     }
 
     /// The 12-bit time seed now (or the fixed one used by tests).
-    pub fn time_seed_now(&self) -> u16 {
+    pub fn time_seed_now(&mut self) -> u16 {
         // Read through `time_seed_from` so the clock and tests agree.
         match self.clock {
             Some(f) => {
                 let [h, mi, s, c] = f();
                 time_seed(h, mi, s, c)
             }
-            None => self.fixed_time & 0x0FFF,
+            None => self.fixed_times.pop_front().unwrap_or(self.fixed_time) & 0x0FFF,
         }
     }
 

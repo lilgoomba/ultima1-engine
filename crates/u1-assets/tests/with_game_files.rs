@@ -20,6 +20,19 @@ fn game_dir() -> Option<GameDir> {
 
 /// PLAYER2.U1 moved to (x, y), run with seed 2 and the typed keys.
 fn play(x: u16, y: u16, keys: &str) -> Option<Game> {
+    play_with(x, y, keys, 2, &[], |_| {})
+}
+
+/// As `play`, with a chosen seed, recorded clock values for the time seeds
+/// and a hook to adjust the save before starting.
+fn play_with(
+    x: u16,
+    y: u16,
+    keys: &str,
+    seed: u16,
+    times: &[u16],
+    adjust: impl FnOnce(&mut PlayerRecord),
+) -> Option<Game> {
     let g = game_dir()?;
     let mode = g.detect_video_mode()?;
     let exe_bytes = g.read("OUT.EXE").ok()?;
@@ -41,7 +54,9 @@ fn play(x: u16, y: u16, keys: &str) -> Option<Game> {
     rec.set_object(0, &o);
     // The coin of the DOSBox runs these values were observed in.
     rec.set_u16(off::COIN, 35);
-    let mut game = Game::new(assets, rec, 2);
+    adjust(&mut rec);
+    let mut game = Game::new(assets, rec, seed);
+    game.fixed_times = times.iter().copied().collect();
     let _ = game.run(&mut ScriptIo::from_text(keys));
     Some(game)
 }
@@ -150,4 +165,37 @@ fn dungeon_turns_and_blocked_path() {
     assert_eq!(g.dungeon.as_ref().unwrap().facing, 1);
     let Some(g) = play(39, 60, "e{right}{up}") else { return };
     assert!(said(&g, "Forward - path blocked!"));
+}
+
+/// Replays a DOSBox session through three dungeon levels. The original seeds
+/// its generator from the clock; the clock values below (one per level
+/// set-up) were recovered from the DOSBox frames, after which every frame of
+/// the run matched: monster positions, hits, kills and loot.
+#[test]
+fn dungeon_run_replays_dosbox_session() {
+    let adjust = |r: &mut PlayerRecord| {
+        r.set_u16(off::HITS, 225);
+        r.set_u16(off::FOOD, 223);
+        r.set_u16(off::QUESTS + 2, 0xFFFF);
+        r.set_u16(off::STEPS, 158);
+    };
+    let run = |keys: &str| play_with(39, 60, keys, 2332, &[2332, 2248, 403], adjust);
+    let l1 = "e{left}{up}{up}{right}{up}{up}{up}{up}{up}{up}";
+    let Some(g) = run(&format!("{l1}a")) else { return };
+    assert!(said(&g, "Ranger killed!"));
+    assert!(said(&g, "Thou dost find: 5 copper!"));
+    assert_eq!(g.rec.u16_at(off::COIN), 40);
+    let l2 = format!(
+        "{l1}aaaa{{up}}{{up}}{{up}}{{up}}{{up}}k{{left}}{{up}}{{left}}{{up}}{{up}}{{up}}{{up}}{{up}}{{up}}\
+         {{right}}{{up}}{{up}}{{right}}{{up}}{{left}}{{up}}{{up}}{{right}}{{up}}{{down}}aaa"
+    );
+    let Some(g) = run(&l2) else { return };
+    assert_eq!(g.dungeon.as_ref().unwrap().depth, 2);
+    assert!(said(&g, "Ranger killed!"));
+    assert_eq!((g.rec.u16_at(off::HITS), g.rec.u16_at(off::COIN)), (170, 61));
+    let l3 = format!("{l2}{{up}}{{right}}{{up}}{{up}}{{right}}{{up}}k{{up}}{{up}}{{left}}{{up}}{{up}}{{down}}{{up}}{{right}}{{up}}");
+    let Some(g) = run(&l3) else { return };
+    assert_eq!(g.dungeon.as_ref().unwrap().depth, 3);
+    assert!(said(&g, "Attacked by Cyclops!"));
+    assert_eq!(g.rec.u16_at(off::HITS), 36);
 }

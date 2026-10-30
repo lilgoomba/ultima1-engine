@@ -49,6 +49,7 @@ struct Args {
     mode: Option<VideoMode>,
     scale: u32,
     seed: Option<u16>,
+    times: Vec<u16>,
     save_to: Option<PathBuf>,
     screenshot: Option<PathBuf>,
     keys: String,
@@ -64,6 +65,7 @@ fn parse_args() -> Result<Args, String> {
         mode: None,
         scale: 3,
         seed: None,
+        times: Vec::new(),
         save_to: None,
         screenshot: None,
         keys: String::new(),
@@ -89,6 +91,12 @@ fn parse_args() -> Result<Args, String> {
             "--scale" => a.scale = v()?.parse().map_err(|_| "bad --scale")?,
             // Hidden: a fixed RNG seed and clock value for deterministic runs.
             "--seed" => a.seed = Some(v()?.parse().map_err(|_| "bad --seed")?),
+            // Hidden: clock values for successive time seeds (with --seed).
+            "--times" => {
+                for t in v()?.split(',') {
+                    a.times.push(t.trim().parse().map_err(|_| "bad --times")?);
+                }
+            }
             "--save-to" => a.save_to = Some(v()?.into()),
             "--screenshot" => a.screenshot = Some(v()?.into()),
             "--keys" => a.keys = v()?,
@@ -144,7 +152,11 @@ fn load(a: &Args) -> Result<(Game, [Rgb; 16]), String> {
         rec.set_object(0, &o);
     }
     let mut game = match a.seed {
-        Some(seed) => Game::new(assets, rec, seed),
+        Some(seed) => {
+            let mut g = Game::new(assets, rec, seed);
+            g.fixed_times = a.times.iter().copied().collect();
+            g
+        }
         None => {
             // As the original: the generator starts at the save's seed word
             // plus the time-of-day value modulo 999, and later time seeds

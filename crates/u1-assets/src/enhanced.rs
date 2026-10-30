@@ -29,15 +29,22 @@
 //!
 //! [screen.nif]
 //! file = "screens/nif.png"
+//!
+//! [dungeon.wall]          # first-person view textures, any size
+//! file = "dungeon/wall.png"
+//!
+//! [dmon.1]                # dungeon monster kind 1 (skeleton), any size
+//! file = "dungeon/skeleton.png"
 //! ```
 //!
 //! Sections are `world.N`, `town.N`, `mond.N` (decimal or `0x` tile
-//! numbers as in SPEC §3.2-3.4) and `screen.NAME`.
+//! numbers as in SPEC §3.2-3.4), `screen.NAME`, `dungeon.PART`
+//! ([`crate::term::DUN_PARTS`]) and `dmon.N` (monster kinds 0-24).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::term::{ArtId, Term, H, W};
+use crate::term::{dun, ArtId, Term, DUN_PARTS, H, W};
 
 /// An RGBA picture.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -228,6 +235,8 @@ pub fn parse_id(section: &str) -> Option<ArtId> {
             "nif" => Some(ArtId::Screen("nif")),
             _ => None,
         },
+        "dungeon" => DUN_PARTS.iter().position(|p| *p == n).map(|i| ArtId::Dun(i as u16)),
+        "dmon" => num().filter(|&i| i < 25).map(ArtId::DMon),
         _ => None,
     }
 }
@@ -329,10 +338,13 @@ impl Pack {
                 pack.warnings.push(format!("unknown section [{sec}] ignored"));
                 continue;
             };
-            let (ow, oh) = match id {
-                ArtId::World(_) | ArtId::Mond(_) => (16, 16),
-                ArtId::Town(_) => (8, 8),
-                ArtId::Screen(_) => (W, 168),
+            // Dungeon pictures are textures and sprites, stretched to the
+            // original geometry, so any size will do.
+            let want = match id {
+                ArtId::World(_) | ArtId::Mond(_) => Some((16 * s, 16 * s)),
+                ArtId::Town(_) => Some((8 * s, 8 * s)),
+                ArtId::Screen(_) => Some((W * s, 168 * s)),
+                ArtId::Dun(_) | ArtId::DMon(_) => None,
             };
             let mut files = Vec::new();
             let mut vfiles = Vec::new();
@@ -373,10 +385,13 @@ impl Pack {
             let mut frames = Vec::new();
             for f in &files {
                 let img = load(f)?;
-                if (img.w, img.h) != (ow * s, oh * s) {
-                    pack.warnings.push(format!("{f}: {}x{}, resized to {}x{}", img.w, img.h, ow * s, oh * s));
+                match want {
+                    Some((w, h)) if (img.w, img.h) != (w, h) => {
+                        pack.warnings.push(format!("{f}: {}x{}, resized to {w}x{h}", img.w, img.h));
+                        frames.push(img.resized(w, h));
+                    }
+                    _ => frames.push(img),
                 }
-                frames.push(img.resized(ow * s, oh * s));
             }
             let variants = if vfiles.is_empty() { Vec::new() } else { std::mem::take(&mut frames) };
             if frames.is_empty() {
@@ -413,6 +428,170 @@ impl Pack {
     }
 }
 
+/// Light at depth `p` (0 = the screen plane) in the dungeon.
+fn light(p: f32) -> f32 {
+    0.95 * 0.78f32.powf(p.max(0.0))
+}
+
+/// The pixel of `img` at texture coordinates `u`, `v` (wrapping).
+fn texel(img: &Rgba, u: f32, v: f32) -> [u8; 4] {
+    let x = ((u.rem_euclid(1.0) * img.w as f32) as usize).min(img.w - 1);
+    let y = ((v.rem_euclid(1.0) * img.h as f32) as usize).min(img.h - 1);
+    let i = (y * img.w + x) * 4;
+    [img.px[i], img.px[i + 1], img.px[i + 2], img.px[i + 3]]
+}
+
+/// Blend `c` (alpha in `c[3]`) darkened by `k` into pixel `(x, y)`.
+fn blend(out: &mut [u8], ow: usize, x: usize, y: usize, c: [u8; 4], k: f32) {
+    let a = f32::from(c[3]) / 255.0;
+    if a <= 0.0 {
+        return;
+    }
+    let d = (y * ow + x) * 3;
+    for i in 0..3 {
+        let v = f32::from(c[i]) * k;
+        out[d + i] = (v * a + f32::from(out[d + i]) * (1.0 - a)).clamp(0.0, 255.0) as u8;
+    }
+}
+
+/// Redraw the first-person dungeon view from its scene with the pack's
+/// textures and sprites, keeping the original geometry. Pieces the pack
+/// has no picture for keep their original pixels from `orig`.
+fn dungeon(out: &mut [u8], orig: &[u8], s: usize, sc: &crate::dview::DScene, pack: &Pack, ms: u64) {
+    use crate::dview::{DPiece, GEOM};
+    let ow = W * s;
+    let (gx0, gy0, gx1, gy1) = GEOM;
+    // The corridor's outer walls reach on to the edges of the view.
+    let (vx0, vy0, vx1, vy1) = crate::term::VIEW;
+    let (cx0, cy0, cx1, cy1) = (vx0 * s, vy0 * s, (vx1 + 1) * s, (vy1 + 1) * s);
+    let sf = s as f32;
+    let art = |id: ArtId| pack.entries.get(&id).map(|e| Pack::frame(e, 0, 1, ms));
+    let (xs, ys) = (sc.x.map(|v| v as f32), sc.y.map(|v| v as f32));
+    let mid = (gy0 + gy1) as f32 / 2.0 + 0.5;
+    // Floor and ceiling, one picture per cell, placed by the corridor
+    // tables and fading toward the horizon.
+    let fl = art(ArtId::Dun(dun::FLOOR));
+    let ce = art(ArtId::Dun(dun::CEILING));
+    for oy in cy0..cy1 {
+        let fy = (oy as f32 + 0.5) / sf;
+        let floor = fy > mid;
+        let Some(img) = (if floor { fl } else { ce }) else { continue };
+        let edge = |i: usize| if floor { gy1 as f32 + 1.0 - ys[i] } else { gy0 as f32 + ys[i] };
+        let dist = |e: f32| (e - mid).abs();
+        let dy = (fy - mid).abs();
+        // Plane depth of this row.
+        let mut p = 6.0;
+        for i in 0..5 {
+            let (a, b) = (dist(edge(i)), dist(edge(i + 1)));
+            if dy >= b || i == 0 && dy > a {
+                p = i as f32 + (a - dy) / (a - b).max(0.01);
+                break;
+            }
+        }
+        if p >= 6.0 {
+            let b = dist(edge(5));
+            p = 5.0 + (b - dy) / b.max(0.01) * 4.0;
+        }
+        let pi = (p.floor() as usize).min(4);
+        let f = (p - pi as f32).clamp(0.0, 1.0);
+        let xp = xs[pi] + (xs[pi + 1] - xs[pi]) * f;
+        let (l, r) = (gx0 as f32 + xp, gx1 as f32 + 1.0 - xp);
+        let k = light(p) * if p > 5.0 { (1.0 - (p - 5.0) / 4.0).max(0.0) } else { 1.0 };
+        for ox in cx0..cx1 {
+            let fx = (ox as f32 + 0.5) / sf;
+            let u = (fx - l) / (r - l).max(0.5);
+            let c = texel(img, u, if floor { -p } else { p });
+            out[(oy * ow + ox) * 3..(oy * ow + ox) * 3 + 3].fill(0);
+            blend(out, ow, ox, oy, c, k);
+        }
+    }
+    let copy = |out: &mut [u8], x0: f32, y0: f32, x1: f32, y1: f32, only_lit: bool| {
+        let (a, b) = (((x0 * sf) as usize).max(cx0), ((x1 * sf) as usize).min(cx1));
+        let (c, d) = (((y0 * sf) as usize).max(cy0), ((y1 * sf) as usize).min(cy1));
+        for y in c..d {
+            for x in a..b {
+                let i = (y * ow + x) * 3;
+                if !only_lit || orig[i..i + 3] != [0, 0, 0] {
+                    out[i..i + 3].copy_from_slice(&orig[i..i + 3]);
+                }
+            }
+        }
+    };
+    for piece in sc.ordered() {
+        match piece {
+            DPiece::Face(f) => {
+                let id = match f.id {
+                    ArtId::Dun(dun::SECRET) if !pack.entries.contains_key(&f.id) => ArtId::Dun(dun::WALL),
+                    id => id,
+                };
+                let Some(img) = art(id) else {
+                    let (t, b) = (f.top.0.min(f.top.1), f.bot.0.max(f.bot.1));
+                    copy(out, f.x0 as f32, t as f32, f.x1 as f32 + 1.0, b as f32 + 1.0, false);
+                    continue;
+                };
+                let (x0, x1) = (f.x0 as f32, f.x1 as f32 + 1.0);
+                let h0 = (f.bot.0 - f.top.0 + 1).max(1) as f32;
+                let h1 = (f.bot.1 - f.top.1 + 1).max(1) as f32;
+                let ea = if f.x0 <= gx0 { vx0 as f32 } else { x0 };
+                let eb = if f.x1 >= gx1 { vx1 as f32 + 1.0 } else { x1 };
+                let (a, b) = (((ea * sf) as usize).max(cx0), ((eb * sf) as usize).min(cx1));
+                for ox in a..b {
+                    let fx = (ox as f32 + 0.5) / sf;
+                    let t = (fx - x0) / (x1 - x0);
+                    let tc = t.clamp(0.0, 1.0);
+                    let u = (tc * h1 / ((1.0 - tc) * h0 + tc * h1)).clamp(0.0, 1.0) + (t - tc);
+                    let yt = f.top.0 as f32 + t * (f.top.1 - f.top.0) as f32;
+                    let yb = f.bot.0 as f32 + t * (f.bot.1 - f.bot.0) as f32 + 1.0;
+                    let k = light(f.plane.0 as f32 + u * (f.plane.1 - f.plane.0) as f32);
+                    let edge_x = ox < a + s.max(2) / 2 || ox + s.max(2) / 2 >= b;
+                    let (c, d) = (((yt * sf) as usize).max(cy0), ((yb * sf) as usize).min(cy1));
+                    for oy in c..d {
+                        let v = ((oy as f32 + 0.5) / sf - yt) / (yb - yt).max(0.5);
+                        let edge = edge_x || oy < c + s / 2 || oy + s / 2 >= d;
+                        blend(out, ow, ox, oy, texel(img, u, v), if edge { k * 0.5 } else { k });
+                    }
+                }
+            }
+            DPiece::Obj(o) => {
+                let (mut x0, y0, mut x1, y1) = (o.x0 as f32, o.y0 as f32, o.x1 as f32 + 1.0, o.y1 as f32 + 1.0);
+                if matches!(o.id, ArtId::Dun(dun::LADDER_UP | dun::LADDER_DOWN)) {
+                    // A ladder seen edge-on is a line: give it a rail's width.
+                    let w = (y1 - y0) * 0.06;
+                    if x1 - x0 < w {
+                        let c = (x0 + x1) / 2.0;
+                        (x0, x1) = (c - w / 2.0, c + w / 2.0);
+                    }
+                }
+                let Some(img) = art(o.id) else {
+                    copy(out, x0 - 1.0, y0 - 1.0, x1 + 1.0, y1 + 1.0, true);
+                    continue;
+                };
+                // Monsters, chests and coffins keep their proportions and
+                // stand on the box's bottom; ladders and holes stretch.
+                let fit = !matches!(o.id, ArtId::Dun(d) if (dun::LADDER_UP..=dun::HOLE_DOWN).contains(&d)) && o.id != ArtId::DMon(9);
+                let (bw, bh) = (x1 - x0, y1 - y0);
+                let (w, h, l, t) = if fit {
+                    let z = (bw / img.w as f32).min(bh / img.h as f32);
+                    let (w, h) = (img.w as f32 * z, img.h as f32 * z);
+                    (w, h, x0 + (bw - w) / 2.0, y1 - h)
+                } else {
+                    (bw, bh, x0, y0)
+                };
+                let k = light(o.plane as f32 * 0.7);
+                let (a, b) = (((l * sf) as usize).max(cx0), (((l + w) * sf) as usize).min(cx1));
+                let (c, d) = (((t * sf) as usize).max(cy0), (((t + h) * sf) as usize).min(cy1));
+                for oy in c..d {
+                    let v = ((oy as f32 + 0.5) / sf - t) / h;
+                    for ox in a..b {
+                        let u = ((ox as f32 + 0.5) / sf - l) / w;
+                        blend(out, ow, ox, oy, texel(img, u.min(0.999), v.min(0.999)), k);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The screen at `pack.scale()` times 320x200 as RGB: the original scaled
 /// up nearest-neighbour, with the pack's art over every intact region
 /// whose picture it has. `ms` drives clock animations.
@@ -446,6 +625,15 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
         }
     };
     for op in &t.art {
+        if op.id == ArtId::Screen("dungeon") {
+            if let Some(sc) = &t.dscene {
+                if pack.entries.contains_key(&ArtId::Dun(dun::WALL)) && op.intact(t) {
+                    let orig = out.clone();
+                    dungeon(&mut out, &orig, s, sc, pack, ms);
+                }
+            }
+            continue;
+        }
         let Some(e) = pack.entries.get(&op.id) else { continue };
         if !op.intact(t) {
             continue;
@@ -671,6 +859,19 @@ file = "x.png"
         assert_eq!(p2.entries[&ArtId::World(1)].variants.len(), 2);
         // Variants of an animation are refused.
         assert!(Pack::parse("[world.1]\nframes = [\"g0.png\", \"g1.png\"]\nvariants = [\"g2.png\"]", ld).is_err());
+    }
+
+    #[test]
+    fn dungeon_art_takes_any_size() {
+        let text = "tile_size = 32\n[dungeon.wall]\nfile = \"a\"\n[dungeon.field]\nframes = [\"a\", \"a\"]\nfps = 6\n[dmon.24]\nfile = \"a\"\n[dungeon.nothing]\nfile = \"a\"\n[dmon.25]\nfile = \"a\"\n";
+        let p = Pack::parse(text, |_| Ok(Rgba::new(37, 53))).unwrap();
+        assert_eq!(p.entries[&ArtId::Dun(dun::WALL)].frames[0].w, 37);
+        assert_eq!(p.entries[&ArtId::Dun(dun::FIELD)].frames.len(), 2);
+        assert_eq!(p.entries[&ArtId::DMon(24)].frames[0].h, 53);
+        assert_eq!(parse_id("dungeon.hole_down"), Some(ArtId::Dun(dun::HOLE_DOWN)));
+        // Unknown parts and monster numbers are reported, not loaded.
+        assert_eq!(p.entries.len(), 3);
+        assert_eq!(p.warnings.len(), 2, "{:?}", p.warnings);
     }
 
     #[test]

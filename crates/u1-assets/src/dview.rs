@@ -6,7 +6,7 @@
 
 use crate::dungeon::{Cell, DungeonLevel, Item};
 use crate::exe::{m, Exe};
-use crate::term::{Term, BLACK, WHITE};
+use crate::term::{dun, ArtId, Term, BLACK, WHITE};
 
 /// Force-field colour (EGA light red).
 pub const FIELD: u8 = 12;
@@ -80,12 +80,69 @@ impl ViewTables {
     }
 }
 
+/// A surface of the view between two vertical edges (screen pixels):
+/// the top edge runs from `top.0` at `x0` to `top.1` at `x1`, the bottom
+/// edge likewise. `plane` is the depth of each edge (0 = the screen).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DFace {
+    pub id: ArtId,
+    pub x0: i32,
+    pub x1: i32,
+    pub top: (i32, i32),
+    pub bot: (i32, i32),
+    pub plane: (i32, i32),
+}
+
+/// An object (monster, chest, ladder ...) and the box its original
+/// outline covers, at depth `plane`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DObj {
+    pub id: ArtId,
+    pub x0: i32,
+    pub y0: i32,
+    pub x1: i32,
+    pub y1: i32,
+    pub plane: i32,
+}
+
+/// One piece of the view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DPiece {
+    Face(DFace),
+    Obj(DObj),
+}
+
+/// The view as the enhanced renderer redraws it: the pieces with a
+/// painter's key (larger is farther, drawn first) and the corridor
+/// tables, which place the floor and ceiling cells. The geometry is the
+/// original's; only the filling differs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DScene {
+    pub pieces: Vec<(i32, DPiece)>,
+    pub x: [i32; 6],
+    pub y: [i32; 6],
+}
+
+impl DScene {
+    /// The pieces, farthest first (stable for equal keys).
+    pub fn ordered(&self) -> Vec<&DPiece> {
+        let mut v: Vec<&(i32, DPiece)> = self.pieces.iter().collect();
+        v.sort_by(|a, b| b.0.cmp(&a.0));
+        v.into_iter().map(|p| &p.1).collect()
+    }
+}
+
+/// Screen box of the viewport's corridor geometry: x 16..=303, y 8..=151.
+pub const GEOM: (i32, i32, i32, i32) = (CX, 8, RX, BY);
+
 /// The view renderer; `t` is the screen, names go to the message window.
 pub struct View<'a> {
     pub t: &'a mut Term,
     pub e: &'a Exe,
     pub v: &'a ViewTables,
     pub fg: u8,
+    /// What was drawn, for the enhanced renderer.
+    pub scene: DScene,
 }
 
 impl View<'_> {
@@ -101,14 +158,21 @@ impl View<'_> {
     }
 
     /// An outline from the shape table, scaled for depth `d`.
-    pub fn shape(&mut self, id: usize, d: i32, c: u8) {
+    pub fn shape(&mut self, id: usize, d: i32, c: u8) -> Option<(i32, i32, i32, i32)> {
         let mut cx = d - 1;
         if !(0..=4).contains(&cx) {
             cx = 4;
         }
         let base = self.v.base[cx as usize];
         let shift = if cx == 4 { 5 } else { cx as u32 };
-        let Some(bytes) = self.v.shapes.get(id).cloned() else { return };
+        let Some(bytes) = self.v.shapes.get(id).cloned() else { return None };
+        let mut ext: Option<(i32, i32, i32, i32)> = None;
+        let mut grow = |x: i32, y: i32| {
+            ext = Some(match ext {
+                None => (x, y, x, y),
+                Some((a, b, c, d)) => (a.min(x), b.min(y), c.max(x), d.max(y)),
+            });
+        };
         // Sign-extend, shift right logically as a word, sign-extend the
         // low byte again (exactly what the original does).
         let sc = |b: u8| -> i32 {
@@ -129,6 +193,7 @@ impl View<'_> {
                 let (x, y) = (sc(bytes[i]) + 160, sc(bytes[i + 1]) + base);
                 i += 2;
                 self.t.moveto_plot(x, y, c);
+                grow(x, y);
             } else {
                 if i >= bytes.len() {
                     break;
@@ -136,8 +201,100 @@ impl View<'_> {
                 let (x, y) = (sc(b) + 160, sc(bytes[i]) + base);
                 i += 1;
                 self.t.lineto(x, y, c);
+                grow(x, y);
             }
         }
+        ext
+    }
+
+    // --- scene notes for the enhanced renderer ---
+
+    fn face(&mut self, key: i32, f: DFace) {
+        self.scene.pieces.push((key, DPiece::Face(f)));
+    }
+
+    fn obj(&mut self, key: i32, id: ArtId, ext: Option<(i32, i32, i32, i32)>, plane: i32) {
+        if let Some((x0, y0, x1, y1)) = ext {
+            self.scene.pieces.push((key, DPiece::Obj(DObj { id, x0, y0, x1, y1, plane })));
+        }
+    }
+
+    /// The surface of a wall (or door, field) facing the player at depth `d`.
+    fn note_front(&mut self, id: u16, d: i32, key: i32) {
+        let d = d.min(5);
+        let o = if d == 0 { 8 } else { 0 };
+        let (x, y) = (self.x(d), self.y(d));
+        self.face(key, DFace { id: ArtId::Dun(id), x0: x + CX + o, x1: RX - x - o, top: (y + 8 + o, y + 8 + o), bot: (BY - y - o, BY - y - o), plane: (d, d) });
+    }
+
+    /// A wall cell straight ahead at depth `d` (plain or secret).
+    fn note_wall(&mut self, secret: bool, d: i32) {
+        self.note_front(if secret { dun::SECRET } else { dun::WALL }, d, 10 * d);
+    }
+
+    /// A side wall (cell `d-1` to the left or right).
+    fn note_side(&mut self, right: bool, id: u16, d: i32) {
+        if d > 5 {
+            return;
+        }
+        let (xa, ya, xb, yb) = (self.x(d - 1), self.y(d - 1), self.x(d), self.y(d));
+        let f = if right {
+            DFace { id: ArtId::Dun(id), x0: RX - xb, x1: RX - xa, top: (yb + 8, ya + 8), bot: (BY - yb, BY - ya), plane: (d, d - 1) }
+        } else {
+            DFace { id: ArtId::Dun(id), x0: xa + CX, x1: xb + CX, top: (ya + 8, yb + 8), bot: (BY - ya, BY - yb), plane: (d - 1, d) }
+        };
+        self.face(10 * (d - 1) + 5, f);
+    }
+
+    /// The far wall of a side passage seen through an opening.
+    fn note_opening(&mut self, right: bool, d: i32) {
+        if d > 5 {
+            return;
+        }
+        let (xa, xb, y) = (self.x(d - 1), self.x(d), self.y(d));
+        let (x0, x1) = if right { (RX - xb, RX - xa) } else { (xa + CX, xb + CX) };
+        self.face(10 * d + 1, DFace { id: ArtId::Dun(dun::WALL), x0, x1, top: (y + 8, y + 8), bot: (BY - y, BY - y), plane: (d, d) });
+    }
+
+    /// The door in a side wall at depth `d` (same outline as the lines).
+    fn note_side_door(&mut self, right: bool, d: i32) {
+        if d > 5 {
+            return;
+        }
+        let (p, q) = self.door_steps(d);
+        let near = if d == 1 { 2 } else { 0 };
+        let xa = self.x(d - 1) + 2 * p + CX;
+        let xb = 6 * p + CX + self.x(d - 1);
+        let (ta, tb) = (self.y(d) + 8 - q, self.y(d) + 8 + q);
+        let (ba, bb) = (BY - q - self.y(d - 1) - 1, BY - self.y(d) + 2 * q - near);
+        let pa = d - 1;
+        let f = if right {
+            DFace { id: ArtId::Dun(dun::DOOR), x0: RX - (xb - CX), x1: RX - (xa - CX), top: (tb, ta), bot: (bb, ba), plane: (d, pa) }
+        } else {
+            DFace { id: ArtId::Dun(dun::DOOR), x0: xa, x1: xb, top: (ta, tb), bot: (ba, bb), plane: (pa, d) }
+        };
+        self.face(10 * (d - 1) + 4, f);
+    }
+
+    /// A door straight ahead: the wall, its doorway, or (`d == 0`) the
+    /// frame of the doorway the player stands in.
+    fn note_front_door(&mut self, d: i32) {
+        if d >= 5 {
+            return;
+        }
+        let (xn, yd, yn) = (self.x(d + 1), self.y(d), self.y(d + 1));
+        if d == 0 {
+            let (x0, y0) = (self.x(0), self.y(0));
+            let (l, r, t, b) = (x0 + CX + 8, RX - x0 - 8, y0 + 16, BY - y0 - 8);
+            let w = ArtId::Dun(dun::WALL);
+            for (a, c, tt) in [(l, xn + CX, t), (RX - xn, r, t)] {
+                self.face(-100, DFace { id: w, x0: a, x1: c, top: (tt, tt), bot: (b, b), plane: (0, 0) });
+            }
+            self.face(-100, DFace { id: w, x0: xn + CX, x1: RX - xn, top: (t, t), bot: (yn + 8, yn + 8), plane: (0, 0) });
+            return;
+        }
+        self.note_front(dun::WALL, d, 10 * d);
+        self.face(10 * d - 1, DFace { id: ArtId::Dun(dun::DOOR), x0: xn + CX, x1: RX - xn, top: (yn + 8, yn + 8), bot: (BY - yd, BY - yd), plane: (d, d) });
     }
 
     // --- corridor pieces (d = depth 0..=5) ---
@@ -272,8 +429,10 @@ impl View<'_> {
         if d > 5 {
             return;
         }
-        self.shape(if up { 0x1a } else { 0x1b }, d, self.fg);
-        self.shape(if ns { 0x1c } else { 0x1d }, d, self.fg);
+        let h = self.shape(if up { 0x1a } else { 0x1b }, d, self.fg);
+        self.obj(10 * (d - 1) - 1, ArtId::Dun(if up { dun::HOLE_UP } else { dun::HOLE_DOWN }), h, d);
+        let l = self.shape(if ns { 0x1c } else { 0x1d }, d, self.fg);
+        self.obj(10 * (d - 1) - 2, ArtId::Dun(if up { dun::LADDER_UP } else { dun::LADDER_DOWN }), l, d);
     }
 
     fn monster(&mut self, d: i32, id: i16) {
@@ -287,21 +446,26 @@ impl View<'_> {
             self.front_wall(d);
             self.left_vert(d);
             self.right_vert(d);
+            let (x, y) = (self.x(d), self.y(d));
+            self.obj(10 * d - 3, ArtId::DMon(9), Some((x + CX, y + 8, RX - x, BY - y)), d);
         } else {
-            self.shape(id as usize, d, self.fg);
+            let e = self.shape(id as usize, d, self.fg);
+            self.obj(10 * d - 3, ArtId::DMon(id as u16), e, d);
         }
     }
 
     fn coffin(&mut self, d: i32) {
         let s = self.e.s(m::COFFIN);
         self.t.println(&s);
-        self.shape(0x19, d, self.fg);
+        let e = self.shape(0x19, d, self.fg);
+        self.obj(10 * (d - 1) - 3, ArtId::Dun(dun::COFFIN), e, d);
     }
 
     fn chest(&mut self, d: i32) {
         let s = self.e.s(m::CHEST);
         self.t.println(&s);
-        self.shape(0x0b, d, self.fg);
+        let e = self.shape(0x0b, d, self.fg);
+        self.obj(10 * (d - 1) - 3, ArtId::Dun(dun::CHEST), e, d);
     }
 
     /// What stands in cell (a,b), seen at depth `d`.
@@ -311,24 +475,38 @@ impl View<'_> {
         if id != -1 {
             if matches!(s, Cell::Wall | Cell::SecretDoor | Cell::Door) {
                 self.front_wall(d);
+                self.note_wall(s == Cell::SecretDoor, d);
             }
             // With a monster on it a ladder is drawn without its rungs.
             if s == Cell::LadderDown {
-                self.shape(0x1b, d + 1, self.fg);
+                let h = self.shape(0x1b, d + 1, self.fg);
+                self.obj(10 * d - 1, ArtId::Dun(dun::HOLE_DOWN), h, d + 1);
             }
             if s == Cell::LadderUp {
-                self.shape(0x1a, d + 1, self.fg);
+                let h = self.shape(0x1a, d + 1, self.fg);
+                self.obj(10 * d - 1, ArtId::Dun(dun::HOLE_UP), h, d + 1);
             }
             self.monster(d, id);
             return;
         }
         let ns = facing == NORTH || facing == SOUTH;
         match s {
-            Cell::Wall | Cell::SecretDoor => self.front_wall(d),
-            Cell::Door => self.front_door(d),
+            Cell::Wall | Cell::SecretDoor => {
+                self.front_wall(d);
+                self.note_wall(s == Cell::SecretDoor, d);
+            }
+            Cell::Door => {
+                self.front_door(d);
+                self.note_front_door(d);
+            }
             Cell::LadderDown => self.ladder(false, ns, d + 1),
             Cell::LadderUp => self.ladder(true, ns, d + 1),
-            Cell::ForceField => self.field(d),
+            Cell::ForceField => {
+                self.field(d);
+                if d <= 5 {
+                    self.note_front(dun::FIELD, d, 10 * d - 2);
+                }
+            }
             _ => {}
         }
         match item_at(lv, a, b) {
@@ -416,7 +594,7 @@ pub fn restore_compass(t: &mut Term) {
 
 /// Draw the whole view for the player at (pa,pb) facing `facing`.
 pub fn draw(t: &mut Term, e: &Exe, v: &ViewTables, lv: &DungeonLevel, pa: i32, pb: i32, facing: u16) {
-    let mut w = View { t, e, v, fg: WHITE };
+    let mut w = View { t, e, v, fg: WHITE, scene: DScene { pieces: Vec::new(), x: v.x, y: v.y } };
     let (fa, fb) = forward(facing);
     let ((la, lb), (ra, rb)) = sides(facing);
     w.t.clear_view();
@@ -427,6 +605,8 @@ pub fn draw(t: &mut Term, e: &Exe, v: &ViewTables, lv: &DungeonLevel, pa: i32, p
     let dmax = sight(lv, pa, pb, fa, fb);
     if in_wall {
         w.front_wall(0);
+        w.note_wall(here == Cell::SecretDoor, 0);
+        finish(w);
         return;
     }
     let (mut last_l, mut last_r) = (100u8, 100u8);
@@ -436,9 +616,11 @@ pub fn draw(t: &mut Term, e: &Exe, v: &ViewTables, lv: &DungeonLevel, pa: i32, p
         let ahead = lv.cell(pa + fa, pb + fb);
         if matches!(ahead, Cell::Wall | Cell::Door | Cell::SecretDoor) {
             w.front_wall(0);
+            w.note_wall(ahead == Cell::SecretDoor, 0);
             skip_corridor = true;
         } else {
             w.front_door(0);
+            w.note_front_door(0);
         }
     }
     if !skip_corridor {
@@ -504,20 +686,41 @@ pub fn draw(t: &mut Term, e: &Exe, v: &ViewTables, lv: &DungeonLevel, pa: i32, p
             Item::None => {}
         }
     }
+    finish(w);
+}
+
+/// Keep the scene and note the view region for the enhanced renderer.
+fn finish(w: View) {
+    let View { t, scene, .. } = w;
+    t.dscene = Some(Box::new(scene));
+    let (x0, y0, x1, y1) = crate::term::VIEW;
+    t.mark(ArtId::Screen("dungeon"), None, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
 }
 
 fn side_left(w: &mut View, d: i32, s: Cell) {
-    match s {
-        Cell::Door => w.left_door(d),
-        Cell::Wall | Cell::SecretDoor => w.left_wall(d),
-        _ => w.left_open(d),
-    }
+    side(w, false, d, s);
 }
 
 fn side_right(w: &mut View, d: i32, s: Cell) {
+    side(w, true, d, s);
+}
+
+fn side(w: &mut View, right: bool, d: i32, s: Cell) {
+    match (s, right) {
+        (Cell::Door, false) => w.left_door(d),
+        (Cell::Door, true) => w.right_door(d),
+        (Cell::Wall | Cell::SecretDoor, false) => w.left_wall(d),
+        (Cell::Wall | Cell::SecretDoor, true) => w.right_wall(d),
+        (_, false) => w.left_open(d),
+        (_, true) => w.right_open(d),
+    }
     match s {
-        Cell::Door => w.right_door(d),
-        Cell::Wall | Cell::SecretDoor => w.right_wall(d),
-        _ => w.right_open(d),
+        Cell::Door => {
+            w.note_side(right, dun::WALL, d);
+            w.note_side_door(right, d);
+        }
+        Cell::Wall => w.note_side(right, dun::WALL, d),
+        Cell::SecretDoor => w.note_side(right, dun::SECRET, d),
+        _ => w.note_opening(right, d),
     }
 }

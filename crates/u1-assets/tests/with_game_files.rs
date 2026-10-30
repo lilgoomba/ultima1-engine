@@ -664,3 +664,143 @@ fn fighters_fire_back() {
         }
     }
 }
+
+/// A straight corridor running south from (5, 1) with a secret door and a
+/// door beside the second square, a chest on the third and a skeleton on
+/// the fourth, seen from (5, 2) facing south.
+fn corridor_view() -> Option<Term> {
+    use u1_assets::dungeon::{Cell, DungeonLevel, Item, DUNGEON_SIZE};
+    use u1_assets::dview::{self, ViewTables, SOUTH};
+    let g = game_dir()?;
+    let exe = Exe::new(g.read("OUT.EXE").ok()?).unwrap();
+    let n = DUNGEON_SIZE;
+    let mut lv = DungeonLevel {
+        level: 1,
+        cells: [[Cell::Wall; DUNGEON_SIZE]; DUNGEON_SIZE],
+        items: [[Item::None; DUNGEON_SIZE]; DUNGEON_SIZE],
+        monsters: [[-1; DUNGEON_SIZE]; DUNGEON_SIZE],
+        hp: [[0; DUNGEON_SIZE]; DUNGEON_SIZE],
+        used: [false; 5],
+    };
+    for b in 1..n - 2 {
+        lv.cells[5][b] = Cell::Empty;
+    }
+    lv.cells[4][3] = Cell::SecretDoor;
+    lv.cells[6][3] = Cell::Door;
+    lv.items[5][4] = Item::Chest;
+    lv.monsters[5][5] = 1;
+    lv.hp[5][5] = 20;
+    let mut t = Term::new();
+    dview::draw(&mut t, &exe, &ViewTables::from_exe(&exe), &lv, 5, 2, SOUTH);
+    Some(t)
+}
+
+/// A 4x4 picture of one colour.
+fn solid(c: [u8; 4]) -> u1_assets::enhanced::Rgba {
+    let mut r = u1_assets::enhanced::Rgba::new(4, 4);
+    for p in r.px.chunks_mut(4) {
+        p.copy_from_slice(&c);
+    }
+    r
+}
+
+/// A pack with the given `[section] = colour` pictures, 32-pixel tiles.
+fn colour_pack(parts: &[(&str, [u8; 4])]) -> u1_assets::enhanced::Pack {
+    let mut text = String::from("name = \"t\"\ntile_size = 32\n");
+    for (sec, _) in parts {
+        text += &format!("[{sec}]\nfile = \"{sec}.png\"\n");
+    }
+    let map: std::collections::HashMap<String, [u8; 4]> = parts.iter().map(|(s, c)| (format!("{s}.png"), *c)).collect();
+    u1_assets::enhanced::Pack::parse(&text, |f| Ok(solid(map[f]))).unwrap()
+}
+
+#[test]
+fn dungeon_view_notes_its_surfaces_and_objects() {
+    use u1_assets::dview::DPiece;
+    use u1_assets::term::{dun, ArtId};
+    let Some(t) = corridor_view() else { return };
+    let sc = t.dscene.as_ref().expect("scene kept");
+    let has_face = |id: ArtId| sc.pieces.iter().any(|(_, p)| matches!(p, DPiece::Face(f) if f.id == id));
+    let has_obj = |id: ArtId| sc.pieces.iter().any(|(_, p)| matches!(p, DPiece::Obj(o) if o.id == id));
+    assert!(has_face(ArtId::Dun(dun::WALL)));
+    assert!(has_face(ArtId::Dun(dun::SECRET)));
+    assert!(has_face(ArtId::Dun(dun::DOOR)));
+    assert!(has_obj(ArtId::Dun(dun::CHEST)));
+    assert!(has_obj(ArtId::DMon(1)));
+    // Every piece lies inside the view, and the farthest is drawn first.
+    for (_, p) in &sc.pieces {
+        let (x0, x1) = match p {
+            DPiece::Face(f) => (f.x0, f.x1),
+            DPiece::Obj(o) => (o.x0, o.x1),
+        };
+        assert!(8 <= x0 && x0 <= x1 && x1 <= 311, "{p:?}");
+    }
+    let keys: Vec<i32> = sc.pieces.iter().map(|p| p.0).collect();
+    let order = sc.ordered();
+    assert_eq!(order.len(), keys.len());
+    assert!(t.art.iter().any(|op| op.id == ArtId::Screen("dungeon")));
+    // The chest (one square nearer) is drawn after the skeleton.
+    let pos = |id: ArtId| order.iter().position(|p| matches!(p, DPiece::Obj(o) if o.id == id)).unwrap();
+    assert!(pos(ArtId::Dun(dun::CHEST)) > pos(ArtId::DMon(1)));
+}
+
+#[test]
+fn enhanced_dungeon_textures_with_fallbacks() {
+    use u1_assets::dview::DPiece;
+    use u1_assets::enhanced::{compose, Pack};
+    use u1_assets::term::ArtId;
+    let Some(t) = corridor_view() else { return };
+    let pal = &u1_assets::palette::EGA_PALETTE;
+    let plain = t.to_rgb(pal, 2);
+    // No dungeon art: the original, scaled.
+    assert_eq!(compose(&t, pal, &Pack::empty(32), 0), plain);
+    let red = [200, 0, 0, 255];
+    let walls = colour_pack(&[("dungeon.wall", red)]);
+    let out = compose(&t, pal, &walls, 0);
+    assert_ne!(out, plain);
+    let reddish = out.chunks(3).filter(|p| p[0] > 40 && p[1] == 0 && p[2] == 0).count();
+    assert!(reddish > 20_000, "{reddish}");
+    // A secret door without its own picture looks like a wall (it does in
+    // the original too), so a pack giving it the wall's colour changes
+    // nothing.
+    let same = colour_pack(&[("dungeon.wall", red), ("dungeon.secret", red)]);
+    assert_eq!(compose(&t, pal, &same, 0), out);
+    let green = colour_pack(&[("dungeon.wall", red), ("dungeon.secret", [0, 200, 0, 255])]);
+    assert_ne!(compose(&t, pal, &green, 0), out);
+    // The skeleton has no picture: its original outline shows.
+    let sc = t.dscene.as_ref().unwrap();
+    let Some(DPiece::Obj(o)) = sc.pieces.iter().map(|p| &p.1).find(|p| matches!(p, DPiece::Obj(o) if o.id == ArtId::DMon(1))) else {
+        panic!("no skeleton")
+    };
+    let lit: Vec<(usize, usize)> = (o.y0..=o.y1)
+        .flat_map(|y| (o.x0..=o.x1).map(move |x| (x as usize, y as usize)))
+        .filter(|&(x, y)| t.px[y * 320 + x] != 0)
+        .collect();
+    assert!(!lit.is_empty());
+    for (x, y) in lit {
+        let i = ((y * 2) * 640 + x * 2) * 3;
+        assert_eq!(out[i..i + 3], plain[i..i + 3]);
+    }
+    // With a sprite it is drawn instead.
+    let sk = colour_pack(&[("dungeon.wall", red), ("dmon.1", [0, 0, 220, 255])]);
+    let out2 = compose(&t, pal, &sk, 0);
+    assert!(out2.chunks(3).any(|p| p[0] == 0 && p[1] == 0 && p[2] > 100));
+}
+
+#[test]
+fn enhanced_town_tiles_and_people() {
+    use u1_assets::enhanced::compose;
+    let Some(g) = play(66, 41, "e") else { return };
+    let pal = &u1_assets::palette::EGA_PALETTE;
+    let plain = g.term.to_rgb(pal, 2);
+    let floor = colour_pack(&[("town.1", [200, 0, 0, 255])]);
+    let out = compose(&g.term, pal, &floor, 0);
+    let count = |o: &[u8], c: [u8; 3]| o.chunks(3).filter(|p| *p == c).count();
+    assert!(count(&out, [200, 0, 0]) > 10_000);
+    assert_eq!(count(&plain, [200, 0, 0]), 0);
+    // Guards (tile 0x11) and the player (0x12) get their own pictures.
+    let people = colour_pack(&[("town.1", [200, 0, 0, 255]), ("town.17", [0, 0, 220, 255]), ("town.18", [0, 220, 0, 255])]);
+    let out = compose(&g.term, pal, &people, 0);
+    assert!(count(&out, [0, 0, 220]) >= 16 * 16);
+    assert_eq!(count(&out, [0, 220, 0]), 16 * 16);
+}

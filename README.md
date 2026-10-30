@@ -231,17 +231,22 @@ cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --video enhanced --pa
 ```
 
 * The default pack is `assets/enhanced/` (looked up in the current
-  directory, then in the source tree). On `main` it is empty, so every
-  tile is the original art scaled up nearest-neighbour.
+  directory, then in the source tree). Anything it has no picture for is
+  the original art scaled up nearest-neighbour.
 * A pack is a directory with `manifest.toml` and PNG files. The manifest
   declares `tile_size` (pixels per original 16-pixel tile: 32 gives a
   640×400 internal screen, 64 gives 1280×800), and maps tile ids
-  (`world.N`, `town.N`, `mond.N`, `screen.nif`) to a `file` or a list of
+  (`world.N`, `town.N`, `mond.N`, `screen.nif`, `dungeon.PART`,
+  `dmon.N`) to a `file` or a list of
   animation `frames`, with optional `scroll` (water) and `fps`, or to
   `variants` (alternatives chosen per map cell by a fixed hash, so large
   grass fields do not repeat). An
   optional `[palette]` table holds free-form notes per video mode. See
   SPEC §20 and the docs at the top of `crates/u1-assets/src/enhanced.rs`.
+* In dungeons the first-person view keeps the original geometry but is
+  redrawn with the pack's wall, door, floor and ceiling textures (shaded
+  by depth) and its object and monster sprites, if the pack has
+  `dungeon.wall`. Secret doors look like walls, as in the original.
 * Any id the pack does not list, and any tile the game has drawn over
   (text, cursor, effects), falls back to the original picture. Game
   logic, screen layout and the viewport are unchanged.

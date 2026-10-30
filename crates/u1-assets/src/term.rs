@@ -28,6 +28,30 @@ pub enum ArtId {
     Mond(u16),
     /// A full-screen picture (`"nif"`).
     Screen(&'static str),
+    /// A part of the first-person dungeon view ([`DUN_PARTS`]).
+    Dun(u16),
+    /// A dungeon monster seen in the first-person view (monster id).
+    DMon(u16),
+}
+
+/// Names of the [`ArtId::Dun`] parts, by number (manifest `[dungeon.NAME]`).
+pub const DUN_PARTS: [&str; 12] =
+    ["wall", "door", "secret", "floor", "ceiling", "ladder_up", "ladder_down", "hole_up", "hole_down", "chest", "coffin", "field"];
+
+/// [`ArtId::Dun`] numbers.
+pub mod dun {
+    pub const WALL: u16 = 0;
+    pub const DOOR: u16 = 1;
+    pub const SECRET: u16 = 2;
+    pub const FLOOR: u16 = 3;
+    pub const CEILING: u16 = 4;
+    pub const LADDER_UP: u16 = 5;
+    pub const LADDER_DOWN: u16 = 6;
+    pub const HOLE_UP: u16 = 7;
+    pub const HOLE_DOWN: u16 = 8;
+    pub const CHEST: u16 = 9;
+    pub const COFFIN: u16 = 10;
+    pub const FIELD: u16 = 11;
 }
 
 /// A region of the screen known to show one original picture: kept while
@@ -85,6 +109,9 @@ pub struct Term {
     /// Regions showing known pictures (newest last), for the enhanced
     /// renderer.
     pub art: Vec<ArtOp>,
+    /// The last first-person dungeon view as surfaces and objects, for the
+    /// enhanced renderer (shown while its `Screen("dungeon")` note is intact).
+    pub dscene: Option<Box<crate::dview::DScene>>,
 }
 
 impl Default for Term {
@@ -102,7 +129,7 @@ impl Term {
 
     /// The same frame for a CGA (`cga`) or a 16-colour screen.
     pub fn with_cga(cga: bool) -> Self {
-        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new() };
+        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new(), dscene: None };
         t.fill(0, 0, W - 1, H - 1, BLUE);
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);

@@ -50,6 +50,46 @@ pub struct ViewTables {
 }
 
 impl ViewTables {
+    /// The vertices of shape `id` at depth `d`, in screen coordinates,
+    /// scaled exactly as `View::shape` draws them.
+    pub fn shape_points(&self, id: usize, d: i32) -> Vec<(i32, i32)> {
+        let mut cx = d - 1;
+        if !(0..=4).contains(&cx) {
+            cx = 4;
+        }
+        let base = self.base[cx as usize];
+        let shift = if cx == 4 { 5 } else { cx as u32 };
+        let sc = |b: u8| -> i32 {
+            let w = (b as i8 as i16 as u16) >> shift;
+            (w as u8) as i8 as i32
+        };
+        let Some(bytes) = self.shapes.get(id) else { return Vec::new() };
+        let mut pts = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            let b = bytes[i];
+            i += 1;
+            if b == 0x7f {
+                break;
+            }
+            let (bx, by) = if b == 0x7e {
+                if i + 1 >= bytes.len() {
+                    break;
+                }
+                i += 2;
+                (bytes[i - 2], bytes[i - 1])
+            } else {
+                if i >= bytes.len() {
+                    break;
+                }
+                i += 1;
+                (b, bytes[i - 1])
+            };
+            pts.push((sc(bx) + 160, sc(by) + base));
+        }
+        pts
+    }
+
     pub fn from_exe(e: &Exe) -> Self {
         let sw = |o: usize| e.w(o) as i16 as i32;
         let mut x = [0; 6];
@@ -103,6 +143,10 @@ pub struct DObj {
     pub x1: i32,
     pub y1: i32,
     pub plane: i32,
+    /// For a hole in the floor or ceiling: the corners of the original's
+    /// four-sided outline (top-left, top-right, bottom-right,
+    /// bottom-left), whose top and bottom edges are level.
+    pub quad: Option<[(i32, i32); 4]>,
 }
 
 /// One piece of the view.
@@ -215,8 +259,24 @@ impl View<'_> {
 
     fn obj(&mut self, key: i32, id: ArtId, ext: Option<(i32, i32, i32, i32)>, plane: i32) {
         if let Some((x0, y0, x1, y1)) = ext {
-            self.scene.pieces.push((key, DPiece::Obj(DObj { id, x0, y0, x1, y1, plane })));
+            self.scene.pieces.push((key, DPiece::Obj(DObj { id, x0, y0, x1, y1, plane, quad: None })));
         }
+    }
+
+    /// A hole in the floor or ceiling (shape 0x1a up, 0x1b down) at
+    /// depth `d`, noted with its four-sided outline.
+    fn hole(&mut self, key: i32, up: bool, d: i32) {
+        let h = self.shape(if up { 0x1a } else { 0x1b }, d, self.fg);
+        let Some((x0, y0, x1, y1)) = h else { return };
+        let q = self.v.shape_points(if up { 0x1a } else { 0x1b }, d);
+        let edge = |y: i32| {
+            let xs = q.iter().filter(|p| p.1 == y).map(|p| p.0);
+            (xs.clone().min().unwrap_or(x0), xs.max().unwrap_or(x1))
+        };
+        let ((a, b), (c, e)) = (edge(y0), edge(y1));
+        let id = ArtId::Dun(if up { dun::HOLE_UP } else { dun::HOLE_DOWN });
+        let quad = Some([(a, y0), (b, y0), (e, y1), (c, y1)]);
+        self.scene.pieces.push((key, DPiece::Obj(DObj { id, x0, y0, x1, y1, plane: d, quad })));
     }
 
     /// The surface of a wall (or door, field) facing the player at depth `d`.
@@ -429,8 +489,7 @@ impl View<'_> {
         if d > 5 {
             return;
         }
-        let h = self.shape(if up { 0x1a } else { 0x1b }, d, self.fg);
-        self.obj(10 * (d - 1) - 1, ArtId::Dun(if up { dun::HOLE_UP } else { dun::HOLE_DOWN }), h, d);
+        self.hole(10 * (d - 1) - 1, up, d);
         let l = self.shape(if ns { 0x1c } else { 0x1d }, d, self.fg);
         self.obj(10 * (d - 1) - 2, ArtId::Dun(if up { dun::LADDER_UP } else { dun::LADDER_DOWN }), l, d);
     }
@@ -479,12 +538,10 @@ impl View<'_> {
             }
             // With a monster on it a ladder is drawn without its rungs.
             if s == Cell::LadderDown {
-                let h = self.shape(0x1b, d + 1, self.fg);
-                self.obj(10 * d - 1, ArtId::Dun(dun::HOLE_DOWN), h, d + 1);
+                self.hole(10 * d - 1, false, d + 1);
             }
             if s == Cell::LadderUp {
-                let h = self.shape(0x1a, d + 1, self.fg);
-                self.obj(10 * d - 1, ArtId::Dun(dun::HOLE_UP), h, d + 1);
+                self.hole(10 * d - 1, true, d + 1);
             }
             self.monster(d, id);
             return;

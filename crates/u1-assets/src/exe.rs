@@ -233,6 +233,47 @@ pub mod m {
     pub const REGION_NAMES: usize = 0x3174;
     pub const PRINCESS_NAMES: usize = 0x31CC;
     pub const NPC_TABLES: usize = 0x31DC;
+    // Combat, boarding, death and landmarks (verified from original executable).
+    pub const EXCL: usize = 0x018D;
+    pub const EXCL_SP: usize = 0x018F;
+    pub const COPPER_EX: usize = 0x0192;
+    pub const SILVER_EX: usize = 0x019C;
+    pub const GOLD_EX: usize = 0x01A5;
+    pub const MISS: usize = 0x01F1;
+    pub const KILLED_THE: usize = 0x01F7;
+    pub const HIT_THE: usize = 0x0203;
+    pub const SP_DAMAGE: usize = 0x020C;
+    pub const MISSED_THE: usize = 0x0214;
+    pub const XIT_FIRST: usize = 0x0241;
+    pub const NOTHING_TO_BOARD: usize = 0x0257;
+    pub const MOUNT: usize = 0x0269;
+    pub const BOARD: usize = 0x0270;
+    pub const TIME_MACHINE_LINES: [(usize, usize, usize); 3] = [(6, 7, 0x028D), (6, 8, 0x02AA), (6, 9, 0x02C7)];
+    /// Word holding the address of the "can't leave the craft here" text.
+    pub const CANT_LEAVE_PTR: usize = 0x0172;
+    pub const XIT_WHAT: usize = 0x16B1;
+    pub const XIT: usize = 0x16BC;
+    pub const ATTACKS: usize = 0x16E0;
+    pub const ATTACKED_BY: usize = 0x16F0;
+    pub const THOU_ART_DEAD: usize = 0x39FA;
+    pub const RESURRECTION: usize = 0x3A0A;
+    pub const QUEST_COMPLETED: usize = 0x0B66;
+    pub const YOU_FIND_A: usize = 0x0B82;
+    pub const THOU_DOST_GAIN: usize = 0x0B8D;
+    pub const NO_EFFECT_LM: usize = 0x0B9D;
+    /// Stat index raised by each landmark (words).
+    pub const LANDMARK_STAT: usize = 0x3708;
+    /// Landmark box texts: (column, row, message) per landmark 0..=7.
+    pub const LANDMARK_TEXT: [&[(usize, usize, usize)]; 8] = [
+        &[(8, 8, 0x099E), (12, 9, 0x09B6)],
+        &[(10, 7, 0x09C7), (6, 9, 0x09DD)],
+        &[(13, 7, 0x09F9), (8, 9, 0x0A07)],
+        &[(13, 5, 0x0A21), (10, 6, 0x0A30), (8, 7, 0x0A44), (13, 8, 0x0A5C), (11, 9, 0x0A6B), (8, 10, 0x0A7D), (8, 12, 0x0A96), (7, 13, 0x0AAE)],
+        &[(12, 6, 0x0AC8), (12, 8, 0x0AD8), (7, 10, 0x0AE8), (7, 11, 0x0B02)],
+        &[(12, 7, 0x0AC8), (11, 9, 0x0B1C)],
+        &[(12, 7, 0x0AC8), (9, 9, 0x0B2E)],
+        &[(10, 7, 0x0B44), (14, 9, 0x0B59)],
+    ];
     pub const GEM_NAMES: usize = 0x29E4;
     /// Quest landmarks for odd slots 1,3,5,7: (pointer word, column).
     pub const QUEST_PLACES: [(usize, usize); 4] = [(0x30DC, 8), (0x30D8, 10), (0x30D4, 9), (0x30D0, 9)];

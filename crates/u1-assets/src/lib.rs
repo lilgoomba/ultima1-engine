@@ -11,6 +11,7 @@ pub mod dungeon;
 pub mod error;
 pub mod exe;
 pub mod font;
+pub mod game;
 pub mod gamedir;
 pub mod images;
 pub mod io;
@@ -22,8 +23,10 @@ pub mod render;
 pub mod rng;
 pub mod rules;
 pub mod save;
+pub mod shops;
 pub mod tcd;
 pub mod term;
 pub mod tiles;
+pub mod town;
 
 pub use error::{AssetError, Result};

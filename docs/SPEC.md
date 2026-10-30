@@ -1,9 +1,10 @@
 # Ultima I (DOS) — data file & format specification
 
-Status: **draft 0.2 (2026-10-29)**. Version 0.1 was compiled from public
+Status: **draft 0.3 (2026-10-29)**. Version 0.1 was compiled from public
 community documentation only. Version 0.2 checks it against a legally owned
 original copy (the DOS release from the *Ultima 1-3* CD-ROM) and adds facts
-learned by studying that copy.
+learned by studying that copy. Version 0.3 adds the outdoor game rules
+(§9.1), edge wrap (§4), timing (§3.5) and the remaining save fields (§7).
 
 **How this spec is produced (spec-from-reference).** The original files are
 used *only as a reference* on the developer's machine, outside this
@@ -214,8 +215,11 @@ DOSBox machine=tandy run (UNKNOWN).
 
 **VERIFIED (original data, decoded sheets in EGA/CGA/T1K):** [S3] calls
 0x31 the "unused dog head", but in the shipped files the dog head is
-**0x33**. 0x31 is a small blue disc and 0x32 a red disc. Where the game
-uses the discs is UNKNOWN (probably attack or hit markers; not observed).
+**0x33**. 0x31 is a small blue disc and 0x32 a red disc. **VERIFIED (original
+executable):** the red disc 0x32 is drawn as the flying missile of the
+player's ranged weapons and vehicle guns. The blue disc 0x31 is the spell
+effect: it flashes over monsters removed by a spell and is the magic
+missile.
 The monster names in this table also appear, in this order, in `OUT.EXE`'s
 string data [M-exe].
 
@@ -243,9 +247,15 @@ string data [M-exe].
 captured screen over time (cycles=20000):
 
 * The game advances a global animation tick about every **0.165 s**
-  (about 3 BIOS timer ticks). Whether this rate is timer-driven or tied
-  to CPU speed was not determined from the code (UNKNOWN; the observed
-  cadence was steady).
+  (about 3 BIOS timer ticks).
+* **VERIFIED (original executable + DOSBox), Phase 3:** the tick is the
+  keyboard poll. Each poll waits for 3 ticks of the 18.2 Hz timer
+  interrupt. The first tick arrives at a random phase, so a wait lasts
+  2–3 ticks; drawing time is added. The rate is therefore timer-driven,
+  with a small CPU-dependent part. After 1,500 polls with no key the game
+  plays "Pass" by itself. Measured in DOSBox: 195.7 s to the automatic
+  Pass at cycles=20000 (130 ms per poll), 236.0 s at cycles=3000 (157 ms
+  per poll). The engine uses 130 ms per poll.
 * **Water** (tile 0) is not frame-animated. Each tick, the whole tile is
   redrawn scrolled horizontally by 4 pixels: at tick *k*, displayed column
   *x* shows source column `(x + 4·(k mod 4)) mod 16`. The pattern therefore
@@ -255,8 +265,10 @@ captured screen over time (cycles=20000):
   (period about 1 s).
 * **Town** shows tile 7 for one tick out of every four (the tick where the
   water phase is 0) and tile 8 for the other three.
-* Monster tiles: they alternate between their two frames when they move.
-  The exact rule was not measured (UNKNOWN).
+* Monster tiles: the frigate (0x0E/0x0F) and the first sea monster
+  alternate frames with the poll counter. Other monsters pick one of
+  their two frames pseudo-randomly each redraw (VERIFIED (original
+  executable)). The engine uses its own hash for this choice.
 
 The engine implements water, castle and town exactly as described
 (`map::water_scroll`, `Terrain::tile_for_frame`).
@@ -295,8 +307,17 @@ Sources: [S1] (quoting Johnny Wood's notes), [S4] (ModdingWiki), [S7]
 * The map does **not** store *which* castle/town/dungeon/signpost is at a
   location [S4]; see §4.1.
 * The world contains the four lands (Lord British, Feudal Lords, Dark
-  Unknown, Danger & Despair) [S14]. Whether movement wraps at the map edges:
-  UNKNOWN / needs verification by observation.
+  Unknown, Danger & Despair) [S14]. **Land index VERIFIED (original
+  executable):** `(y > 77)·2 + (x > 83)`.
+* **Edge wrap VERIFIED (original executable + DOSBox):**
+  * The drawn view wraps like a plain torus: x mod 168, y mod 156.
+  * Player movement north/south wraps plainly (y 0 ↔ 155).
+  * Crossing the east or west edge (x 167 ↔ 0) also shifts the player
+    77 rows: y − 77 if y ≥ 77, otherwise y + 77. The east/west edge
+    therefore joins the north half of the world to the south half.
+  * DOSBox check: a frigate at (3,89) sailed West 8 times ends at
+    (163,12); the engine shows the identical view
+    (`u1-shots/phase3/*_wrap_west8.png`).
 * On-screen viewport in the original: 19 x 9 cells of 16x16 px
   (304 x 144 px) [S4]. **VERIFIED [M-DOSBox]:** the player is drawn in
   cell (9,4) of the viewport.
@@ -499,8 +520,10 @@ note [S17]; method in [S18].
 | 0x30 | u16 | Transport | 0 foot, 1 horse, 2 cart, 3 raft, 4 frigate, 5 aircar, 6 shuttle, 7 time machine (VERIFIED (exe)) |
 | 0x32 | u16 | **Seed** | VERIFIED (exe): added into the dungeon structure seed and the outdoor RNG seed (§6) |
 | 0x34 | u16 | Player X | 0–167 |
-| 0x36 | u16 | Player Y | 0–153 per [S8b] |
-| 0x38–0x4B | | Quest words | [S8b]: 8 x u16 quest states (0 none, 1 active, 0xFFFF done). Per-castle mapping still UNKNOWN |
+| 0x36 | u16 | Player Y | 0–155 (VERIFIED (exe): wrap at 155) |
+| 0x38 | u16 | Sound on/off | VERIFIED (exe): toggled by the Noise command |
+| 0x3A | u16 | Quest slot 0 | VERIFIED (exe): never used |
+| 0x3C–0x4A | u16 x8 | Quest slots k = 1..8 at 0x3A + 2k | VERIFIED (exe), see §9.1 |
 | 0x4C–0x52 | u16 x4 | Gems red, green, blue, white | |
 | 0x54 | u16 | 0xFFFF | list terminator? |
 | 0x56–0x5E | u16 x5 | Armour qty: leather, chain, plate, vacuum suit, reflect suit | |
@@ -514,7 +537,8 @@ note [S17]; method in [S18].
 | 0xA8 | u16 | Last signpost visited | default 0xFFFF |
 | 0xAA | u16 | Number of used map objects − 1 | VERIFIED [M-save]: matches the non-empty object slots |
 | 0xAC | u16 | Move counter | VERIFIED [M-save]: increments per turn |
-| 0xAE–0xB2 | u16 x3 | UNKNOWN | [S8b] suggests fuel/shields; not resolved |
+| 0xAE | u16 | Move counter, high word | VERIFIED (exe): 0xAC/0xAE form one 32-bit counter |
+| 0xB0, 0xB2 | u16 x2 | Shuttle values | VERIFIED (exe): both set to 1000 when a shuttle is bought. Meaning UNCONFIRMED (fuel/shields per [S8b]); only used by the space part |
 | 0xB4–0x333 | 40 x 16 B | Map objects | below |
 
 Map object (16 bytes): `+0 u16` object tile (index into §3.2) · `+2 u16`
@@ -578,11 +602,127 @@ restated here; larger tables are read from the user's `OUT.EXE` at run time
 
 **From public documentation (not yet verified):**
 
-* Monster HP/damage: Ultima Codex monster table [S16].
-* Weapon/armour/spell/vehicle prices: [S1]-family guides and the manual.
-* Character creation bonuses: [S8b].
+* Character creation bonuses: [S8b]. A new character starts at
+  (49,40) on foot with Hits 150, Food 200 and Coin 100: VERIFIED (GEN.EXE +
+  DOSBox).
 * Space sequence, Mondain battle, NPC dialogue: UNKNOWN beyond observed
   behaviour. Sound is PC-speaker code; there are no sound data files.
+
+### 9.1 Outdoor rules and run-time tables: VERIFIED (original executable), Phase 3
+
+The engine does not store these tables. `u1_assets::rules::ExeTables` reads
+them from the user's `OUT.EXE` (69,858 bytes; the data segment starts at
+file offset 0xD680). The DS offsets are:
+
+| DS offset | Contents |
+|---|---|
+| 0x16CC | Monster appearance chance, 10 words, indexed by `Exp div 1000` (capped at 9) |
+| 0x368C | Monster damage base, 15 words read. The last nine words are the first nine words of the next table; the original reads them that way and so does the engine |
+| 0x3698 | Monster hit-point base, 15 words |
+| 0x36E8 | Monster move chance (percent), 8 words, by the player's transport |
+| 0x36F8 | Food rate (moves per food unit), 8 words, by transport |
+| 0x2AB8 | 15 pointers to monster names |
+| 0x37AE | 7 pointers to move-refusal messages |
+| 0x37D4 | 5 pointers to direction names (index 1..4 = West, East, North, South) |
+| 0x277E / 0x2968 / 0x2910 / 0x29AE / 0x30CE | name pointers: weapons, armour, spells, transports, landmarks |
+
+In the shipped executable the appearance chances rise from 35 to 205 out
+of 255. The food rates are 2, 3, 3, 4, 5, 6, 11, 0 (foot … time machine).
+The move chances are 100, 50, 33, 100, 50, 25, 10, 10.
+
+**Turn order (outdoors).** For each move or Pass:
+
+1. The command is echoed: `>West`, `>Pass` and so on.
+2. For a move, the target cell is checked. Refused moves print a message
+   from 0x37AE: water; mountains; an aircar in woods; a frigate or a raft
+   on land; "Blocked by a(n) <monster>"; or "can't move on land" for the
+   shuttle and time machine. Water needs a raft, frigate or aircar.
+   Mountains are never passable.
+3. When the player enters a different land, the monsters of the old land
+   are dropped.
+4. A monster may appear (step 5), the move counter goes up by one, the
+   monsters act (step 6), and food is eaten.
+5. **Appearance.** This happens only while fewer than 11 monsters exist,
+   and only if `R(1,255) < chance[Exp div 1000]`.
+   * The type is `R(0,149) div 10`.
+   * The place is the player's position plus `±R(10,15)` columns and
+     `±R(5,15)` rows. Each sign is negative when `R(1,16)` is odd.
+     Coordinates wrap.
+   * The cell must hold the type's terrain: types 0–3 need water, 4–8
+     forest, 9–14 grass. It must also be at least 9 columns and 6 rows
+     inside the land's north-west corner.
+   * The original retries until it finds a place; the engine gives up
+     after 32 tries.
+   * A new monster's hit points are `10·base + Exp div 1000 + 2`.
+6. **Monsters act.** Each monster within reach attacks. The reach is 3
+   cells for the ranged tiles 0x17, 0x19, 0x1F and 0x2F, and 1 for the
+   rest. Otherwise, with the transport's move chance, a monster steps one
+   cell toward the player. Sea monsters stay on water. Tiles
+   0x1F/0x20/0x23/0x24 stay in forest. The rest use grass, forest and
+   location cells.
+   * An attack prints "<Name> attacks!".
+   * It hits if `R(1,255) < 200 − Stamina/2 − 8·armour`.
+   * Damage is `R(1, 2·damage_base + 1)`.
+7. **Food.** The food counter starts at 1. A unit is eaten when it
+   reaches the rate for the current transport. A rate of 0 (time machine)
+   means food is eaten every move.
+
+**Shops.** Prices are in coin units; *Int*, *Wis* and *Cha* are the
+player's attributes.
+
+| Item | Buy price | Shop pays |
+|---|---|---|
+| Weapon *n* = 1..15 | `(255−Int)·n² div 256 + 5` | `(Cha+40)·n² div 256 + 1` |
+| Armour *n* = 1..5 | `((200−Int) div 4)·n` | `(Cha div 4)·n` |
+| Spell *n* = 1..10 | `((200−Wis) div 32)·n` | not bought |
+| Transport *n* = 1..7 | `((200−Int) div 5)·n²` | not bought |
+| 10 food | `5 − Int div 20` | — |
+
+* **Era** = 3 once the move counter passes 3000; before that it is
+  `(moves mod 32767) div 1500`, capped at 3.
+* **Weapon stock** in town *t* (1..32): `era + 2` items, every second
+  weapon, starting at 1 if `(t−1) mod 8` is even and at 2 if it is odd.
+* **Armour stock:** items 1–3, plus 4–5 after 3000 moves.
+* **Magic shops:**
+  * With *p* = `(t−1) mod 2`, the shop sells every second spell from
+    `1+p` up to `5+p`, skipping spell 4 (steal).
+  * Wizards (class 2) are offered spells up to `9+p`.
+* **Transport shops:**
+  * Horses and carts need a free grass cell next to the shop; rafts and
+    frigates need water.
+  * Aircars and shuttles are sold only after 3000 moves.
+  * A player may own at most 15 vehicles.
+
+**Quests.** The quest slot for castle quest *k* = 1..8 is the save word
+at `0x3A + 2k`. Its values are 0 (none), 0xFFFF (given, not yet done)
+and 1 (done).
+* Even *k* are kill quests: the gelatinous cube, carrion creeper, lich
+  and balron for k = 2, 4, 6, 8.
+* Odd *k* are visit quests: the landmark `8 − k`.
+* Rewards: odd quests raise Strength, even quests give the red, green,
+  blue and white gems.
+* The last landmark visited is kept at save 0xA8, so a landmark does not
+  reward twice in a row.
+
+**Castle entry.**
+* The castle id gives the layout parity and the quest slot.
+* A variable is set at random to 60 or 61 (0x3C/0x3D) on each entry. It
+  selects which of the two jail-door tiles the key opens.
+* It is not stored in the save.
+
+**Leaving a dungeon** prints "Thou dost gain N hit points", where N is
+the dungeon's accumulated bonus, capped so Hits stays ≤ 9999.
+
+**Screen layout (EGA, 320×200).**
+* The border is blue.
+* The 19×9 viewport is at (8,8), 304×144 px, with a 1-px white frame.
+* Below it, from y = 159, are a message box (x 0..241) and a stats box
+  (from x 246), both white-framed.
+* The text rows are at y 168, 176, 184 and 192, in light cyan.
+* The last row holds the `>` prompt with a blinking cursor.
+* The stats box shows `Hits:`, `Food:`, `Exp.:` and `Coin:` with
+  4-character right-aligned values.
+* The engine draws this with its own 8×8 font (not the BIOS font).
 
 ## 10. What the engine implements today
 
@@ -598,11 +738,15 @@ restated here; larger tables are read from the user's `OUT.EXE` at run time
 | RNG | `u1-assets::rng` | hand-computed sequences, range bounds |
 | Dungeon generator | `u1-assets::dungeon` | borders, ladders, determinism, synthetic spot list |
 | CASTLE.16 / CASTLE.4 / NIF.BIN | `u1-assets::images` | handcrafted bytes |
+| Outdoor rules, prices, stock, run-time tables from OUT.EXE | `u1-assets::rules` | synthetic EXE, wrap, passability, food, prices, monsters |
+| Overworld turn logic (movement, monsters, food, messages) | `u1-assets::overworld` | synthetic map/tables |
+| Playable overworld binary | `u1` (SDL2) | screen layout, animation, font |
 
 All test data is synthetic, built from this spec. No test reads original
-files.
+files, except one optional check that runs only when `U1_GAME_DIR` points
+at the user's own install.
 
-## 11. Verification status (v0.2)
+## 11. Verification status (v0.3)
 
 Done against the CD-ROM copy:
 
@@ -619,13 +763,24 @@ Done against the CD-ROM copy:
 8. Location table, entry rules, RNG and dungeon generator ✓ from the
    executable (§4.1, §6).
 
+Done in Phase 3 (v0.3):
+
+9. Outdoor monster stats, appearance and movement; prices and per-town
+   stock; quest slots; save 0x38, 0xAE, 0xB0/0xB2; the 60/61 castle
+   variable; discs 0x31/0x32 (§9.1, §7, §3.2).
+10. Poll timing and idle Pass measured in DOSBox at two CPU speeds
+    (§3.5).
+11. Edge wrap, including the 77-row shift on east/west crossings,
+    observed in DOSBox (§4).
+12. `u1` overworld compared side by side with DOSBox (start position,
+    five moves, and the west-edge crossing).
+
 Still open:
 
 * Compare generated dungeons with in-game dungeon views.
-* Monster placement in dungeons; monster stat tables in `OUT.EXE`.
-* Weapon/armour/spell/vehicle price tables.
-* The quest words; save 0xAE–0xB2; a castle-entry variable set randomly
-  to 60 or 61.
+* Monster placement in dungeons.
+* What 0xB0/0xB2 mean in the space part.
+* Exact monster frame choice (engine uses its own pseudo-random pick).
 * A DOSBox machine=tandy comparison.
 
 ## Sources

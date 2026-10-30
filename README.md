@@ -16,8 +16,14 @@ with SDL2, from a written specification. Linux first.
   * the `CASTLE.16` / `CASTLE.4` title pictures and `NIF.BIN`
   * the location table, read at run time from your own `OUT.EXE`
   * the game's random number generator and its dungeon-level generator
+  * the outdoor rules (movement, monsters, food, prices, shop stock),
+    with their small tables read at run time from your own `OUT.EXE`
   * case-insensitive game-folder discovery
   * a small software renderer with the original animation timing
+* `u1`: a playable overworld for your own game files. It has the
+  original screen layout, movement and transports, food, wandering
+  monsters, edge wrap and location names; entering places is still a
+  stub.
 * `u1view`: a scrollable overworld viewer, either for your own game files
   or for a fully synthetic `--demo` world.
 * [`docs/SPEC.md`](docs/SPEC.md): the format and behaviour spec, with
@@ -50,8 +56,9 @@ This is **not** a strict clean-room project. It works like this:
 3. **The engine is written fresh from the spec.** No original code is
    translated or pasted in. Do not copy decompiled code or large data
    tables from the executables into the repository. When the engine needs
-   such a table (for example the location coordinates), it reads it at run
-   time from the user's own copy.
+   such a table (for example the location coordinates, monster stats,
+   food rates or message strings), it reads it at run time from the
+   user's own copy (`u1_assets::rules::ExeTables`, `::locations`).
 4. **No original assets in the repository.** Never commit original game
    files (`.BIN`, `.EXE`, `.COM`, `.U1`, `CASTLE.*`, `NIF.BIN`), extracts
    from them, or screenshots that show original art. `.gitignore` blocks
@@ -60,7 +67,8 @@ This is **not** a strict clean-room project. It works like this:
 5. **Third-party code is not copied.** Other projects' descriptions may be
    cited; their code may not be copied.
 6. **Tests use synthetic data only.** Tests build their inputs from the
-   spec and never read original files.
+   spec and never read original files. One optional check runs against
+   your own install when `U1_GAME_DIR` is set.
 
 To run the engine with real data you need your own legally purchased copy.
 
@@ -150,6 +158,41 @@ Screenshots also work headless:
 SDL_VIDEODRIVER=dummy cargo run -p u1view -- --demo --start 100,104 --screenshot docs/demo.png
 ```
 
+### Playing the overworld: `u1`
+
+```sh
+cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --player 2
+```
+
+`u1` needs your own game folder. It reads `MAP.BIN`, the tile set,
+`OUT.EXE` (for its tables and texts) and a save. Saves are only read,
+never written. Without `--player`/`--save` it starts a fresh character
+at the default start, (49,40).
+
+| Key | Action |
+|---|---|
+| Arrow keys or keypad 8/2/4/6 | Move north/south/west/east |
+| Space | Pass |
+| B | Board a vehicle you are standing on |
+| X | Exit a vehicle |
+| E | Enter a town, castle, dungeon or landmark (stub: prints the name) |
+| Esc | Quit |
+
+If no key is pressed for 1,500 polls (about 3¼ minutes), the turn
+passes by itself, as in the original. Options:
+
+* `--player N` or `--save FILE` to load a save; `--pos X,Y` to override
+  the position.
+* `--mode ega|t1k|cga`, `--scale N` (1–6, default 3), `--seed N`.
+* `--screenshot out.png` renders one 640×400 frame and exits.
+  `--keys left,left,up,space,…` plays those commands first, and
+  `--counter N` sets the animation counter.
+
+```sh
+SDL_VIDEODRIVER=dummy cargo run -p u1 -- --game-dir "/path/to/Ultima1" \
+    --player 2 --keys left,left,up --screenshot /tmp/u1.png
+```
+
 ### Developer helpers
 
 ```sh
@@ -163,7 +206,8 @@ cargo run -p u1-assets --example write_synthetic_gamedir -- /tmp/synthgame
 ## Layout
 
 ```
-crates/u1-assets   asset parsing library (no dependencies)
+crates/u1-assets   asset parsing and game-rules library (no dependencies)
+crates/u1          SDL2 playable overworld
 crates/u1view      SDL2 overworld viewer
 docs/SPEC.md       data-format specification with sources
 docs/demo.png      demo screenshot (synthetic art)
@@ -171,14 +215,11 @@ docs/demo.png      demo screenshot (synthetic art)
 
 ## Roadmap
 
-1. Finish the remaining open items in SPEC §11, such as dungeon monsters
-   and the shop and monster tables.
-2. Town/castle viewer from `TCD.BIN` and `EGATOWN.BIN`.
-3. Save-file inspector.
-4. Movement, transports and the overworld rules.
-5. A first-person dungeon view on top of the existing generator.
-6. Combat, shops, space and the Mondain battle, rebuilt from documented
-   behaviour.
+1. Finish the remaining open items in SPEC §11, such as dungeon monsters.
+2. Entering towns and castles (`TCD.BIN`, `EGATOWN.BIN`) and the shops.
+3. Player attacks, spells and the Ztats/Inventory screens; saving.
+4. A first-person dungeon view on top of the existing generator.
+5. Space and the Mondain battle, rebuilt from documented behaviour.
 
 ## License
 

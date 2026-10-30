@@ -481,6 +481,41 @@ impl Term {
         self.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
     }
 
+    /// Switch between the CGA and a 16-colour screen while playing (the
+    /// options menu): the pixels already drawn are converted to the other
+    /// screen's colours (the four interface colours swap places; on the way
+    /// back the text windows' colour 3 is the text colour, elsewhere white).
+    /// The caller redraws the view, whose tiles change with the display.
+    pub fn set_cga(&mut self, cga: bool) {
+        if cga == self.cga {
+            return;
+        }
+        for y in 0..H {
+            for x in 0..W {
+                let c = self.px[y * W + x];
+                self.px[y * W + x] = if cga {
+                    match c {
+                        WHITE | TEXT => 3,
+                        BLUE => 2,
+                        WARN => 1,
+                        _ => c & 3,
+                    }
+                } else {
+                    // (Column 0 holds the white-outlined prompt ornaments.)
+                    let text_window = y >= 160 && ((8..=240).contains(&x) || x >= 247);
+                    match c & 3 {
+                        3 if text_window => TEXT,
+                        3 => WHITE,
+                        2 => BLUE,
+                        1 => WARN,
+                        _ => BLACK,
+                    }
+                };
+            }
+        }
+        self.cga = cga;
+    }
+
     /// `21c2`: the black box used by shops and the king, framed in
     /// `frame`; cursor (5,4).
     pub fn boxed(&mut self, frame: u8) {
@@ -720,6 +755,17 @@ mod tests {
         t.boxed(BLUE);
         assert_eq!(t.art.len(), 1);
         assert_eq!((t.art[0].x, t.art[0].y), (8, 136));
+    }
+
+    #[test]
+    fn cga_switch_keeps_the_frame() {
+        let ega = Term::with_cga(false);
+        let mut t = ega.clone();
+        t.set_cga(true);
+        assert_eq!(t.px, Term::with_cga(true).px);
+        t.set_cga(false);
+        assert_eq!(t.px, ega.px);
+        assert!(!t.cga);
     }
 
     #[test]

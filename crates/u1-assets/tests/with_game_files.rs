@@ -906,3 +906,65 @@ fn space_scene_notes_the_pictures_drawn() {
     let g = play_with(40, 40, "B{w12}I", 1, &[], on_shuttle).unwrap();
     assert!(g.term.sscene.is_none());
 }
+
+/// Scripted keys, with the options menu's display switch asked for after
+/// `at` polls (as F1 would).
+struct SwitchIo {
+    inner: ScriptIo,
+    polls: usize,
+    at: usize,
+    to: Vec<u1_assets::gamedir::VideoMode>,
+    shown: Vec<u1_assets::gamedir::VideoMode>,
+}
+
+impl Io for SwitchIo {
+    fn poll(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.polls += 1;
+        self.inner.poll(t)
+    }
+    fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
+        self.inner.pause(t, ticks)
+    }
+    fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
+        self.inner.wait_or_key(t)
+    }
+    fn video_switch(&mut self) -> Option<u1_assets::game::VideoSet> {
+        if self.polls < self.at || self.to.is_empty() {
+            return None;
+        }
+        let mode = self.to.remove(0);
+        let g = game_dir()?;
+        Some(u1_assets::game::VideoSet {
+            mode,
+            world_tiles: g.load_world_tiles(mode).ok()?,
+            town_tiles: g.load_town_tiles(mode).ok()?,
+            space: SpaceFiles::load(&g, mode).ok(),
+            mondain: u1_assets::mondain::MondainFiles::load(&g, mode).ok(),
+        })
+    }
+    fn video_shown(&mut self, mode: u1_assets::gamedir::VideoMode) {
+        self.shown.push(mode);
+    }
+}
+
+#[test]
+fn options_menu_switches_the_display_live() {
+    use u1_assets::gamedir::VideoMode;
+    let keys = "{right}{right}{left}";
+    let Some(plain) = play(45, 38, keys) else { return };
+    let mut io = SwitchIo { inner: ScriptIo::from_text(keys), polls: 0, at: 2, to: vec![VideoMode::Cga], shown: vec![] };
+    let g = play_io(45, 38, &mut io, 2, &[], |_| {}).unwrap();
+    assert_eq!(io.shown, vec![VideoMode::Cga]);
+    assert_eq!(g.a.video, VideoMode::Cga);
+    assert!(g.term.cga);
+    assert!(g.term.px.iter().all(|&c| c < 4), "CGA colours only");
+    assert_eq!((g.ow.x, g.ow.y), (plain.ow.x, plain.ow.y), "the game itself is unchanged");
+    assert_eq!(g.term.messages(), plain.term.messages());
+    // And back: the same screen as a game that never left EGA.
+    let mut io = SwitchIo { inner: ScriptIo::from_text(keys), polls: 0, at: 2, to: vec![VideoMode::Cga, VideoMode::Ega], shown: vec![] };
+    let g = play_io(45, 38, &mut io, 2, &[], |_| {}).unwrap();
+    assert_eq!(io.shown, vec![VideoMode::Cga, VideoMode::Ega]);
+    assert!(!g.term.cga);
+    let diff: Vec<(usize, usize, u8, u8)> = (0..g.term.px.len()).filter(|&i| g.term.px[i] != plain.term.px[i]).map(|i| (i % 320, i / 320, g.term.px[i], plain.term.px[i])).collect();
+    assert!(diff.is_empty(), "{} differ, e.g. {:?}", diff.len(), &diff[..diff.len().min(12)]);
+}

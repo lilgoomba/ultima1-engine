@@ -88,6 +88,15 @@ pub trait Io {
     /// may play something. Never waits.
     fn cue(&mut self, _ev: crate::sound::Sfx) {}
 
+    /// A display chosen in the options menu, with its files, for the game
+    /// to take at its next safe point (the main loop's key poll).
+    fn video_switch(&mut self) -> Option<crate::game::VideoSet> {
+        None
+    }
+
+    /// The game now draws in `mode` (the front end changes its palette).
+    fn video_shown(&mut self, _mode: crate::gamedir::VideoMode) {}
+
     /// A keyboard check that does not wait (the space program's polls,
     /// which are paced by explicit delays instead).
     fn poll_now(&mut self, t: &Term) -> IoResult<Option<u8>> {

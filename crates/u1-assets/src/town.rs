@@ -131,6 +131,17 @@ impl Game {
         Ok(())
     }
 
+    /// Townsperson `i` has moved: the original's step effect, which the
+    /// enhanced sound mode plays only for one near the player.
+    fn npc_step(&mut self, io: &mut dyn Io, i: usize) {
+        let (dx, dy) = (i32::from(self.npcs[i].x) - self.px, i32::from(self.npcs[i].y) - self.py);
+        if Sfx::npc_step_heard(dx, dy) {
+            self.snd_ev(io, 4, Sfx::NpcStep);
+        } else if self.rec.u16_at(off::SOUND) != 0 {
+            io.sound_distant(4);
+        }
+    }
+
     /// `2203`: a random step of -1, 0 or +1.
     fn rand_step(&mut self) -> i32 {
         match self.r(1, 215) % 3 {
@@ -210,7 +221,7 @@ impl Game {
         if t == FREE {
             self.npcs[i].x = x as i16;
             self.npcs[i].y = y as i16;
-            self.snd_ev(io, 4, Sfx::NpcStep);
+            self.npc_step(io, i);
         } else if t == PLAYER_TILE {
             let ready = self.rec.u16_at(off::READY_WEAPON) as usize;
             let mut stolen = false;
@@ -248,7 +259,7 @@ impl Game {
         if Self::in_town(x, y) && self.passable(x, y) == FREE {
             self.npcs[i].x = x as i16;
             self.npcs[i].y = y as i16;
-            self.snd_ev(io, 4, Sfx::NpcStep);
+            self.npc_step(io, i);
         }
     }
 
@@ -267,7 +278,7 @@ impl Game {
             (sx != 0 && self.try_move(i, sx, 0)) || (sy != 0 && self.try_move(i, 0, sy))
         };
         if moved {
-            self.snd_ev(io, 4, Sfx::NpcStep);
+            self.npc_step(io, i);
         }
     }
 
@@ -287,7 +298,7 @@ impl Game {
             moved = self.try_move(i, 0, sy);
         }
         if moved {
-            self.snd_ev(io, 4, Sfx::NpcStep);
+            self.npc_step(io, i);
         }
         moved
     }

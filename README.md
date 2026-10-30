@@ -158,39 +158,64 @@ Screenshots also work headless:
 SDL_VIDEODRIVER=dummy cargo run -p u1view -- --demo --start 100,104 --screenshot docs/demo.png
 ```
 
-### Playing the overworld: `u1`
+### Playing the game: `u1`
 
 ```sh
 cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --player 2
 ```
 
-`u1` needs your own game folder. It reads `MAP.BIN`, the tile set,
-`OUT.EXE` (for its tables and texts) and a save. Saves are only read,
+`u1` needs your own game folder. It reads `MAP.BIN`, `TCD.BIN`, the tile
+sets, `OUT.EXE` (for its tables and texts) and a save. The game folder is
 never written. Without `--player`/`--save` it starts a fresh character
-at the default start, (49,40).
+at the default start, (49,40). It covers the overworld, towns and castles
+(shops, pub, kings, jail and princess). Dungeons, space and the time
+machine stop after their entry message.
+
+The keys are the original's:
 
 | Key | Action |
 |---|---|
 | Arrow keys or keypad 8/2/4/6 | Move north/south/west/east |
 | Space | Pass |
-| B | Board a vehicle you are standing on |
-| X | Exit a vehicle |
-| E | Enter a town, castle, dungeon or landmark (stub: prints the name) |
-| Esc | Quit |
+| A | Attack (then a direction) |
+| B / X | Board / exit a vehicle |
+| C | Cast the ready spell |
+| D | Drop (coin into a pond, in towns) |
+| E | Enter a town, castle, dungeon or landmark |
+| F | Fire (vehicles with cannons) |
+| G | Get (castle storeroom, with the king's leave) |
+| I / Z | Inform / Ztats |
+| N | Noise on/off |
+| Q | Quit and save (outdoors only) |
+| R | Ready a weapon, armour or spell |
+| S | Steal (behind a shop counter) |
+| T | Transact (shops, pub, king) |
+| U | Unlock (castle jail doors) |
 
 If no key is pressed for 1,500 polls (about 3¼ minutes), the turn
 passes by itself, as in the original. Options:
 
 * `--player N` or `--save FILE` to load a save; `--pos X,Y` to override
   the position.
-* `--mode ega|t1k|cga`, `--scale N` (1–6, default 3), `--seed N`.
+* `--save-to FILE`: where `Q` writes the 820-byte record. The default is
+  `./PLAYER1.U1`. It must not be inside the game folder.
+* `--mode ega|t1k|cga`, `--scale N` (1–6, default 3), `--seed N` (random
+  generator seed; the original seeds from the clock).
 * `--screenshot out.png` renders one 640×400 frame and exits.
-  `--keys left,left,up,space,…` plays those commands first, and
-  `--counter N` sets the animation counter.
+  `--keys TEXT` types those keys first. Use `{up}` `{down}` `{left}`
+  `{right}` `{enter}` `{esc}` `{bs}` `{space}` for special keys and `~`
+  to end a timed wait. `--counter N` sets the animation counter.
 
 ```sh
 SDL_VIDEODRIVER=dummy cargo run -p u1 -- --game-dir "/path/to/Ultima1" \
-    --player 2 --keys left,left,up --screenshot /tmp/u1.png
+    --player 2 --seed 2 --keys "{up}{up}e" --screenshot /tmp/u1.png
+```
+
+Tests that use your own files are skipped unless you point them at your
+install:
+
+```sh
+U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 ```
 
 ### Developer helpers

@@ -724,6 +724,92 @@ the dungeon's accumulated bonus, capped so Hits stays ≤ 9999.
   4-character right-aligned values.
 * The engine draws this with its own 8×8 font (not the BIOS font).
 
+### 9.2 Towns, castles, shops, kings and saving: Phase 4
+
+All items below are **VERIFIED (original executable)** unless marked
+otherwise. Items marked [DOSBox] were also compared side by side with the
+original running in DOSBox. Every message, shop title and name is read
+from the user's `OUT.EXE` at run time, and maps come from `TCD.BIN`.
+
+**Entering and leaving**
+
+* `E` on a location tile: ids 1..32 are towns, using TCD map
+  `(id-1) mod 8 + 2`. Ids 33..40 are castles, using map `(id-1) mod 2`.
+  [DOSBox] Entered and compared: Britain, Moon, Fawn, Lord British's
+  castle and the Castle of the Lost King.
+* Start cell: (19,17) in a town and (0,9) in a castle [DOSBox].
+* Walking off any edge of the 38x18 map returns to the overworld. The
+  player stands on the location's own tile [DOSBox].
+* NPCs are not in `TCD.BIN`. Each map's starting NPC list (tile, x, y,
+  hits) is a table in the executable, which the engine reads at run time.
+* On entry the castle's two jail-door cells are reset to the locked-door
+  tile. The castle then picks, at random, which region code (60 or 61,
+  §5) the key opens. `U` with the key opens only that one; the other
+  stays shut. The key is found by killing the castle's jester. A freed
+  princess follows the player once the castle is roused. Stepping off the
+  map next to her adds 500 coin, 500 hits and 500 experience. If at least
+  20 enemy ships were destroyed and experience is 7000 or more, a time
+  machine is also placed on land near the castle.
+
+**Commands inside** (original keys): arrows move; `A` attack; `D` drop
+coin into the pond; `E`; `G` get (in a castle, from the storeroom, only
+with the king's leave); `I`; `N` noise; `Q` (refused unless outdoors)
+[DOSBox]; `R` ready; `S` steal at a shop counter; `T` transact; `U`
+unlock; `X`; Space passes. Commands that only make sense outdoors print
+the original's refusal.
+
+**NPCs:** bards/jesters (they may sing, or steal a weapon), wenches,
+merchants, guards, the king and princesses each have their own turn
+routine. Guards walk toward the player once the town is hostile, and
+strike when next to the player. The town turns hostile when the player
+attacks someone or a theft is noticed. A kill gives 1 experience (a
+guard gives 15).
+
+**Shops** (`T` next to a counter; a counter's region code picks the
+shop, §5; "not by a counter" otherwise [DOSBox]):
+
+* Each shop has its own name box and a `letter) item - price` list.
+  Buy and sell prices come from §9.1. Stock depends on the town and on
+  the move counter.
+* Weapon and armour shops sell and buy back. The magic shop sells
+  spells, and the wizard class gets the longer list. Food is sold in packs
+  of 10. The transport shop places the bought vehicle next to the town
+  and closes when 15 vehicle objects exist.
+* A purchase you cannot afford prints the item as "nothing" [DOSBox].
+  Observed: Moon armour shop with 35 copper; Moon dagger at 5; Britain
+  food.
+* Pub: each ale costs 1 coin [DOSBox, Fawn]. After more ales than STA/4,
+  a wench at the counter can take half the coin and 1 WIS. About 75 times
+  in 255, the barkeep gives one of eight tips.
+
+**Kings:** `T` in a castle works only next to the king ("He is not
+here!" elsewhere) [DOSBox]. It offers pence or service:
+
+* Pence: paying *n* copper gives `n*3/2` hits [DOSBox].
+* Service: gives the castle's quest when its save slot (§7, 0x3A+2k) is
+  0. It shows the quest again while the slot is 0xFFFF (active). It
+  rewards the player and clears the slot when the slot is 1 (done).
+* Odd quest slots reward Strength: `(99 - STR) div 8` points, at least
+  1 unless STR is 99. Even slots give the gem of the current land; the
+  fourth land's gem also opens the storeroom for `G`.
+* Exact wording is shown from the user's `OUT.EXE` [DOSBox: quest offer
+  and pence].
+
+**Saving:** `Q` outdoors writes the 820-byte record (§7) to the chosen
+file. The engine refuses to write into the game directory. Object slots
+not changed in play are kept byte for byte. With the same seed and keys,
+a quit after visiting a castle and a town produced a file byte-equal to
+the original's [DOSBox]. Differences in other runs come only from random
+rolls (NPC steps, monster spawns), because the original seeds its
+generator from the clock.
+
+**Status line colours:** Hits and Food show in the warning colour below
+100. Experience and Coin always show in the text colour [DOSBox].
+
+**UNKNOWN / approximate:** the exact NPC frame choice; the duration of
+some waits; dungeon interiors (the engine stops after the name); the
+space and time-machine parts.
+
 ## 10. What the engine implements today
 
 | Area | Module | Tests |
@@ -740,13 +826,15 @@ the dungeon's accumulated bonus, capped so Hits stays ≤ 9999.
 | CASTLE.16 / CASTLE.4 / NIF.BIN | `u1-assets::images` | handcrafted bytes |
 | Outdoor rules, prices, stock, run-time tables from OUT.EXE | `u1-assets::rules` | synthetic EXE, wrap, passability, food, prices, monsters |
 | Overworld turn logic (movement, monsters, food, messages) | `u1-assets::overworld` | synthetic map/tables |
-| Playable overworld binary | `u1` (SDL2) | screen layout, animation, font |
+| Towns, castles, NPCs, shops, pub, kings, princess, quit-save | `u1-assets::game`, `::town`, `::shops`, `::term` | stat colours; end-to-end scripts in `tests/with_game_files.rs` (need `U1_GAME_DIR`) |
+| Playable game binary | `u1` (SDL2) | screen layout, animation, font |
 
-All test data is synthetic, built from this spec. No test reads original
-files, except one optional check that runs only when `U1_GAME_DIR` points
-at the user's own install.
+All unit-test data is synthetic, built from this spec. Tests that read
+original files (one location check, plus `crates/u1-assets/tests/with_game_files.rs`)
+run only when `U1_GAME_DIR` points at the user's own install; otherwise they pass
+without doing anything.
 
-## 11. Verification status (v0.3)
+## 11. Verification status (v0.4)
 
 Done against the CD-ROM copy:
 
@@ -775,7 +863,17 @@ Done in Phase 3 (v0.3):
 12. `u1` overworld compared side by side with DOSBox (start position,
     five moves, and the west-edge crossing).
 
+Done in Phase 4 (v0.4):
+
+13. Towns and castles (§9.2) compared side by side with DOSBox: Britain,
+    Moon, Fawn, Lord British's castle, Castle of the Lost King; food,
+    armour, weapon and pub transactions; king pence and quest; exits;
+    quit-save byte-equal.
+
 Still open:
+
+* Jail/princess rescue and hostile guards: implemented from the
+  executable but not yet compared in DOSBox.
 
 * Compare generated dungeons with in-game dungeon views.
 * Monster placement in dungeons.

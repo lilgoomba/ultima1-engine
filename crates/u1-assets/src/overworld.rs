@@ -78,6 +78,9 @@ pub struct Overworld {
     pub dead: bool,
     /// Monster attacks of the last turn, in order.
     pub attacks: Vec<MonsterAttack>,
+    /// Monsters taken by prayer: the original keeps counting them toward
+    /// the spawn limit until OUT.EXE restarts.
+    pub uncounted: usize,
 }
 
 impl Overworld {
@@ -100,6 +103,7 @@ impl Overworld {
             rng: U1Rng::new(seed),
             dead: false,
             attacks: Vec::new(),
+            uncounted: 0,
         }
     }
 
@@ -142,7 +146,7 @@ impl Overworld {
     }
 
     pub fn monster_count(&self) -> usize {
-        self.entities.iter().filter(|e| e.is_monster()).count()
+        self.entities.iter().filter(|e| e.is_monster()).count() + self.uncounted
     }
 
     fn terrain(map: &WorldMap, x: i32, y: i32) -> u8 {

@@ -392,3 +392,37 @@ fn character_program_writes_the_original_record_and_selects_it() {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
+
+/// A Dark knight (tile 0x21) placed at (x, y) as object 1.
+fn knight_at(r: &mut PlayerRecord, x: u16, y: u16) {
+    r.set_object(1, &u1_assets::save::MapObject { kind: 0x21, unknown_02: 0, x, y, hits: 40 });
+    r.set_u16(off::LAST_OBJECT, 1);
+}
+
+#[test]
+fn outdoor_magic_missile_flies_and_hits() {
+    let Some(g) = play_with(40, 39, "C{right}", 2, &[], |r| {
+        r.set_u16(off::READY_SPELL, 3);
+        r.set_u16(0x86, 5);
+        r.set_u16(0x20, 99);
+        knight_at(r, 42, 39);
+    }) else {
+        return;
+    };
+    assert!(said(&g, "\"DELCIO-ERE-UI\""));
+    assert!(said(&g, "Dark knight"));
+    assert_eq!(g.rec.u16_at(0x86), 4);
+}
+
+#[test]
+fn outdoor_prayer_can_remove_an_adjacent_monster() {
+    let Some(g) = play_with(40, 39, "C", 137, &[], |r| {
+        r.set_u16(off::READY_SPELL, 0);
+        knight_at(r, 41, 39);
+    }) else {
+        return;
+    };
+    assert!(said(&g, "Monster removed!"));
+    assert!(g.ow.entity_at(41, 39).is_none());
+    assert_eq!(g.ow.uncounted, 1);
+}

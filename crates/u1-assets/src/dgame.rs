@@ -6,7 +6,9 @@
 use crate::dungeon::{self, Cell, DungeonLevel, Item, DUNGEON_SIZE};
 use crate::dview::{self, ViewTables, EAST, NORTH, SOUTH, WEST};
 use crate::exe::m;
-use crate::game::{slot, Game, AGI, HITS, INT, OUTDOORS, STA, STR};
+use crate::game::{slot, Game, AGI, HITS, INT, MAGIC_TILE, OUTDOORS, STA, STR, WIS};
+use crate::io::keys;
+use crate::rules::{self, Dir};
 use crate::io::Io;
 use crate::save::off;
 use crate::term::TEXT;
@@ -636,11 +638,44 @@ impl Game {
             self.sayln(m::DUNGEON_ONLY);
             self.snd(io, 6);
         } else {
-            // Outdoor magic missile / kill: not part of this engine yet.
-            self.nl();
+            self.outdoor_spell(io, s);
+        }
+    }
+
+    /// `18fc`: magic missile or kill outdoors, aimed like an attack.
+    fn outdoor_spell(&mut self, io: &mut dyn Io, s: usize) {
+        self.say(m::COLON);
+        let d = match self.key_timeout(io) {
+            Ok(keys::LEFT) => Dir::West,
+            Ok(keys::RIGHT) => Dir::East,
+            Ok(keys::UP) => Dir::North,
+            Ok(keys::DOWN) => Dir::South,
+            Ok(_) => {
+                self.sayln(m::NOTHING_CAP);
+                self.add(slot::SPELL + 2 * s, 1);
+                return;
+            }
+            Err(_) => return,
+        };
+        let dn = self.a.t.direction_names[d as usize].clone();
+        self.term.println(&dn);
+        let dmg = if s == 3 {
+            self.say(m::DELCIO);
+            self.magic_damage()
+        } else {
+            self.say(m::INTERFICIO);
+            9999
+        };
+        // Clerics never fail; others need R(1,100) < WIS + 50.
+        let ok = self.rec.class() == 1 || self.r(1, 100) < i32::from(self.stat(WIS)) + 50;
+        if !ok {
             self.sayln(m::FAILED);
             self.snd(io, 6);
+            return;
         }
+        self.snd(io, 5);
+        self.nl();
+        let _ = self.outdoor_attack(io, d, 7, 3, dmg, 101, MAGIC_TILE);
     }
 
     /// Prayer `1769`.
@@ -667,9 +702,32 @@ impl Game {
             self.show_food();
             self.snd(io, 5);
         } else {
-            // (The 1-in-4 removal of an adjacent outdoor monster is not
-            // reproduced; see SPEC §6.7.)
-            let _ = self.r(1, 100);
+            // One time in four, the first monster within its own attack
+            // reach of the player vanishes.
+            let roll = self.r(1, 100);
+            if roll < 25 {
+                let (px, py) = (self.ow.x, self.ow.y);
+                let found = self.ow.entities.iter().position(|e| {
+                    e.tile >= 0x13 && (px - e.x).abs().max((py - e.y).abs()) <= rules::attack_range(e.tile)
+                });
+                if let Some(i) = found {
+                    let e = self.ow.entities[i];
+                    let (col, row) = (e.x - px + rules::PLAYER_COL, e.y - py + rules::PLAYER_ROW);
+                    let out = self.mode == OUTDOORS;
+                    if out {
+                        self.draw_world_tile(col, row, MAGIC_TILE);
+                    }
+                    self.sayln(m::MONSTER_REMOVED);
+                    self.snd(io, 5);
+                    self.ow.entities.remove(i);
+                    // The original's monster counter is not lowered here.
+                    self.ow.uncounted += 1;
+                    if out {
+                        self.draw_world_cell(col, row);
+                    }
+                    return;
+                }
+            }
             self.sayln(m::NO_EFFECT);
             self.snd(io, 6);
         }

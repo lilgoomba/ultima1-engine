@@ -82,6 +82,9 @@ pub mod m {
     pub const ATTACK_WITH: usize = 0x0228;
     pub const BOARD_Q: usize = 0x023A;
     pub const NO_EFFECT: usize = 0x034C;
+    pub const MONSTER_REMOVED: usize = 0x033B;
+    pub const DELCIO: usize = 0x0360;
+    pub const INTERFICIO: usize = 0x0371;
     pub const CAST_DASH: usize = 0x0385;
     pub const PENCE_PROMPT: usize = 0x03D7;
     pub const NONE: usize = 0x03DF;
@@ -292,7 +295,6 @@ pub mod m {
     pub const FIELD_DESTROYED: usize = 0x0319;
     pub const FAILED: usize = 0x032A;
     pub const SHAZAM_SP: usize = 0x0332;
-    pub const MONSTER_REMOVED: usize = 0x033B;
     pub const CAST: usize = 0x038E;
     pub const USED_UP: usize = 0x0394;
     pub const DUNGEON_ONLY: usize = 0x03AF;

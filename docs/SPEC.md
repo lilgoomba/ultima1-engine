@@ -611,9 +611,31 @@ Public sources ([S13]-[S16]) describe the behaviour. The algorithm below is
   force field ahead. Kill (10): destroys the monster ahead outright.
   Failure prints "Failed!". Outside the dungeon only Magic missile and Kill
   are allowed; other spells print the "dungeon only" refusal.
-* **Not reproduced (engine deviation):** outdoor Magic missile and Kill
-  print "Failed!". Prayer's 1-in-4 chance to remove an adjacent outdoor
-  monster is not reproduced; the roll is still drawn.
+* Outdoors (and in the frigate's and the player's outdoor fights) a shot
+  travels cell by cell: the shot tile (world tile 0x32 for weapons and
+  cannons, 0x31 for spells) is drawn on the next cell, the first cell
+  plays the attack sound (7 weapons and spells, 8 cannons), later cells
+  wait two timer ticks, then the cell is redrawn. It stops on a monster,
+  a mountain or at its range. On a hit the shot tile stays on the monster
+  while the messages print and is replaced by the monster (survived) or
+  the terrain (slain).
+* Outdoor Magic missile / Kill: after the spell name, ": " and a
+  direction (any other key: "Nothing", and the spell is given back). The
+  incantation ("DELCIO-ERE-UI" or "INTERFICIO-NUNC!") follows on the same
+  line; damage is computed (Kill: 9999), then the cast succeeds always
+  for a Cleric, otherwise when `R(1,100) < WIS + 50`; failure appends
+  "Failed!". On success a sound plays and the shot flies 3 cells and
+  always hits.
+* Outdoor prayer with hits and food at 15 or more: when `R(1,100) < 25`,
+  the first object (in slot order) that is a monster and stands within its
+  own attack reach (Chebyshev 3 for the four ranged kinds, else 1) of the
+  player is flashed with tile 0x31 and removed: "Monster removed!". The
+  original does not lower its monster counter here, so the removed monster
+  still counts toward the spawn limit until OUT.EXE is restarted; the
+  engine keeps the same count. Otherwise "Hmmmm... no effect!".
+  Side by side in DOSBox: `u1-shots/phase7/play/sbs_ega_prayer_removed.png`
+  (4 px, player animation) and `sbs_ega_magic_missile.png` (damage differs
+  only because OUT.EXE seeds from the clock).
 
 Dungeon inhabitants by level pair [S13][S16][S15]:
 1–2 ranger, skeleton, thief, giant rat, bat · 3–4 spider, viper, orc,

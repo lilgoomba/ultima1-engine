@@ -39,6 +39,10 @@ pub mod slot {
 /// OUT.EXE data: five 8x8 frames of the blinking cursor (`c655`).
 const CURSOR_FRAMES: usize = 0x3a24;
 
+/// World tile of an arrow or cannon ball in flight.
+pub const SHOT_TILE: u8 = 0x32;
+/// World tile of a magic bolt in flight and of the prayer flash.
+pub const MAGIC_TILE: u8 = 0x31;
 pub const HITS: usize = 0;
 pub const STR: usize = 1;
 pub const AGI: usize = 2;
@@ -406,34 +410,48 @@ impl Game {
 
     /// Outdoor viewport: 19x9 tiles of the world around the player.
     pub fn draw_world(&mut self) {
+        for row in 0..VIEW_ROWS {
+            for col in 0..VIEW_COLS {
+                self.draw_world_cell(col, row);
+            }
+        }
+    }
+
+    /// One viewport cell: the object there, else the terrain.
+    pub(crate) fn draw_world_cell(&mut self, col: i32, row: i32) {
         let c = self.counter;
         let tw = self.a.world_tiles.width.max(1);
         let th = self.a.world_tiles.height.max(1);
-        let shift = water_scroll(c as usize, tw);
-        let ptile = tile_for_transport(self.transport());
-        for row in 0..VIEW_ROWS {
-            for col in 0..VIEW_COLS {
-                let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
-                let (sx, sy) = (8 + col as usize * tw, 8 + row as usize * th);
-                let obj = if col == rules::PLAYER_COL && row == rules::PLAYER_ROW {
-                    Some(ptile)
-                } else {
-                    self.ow.entity_at(mx, my).map(|i| self.ow.entities[i].tile)
-                };
-                match obj {
-                    Some(t) => {
-                        let f = animate_object(t, c, (mx * 31 + my * 17) as u32);
-                        self.tile(false, f as usize, sx, sy, 0);
-                    }
-                    None => {
-                        let terr = self.a.map.cell(mx as usize, my as usize);
-                        let f = Terrain::from_cell(terr).tile_for_frame(c as usize);
-                        let s = if terr == 0 { shift } else { 0 };
-                        self.tile(false, f, sx, sy, s);
-                    }
-                }
+        let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
+        let (sx, sy) = (8 + col as usize * tw, 8 + row as usize * th);
+        let obj = if col == rules::PLAYER_COL && row == rules::PLAYER_ROW {
+            Some(tile_for_transport(self.transport()))
+        } else {
+            self.ow.entity_at(mx, my).map(|i| self.ow.entities[i].tile)
+        };
+        match obj {
+            Some(t) => {
+                let f = animate_object(t, c, (mx * 31 + my * 17) as u32);
+                self.tile(false, f as usize, sx, sy, 0);
+            }
+            None => {
+                let terr = self.a.map.cell(mx as usize, my as usize);
+                let f = Terrain::from_cell(terr).tile_for_frame(c as usize);
+                let s = if terr == 0 { water_scroll(c as usize, tw) } else { 0 };
+                self.tile(false, f, sx, sy, s);
             }
         }
+    }
+
+    /// `a5b4` with a fixed tile: a shot or the prayer flash on a viewport
+    /// cell.
+    pub(crate) fn draw_world_tile(&mut self, col: i32, row: i32, t: u8) {
+        if !(0..VIEW_COLS).contains(&col) || !(0..VIEW_ROWS).contains(&row) {
+            return;
+        }
+        let tw = self.a.world_tiles.width.max(1);
+        let th = self.a.world_tiles.height.max(1);
+        self.tile(false, t as usize, 8 + col as usize * tw, 8 + row as usize * th, 0);
     }
 
     /// `2231` + `22b8`: town or castle map, the player and the NPCs.
@@ -1168,23 +1186,44 @@ impl Game {
         let hi = i32::from(self.stat(STR)) + 8 * wpn as i32;
         let dmg = self.r(2, hi);
         if self.mode == OUTDOORS {
-            self.outdoor_attack(io, d, range, dmg, hit)
+            self.outdoor_attack(io, d, 7, range, dmg, hit, SHOT_TILE)
         } else {
             self.town_attack(io, d, range, dmg, hit);
             Ok(())
         }
     }
 
-    /// Outdoor fight (`cf3`): the shot flies until it meets a monster or a
-    /// mountain.
-    fn outdoor_attack(&mut self, io: &mut dyn Io, d: Dir, range: i32, dmg: i32, hit: i32) -> IoResult<()> {
+    /// Outdoor fight (`cf3`): the shot tile flies cell by cell (sound
+    /// `snd` on the first, two ticks between the others) until it meets a
+    /// monster or a mountain or runs out of range.
+    pub(crate) fn outdoor_attack(
+        &mut self,
+        io: &mut dyn Io,
+        d: Dir,
+        snd: u8,
+        range: i32,
+        dmg: i32,
+        hit: i32,
+        shot: u8,
+    ) -> IoResult<()> {
         let (dx, dy) = d.delta();
-        let mut t = 0u8;
-        let mut cell = (0, 0);
-        for k in 1..=range {
+        let mut k = 1;
+        let (mut col, mut row, mut cell, mut t);
+        loop {
+            col = rules::PLAYER_COL + dx * k;
+            row = rules::PLAYER_ROW + dy * k;
+            self.draw_world_tile(col, row, shot);
+            if k == 1 {
+                self.snd(io, snd);
+                io.pause(&self.term, 1)?;
+            } else {
+                io.pause(&self.term, 2)?;
+            }
             cell = rules::wrap(self.ow.x + dx * k, self.ow.y + dy * k);
             t = self.cell_or_object(cell.0, cell.1);
-            if t >= 0x13 || t == 3 {
+            self.draw_world_cell(col, row);
+            k += 1;
+            if k > range || t >= 0x13 || t == 3 {
                 break;
             }
         }
@@ -1199,6 +1238,7 @@ impl Game {
             self.sayln(m::EXCL);
             return Ok(());
         }
+        self.draw_world_tile(col, row, shot);
         let i = self.ow.entity_at(cell.0, cell.1).expect("monster");
         let hp = (self.ow.entities[i].hp as i16).wrapping_sub(dmg as i16);
         self.ow.entities[i].hp = hp as u16;
@@ -1214,6 +1254,7 @@ impl Game {
             self.term.num(dmg as u16, 2, ' ', TEXT, true);
             self.sayln(m::SP_DAMAGE);
             self.snd(io, 2);
+            self.draw_world_cell(col, row);
             return Ok(());
         }
         self.ow.entities.remove(i);
@@ -1222,6 +1263,7 @@ impl Game {
         let xp = self.r(2, base * 5);
         self.add(off::EXPERIENCE, xp as i16);
         self.snd(io, 2);
+        self.draw_world_cell(col, row);
         self.loot(gold as i16, name.len());
         self.show_exp();
         Ok(())
@@ -1292,7 +1334,7 @@ impl Game {
         let dn = self.a.t.direction_names[d as usize].clone();
         self.term.println(&dn);
         let dmg = self.r(1, i32::from(self.transport() as i16) * 10) + 30;
-        self.outdoor_attack(io, d, 3, dmg, 80)
+        self.outdoor_attack(io, d, 8, 3, dmg, 80, SHOT_TILE)
     }
 
     fn cmd_get(&mut self, io: &mut dyn Io) {

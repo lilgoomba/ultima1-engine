@@ -313,7 +313,11 @@ cargo run --release -p u1 -- --sound-demo /tmp/demo.wav   # every sound after it
   own sounds here. The list is in `assets/enhanced/sounds/CREDITS`.
 * An event with no file plays the original effect. A few events that are
   silent in the original (a miss, a dodged blow, launching, docking, the
-  hyperspace jump) only sound in this mode.
+  hyperspace jump) only sound in this mode, kept quiet and short.
+* Levels match the beeps: each sound is about as loud as the effect it
+  replaces; footsteps and the star field are soft; townspeople's steps
+  are heard only within 4 squares of you (the original beeps for every
+  one, and still does in the default mode).
 * The game's timing is unchanged: the engine still waits as long as the
   original effect would have lasted; a longer enhanced sound plays on.
   The in-game Noise command (N) still turns all sound off and on.

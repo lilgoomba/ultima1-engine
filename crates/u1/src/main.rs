@@ -558,13 +558,26 @@ impl Io for SdlIo {
             match (self.sound, clip) {
                 (SoundMode::Mute, _) => {}
                 (SoundMode::Enhanced, Some(c)) => dev.lock().play(c),
-                _ => dev.lock().play(Arc::new(sound::render(&e, *rate, sound::CPU_HZ, 6000))),
+                _ => dev.lock().play(Arc::new(sound::render(&e, *rate, sound::CPU_HZ, u1_assets::soundpack::BEEP_AMP))),
             }
         }
         let end = Instant::now() + len;
         while Instant::now() < end {
             let _ = self.pump();
             std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn sound_distant(&mut self, n: u8) {
+        if self.sound == SoundMode::Enhanced {
+            // Unheard, but the original's time passes all the same.
+            let end = Instant::now() + Duration::from_secs_f64(sound::effect(n).millis() / 1000.0);
+            while Instant::now() < end {
+                let _ = self.pump();
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        } else {
+            self.sound(n);
         }
     }
 

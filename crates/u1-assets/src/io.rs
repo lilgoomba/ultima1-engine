@@ -88,6 +88,13 @@ pub trait Io {
     /// may play something. Never waits.
     fn cue(&mut self, _ev: crate::sound::Sfx) {}
 
+    /// Effect `n` for an event too far away for the enhanced sound mode
+    /// to play (a distant townsperson's step): the original effect as
+    /// usual, nothing in the enhanced mode (which still waits as long).
+    fn sound_distant(&mut self, n: u8) {
+        self.sound(n);
+    }
+
     /// A keyboard check that does not wait (the space program's polls,
     /// which are paced by explicit delays instead).
     fn poll_now(&mut self, t: &Term) -> IoResult<Option<u8>> {
@@ -108,11 +115,13 @@ pub trait Io {
 pub struct ScriptIo {
     pub keys: VecDeque<u8>,
     pub sounds: Vec<u8>,
+    /// The events of `sound_ev` and `cue`, in order.
+    pub events: Vec<crate::sound::Sfx>,
 }
 
 impl ScriptIo {
     pub fn new(keys: &[u8]) -> Self {
-        ScriptIo { keys: keys.iter().copied().collect(), sounds: Vec::new() }
+        ScriptIo { keys: keys.iter().copied().collect(), sounds: Vec::new(), events: Vec::new() }
     }
 
     /// Keys from text; `~` stands for the key that ends a timed wait and
@@ -191,5 +200,14 @@ impl Io for ScriptIo {
 
     fn sound(&mut self, n: u8) {
         self.sounds.push(n);
+    }
+
+    fn sound_ev(&mut self, n: u8, ev: crate::sound::Sfx) {
+        self.events.push(ev);
+        self.sound(n);
+    }
+
+    fn cue(&mut self, ev: crate::sound::Sfx) {
+        self.events.push(ev);
     }
 }

@@ -220,6 +220,10 @@ pub enum Sfx {
     Hyperjump,
 }
 
+/// How far (in squares, either way) a townsperson's step is heard in the
+/// enhanced sound mode.
+pub const NPC_STEP_RANGE: i32 = 4;
+
 impl Sfx {
     pub const ALL: [Sfx; 28] = [
         Sfx::Bump,
@@ -320,6 +324,13 @@ impl Sfx {
         }
     }
 
+    /// Whether a townsperson's step `dx`, `dy` squares from the player
+    /// is near enough for the enhanced sound mode to play (the original
+    /// beeps for every step).
+    pub fn npc_step_heard(dx: i32, dy: i32) -> bool {
+        dx.abs().max(dy.abs()) <= NPC_STEP_RANGE
+    }
+
     pub fn cue_only(self) -> bool {
         self.beep().is_none()
     }
@@ -416,6 +427,12 @@ mod tests {
         names.sort();
         names.dedup();
         assert_eq!(names.len(), Sfx::ALL.len());
+    }
+
+    #[test]
+    fn only_near_townspeople_steps_are_heard() {
+        assert!(Sfx::npc_step_heard(0, 1) && Sfx::npc_step_heard(-4, 4) && Sfx::npc_step_heard(4, -2));
+        assert!(!Sfx::npc_step_heard(5, 0) && !Sfx::npc_step_heard(0, -5) && !Sfx::npc_step_heard(-12, 9));
     }
 
     #[test]

@@ -906,3 +906,24 @@ fn space_scene_notes_the_pictures_drawn() {
     let g = play_with(40, 40, "B{w12}I", 1, &[], on_shuttle).unwrap();
     assert!(g.term.sscene.is_none());
 }
+
+#[test]
+fn only_near_townspeople_steps_get_the_enhanced_sound() {
+    use u1_assets::sound::Sfx;
+    // In Moon, eight squares in; one wanderer is put beside the player.
+    let Some(mut g) = play(66, 41, &format!("e{UP8}")) else { return };
+    assert_eq!(g.mode, 1);
+    let (px, py) = (g.px as i16, g.py as i16);
+    g.npcs[0].x = px + 1;
+    g.npcs[0].y = py + 1;
+    let mut io = ScriptIo::from_text("");
+    for _ in 0..60 {
+        let _ = g.npc_turn(&mut io);
+    }
+    // Every townsperson's step still beeps as in the original (effect 4);
+    // only those within range are given the enhanced footstep.
+    let own = io.events.iter().filter(|&&e| e == Sfx::Step).count();
+    let beeps = io.sounds.iter().filter(|&&n| n == 4).count() - own;
+    let near = io.events.iter().filter(|&&e| e == Sfx::NpcStep).count();
+    assert!(near > 0 && beeps > near, "{near} near of {beeps}");
+}

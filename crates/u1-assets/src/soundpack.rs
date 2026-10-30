@@ -176,6 +176,26 @@ pub fn encode_wav(rate: u32, s: &[i16]) -> Vec<u8> {
     v
 }
 
+/// The beeps' level in the engine (the speaker wave's amplitude).
+pub const BEEP_AMP: i16 = 6000;
+
+/// Loudness as heard: the RMS of the loudest 50 ms of a sound (the whole
+/// sound if shorter).
+pub fn loudness(s: &[i16], rate: u32) -> f64 {
+    let w = ((rate / 20) as usize).clamp(1, s.len().max(1));
+    if s.is_empty() {
+        return 0.0;
+    }
+    let sq: Vec<f64> = s.iter().map(|&x| f64::from(x) * f64::from(x)).collect();
+    let mut acc: f64 = sq[..w.min(sq.len())].iter().sum();
+    let mut best = acc;
+    for i in w..sq.len() {
+        acc += sq[i] - sq[i - w];
+        best = best.max(acc);
+    }
+    (best / w as f64).sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,5 +271,33 @@ mod tests {
         }
         assert_eq!(SoundMode::default(), SoundMode::Original);
         assert_eq!(SoundMode::parse("loud"), None);
+    }
+
+    #[test]
+    fn shipped_sounds_are_levelled_to_the_beeps() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/enhanced/sounds");
+        let p = SoundPack::load(&dir, 44100);
+        let beep = |n| loudness(&crate::sound::render(&crate::sound::effect(n), 44100, crate::sound::CPU_HZ, BEEP_AMP), 44100);
+        for s in Sfx::ALL {
+            let c = p.get(s).unwrap();
+            let l = loudness(c, 44100);
+            let peak = c.iter().map(|x| i32::from(*x).abs()).max().unwrap();
+            assert!(peak <= 2 * i32::from(BEEP_AMP), "{} peaks at {peak}", s.name());
+            let ms = c.len() as f64 * 1000.0 / 44100.0;
+            match (s, s.beep()) {
+                // Ambient: well under the beeps.
+                (Sfx::Step | Sfx::NpcStep | Sfx::Starfield, Some(n)) => assert!(l < 0.2 * beep(n), "{} {l}", s.name()),
+                // Roughly as loud as the original effect it replaces.
+                (_, Some(n)) => {
+                    let r = l / beep(n);
+                    assert!((0.7..=0.95).contains(&r), "{} at {r:.2} of the beep", s.name());
+                }
+                // The original is silent here: quiet and short.
+                (_, None) => {
+                    assert!(l < 0.35 * f64::from(BEEP_AMP), "{} {l}", s.name());
+                    assert!(ms <= 400.5, "{} lasts {ms} ms", s.name());
+                }
+            }
+        }
     }
 }

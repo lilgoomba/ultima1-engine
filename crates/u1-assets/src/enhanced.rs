@@ -702,7 +702,10 @@ fn space(out: &mut [u8], s: usize, t: &Term, sc: &crate::term::SScene, pack: &Pa
         let g = if o.part == sp::RETICLE { 3.0 } else { 0.0 };
         let (bw, bh) = (o.w as f32 + 2.0 * g, o.h as f32 + 2.0 * g);
         let (iw, ih) = if o.rot & 1 == 1 { (img.h as f32, img.w as f32) } else { (img.w as f32, img.h as f32) };
-        let k = (bw / iw).min(bh / ih);
+        // The fighter's flat original (an H) may be outgrown in height by
+        // half again, so a pack's fighter is not shrunk to a sliver.
+        let tall = if o.part == sp::FIGHTER { 1.5 } else { 1.0 };
+        let k = (bw / iw).min(tall * bh / ih);
         let (w, h) = (iw * k, ih * k);
         let r = (o.x as f32 - g + (bw - w) / 2.0, o.y as f32 - g + (bh - h) / 2.0, w, h);
         stretch(out, s, img, r, o.rot, |x, y| interior(x, y));

@@ -1458,7 +1458,9 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   three-quarters lit is fitted, keeping its proportions, into the box
   of the pixels it lit — ships are drawn nose up and turned a quarter
   turn per heading (west, east, north, south: 3, 1, 0, 2 turns
-  clockwise), the crosshair's picture is 3 pixels larger on each side.
+  clockwise), the crosshair's picture is 3 pixels larger on each side,
+  and the fighter's may be up to 1.5 times its box's height (centred on
+  it) so a tall picture is not squeezed into the original's flat H.
   Shots, exhaust, explosions and anything without a picture keep their
   original pixels, over the new background.
 * **Limitations.** Only the NIF screen is supported among full screens;

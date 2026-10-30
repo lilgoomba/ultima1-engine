@@ -38,6 +38,11 @@ pub fn time_seed(h: u8, mi: u8, s: u8, hund: u8) -> u16 {
     (cx.wrapping_add(dx) ^ 0x91EB) & 0x0FFF
 }
 
+/// [`time_seed`] of an `[hour, minute, second, hundredths]` reading.
+pub fn time_seed_from(t: [u8; 4]) -> u16 {
+    time_seed(t[0], t[1], t[2], t[3])
+}
+
 fn turn_left(f: u16) -> u16 {
     match f {
         WEST => SOUTH,
@@ -75,6 +80,7 @@ impl Game {
 
     /// The 12-bit time seed now (or the fixed one used by tests).
     pub fn time_seed_now(&self) -> u16 {
+        // Read through `time_seed_from` so the clock and tests agree.
         match self.clock {
             Some(f) => {
                 let [h, mi, s, c] = f();

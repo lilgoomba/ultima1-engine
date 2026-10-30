@@ -168,14 +168,15 @@ cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --player 2
 sets, `OUT.EXE` (for its tables and texts) and a save. The game folder is
 never written. Without `--player`/`--save` it starts a fresh character
 at the default start, (49,40). It covers the overworld, towns and castles
-(shops, pub, kings, jail and princess). Dungeons, space and the time
-machine stop after their entry message.
+(shops, pub, kings, jail and princess) and the ten-level dungeons with
+their first-person view. Space and the time machine stop after their
+entry message.
 
 The keys are the original's:
 
 | Key | Action |
 |---|---|
-| Arrow keys or keypad 8/2/4/6 | Move north/south/west/east |
+| Arrow keys or keypad 8/2/4/6 | Move north/south/west/east (in a dungeon: forward, turn around, turn left, turn right) |
 | Space | Pass |
 | A | Attack (then a direction) |
 | B / X | Board / exit a vehicle |
@@ -184,13 +185,15 @@ The keys are the original's:
 | E | Enter a town, castle, dungeon or landmark |
 | F | Fire (vehicles with cannons) |
 | G | Get (castle storeroom, with the king's leave) |
-| I / Z | Inform / Ztats |
+| I / Z | Inform (in a dungeon: search for secret doors) / Ztats |
+| K | Klimb a dungeon ladder (face north or south) |
 | N | Noise on/off |
+| O | Open a coffin (dungeon) |
 | Q | Quit and save (outdoors only) |
 | R | Ready a weapon, armour or spell |
 | S | Steal (behind a shop counter) |
 | T | Transact (shops, pub, king) |
-| U | Unlock (castle jail doors) |
+| U | Unlock (castle jail doors, dungeon chests) |
 
 If no key is pressed for 1,500 polls (about 3¼ minutes), the turn
 passes by itself, as in the original. Options:
@@ -199,8 +202,11 @@ passes by itself, as in the original. Options:
   the position.
 * `--save-to FILE`: where `Q` writes the 820-byte record. The default is
   `./PLAYER1.U1`. It must not be inside the game folder.
-* `--mode ega|t1k|cga`, `--scale N` (1–6, default 3), `--seed N` (random
-  generator seed; the original seeds from the clock).
+* `--mode ega|t1k|cga`, `--scale N` (1–6, default 3).
+* Like the original, the random generator is seeded from the save's seed
+  word plus the time of day, and dungeon items are reseeded from the clock
+  on each level. For reproducible runs (tests, screenshots) the hidden
+  option `--seed N` fixes both the generator seed and the clock value.
 * `--screenshot out.png` renders one 640×400 frame and exits.
   `--keys TEXT` types those keys first. Use `{up}` `{down}` `{left}`
   `{right}` `{enter}` `{esc}` `{bs}` `{space}` for special keys and `~`
@@ -240,11 +246,9 @@ docs/demo.png      demo screenshot (synthetic art)
 
 ## Roadmap
 
-1. Finish the remaining open items in SPEC §11, such as dungeon monsters.
-2. Entering towns and castles (`TCD.BIN`, `EGATOWN.BIN`) and the shops.
-3. Player attacks, spells and the Ztats/Inventory screens; saving.
-4. A first-person dungeon view on top of the existing generator.
-5. Space and the Mondain battle, rebuilt from documented behaviour.
+1. Finish the remaining open items in SPEC §11.
+2. Space and the Mondain battle.
+3. Optional quality-of-life features, kept apart from the faithful mode.
 
 ## License
 

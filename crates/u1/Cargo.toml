@@ -10,3 +10,4 @@ rust-version.workspace = true
 u1-assets = { path = "../u1-assets" }
 sdl2 = "0.37"
 png = "0.17"
+libc = "0.2"

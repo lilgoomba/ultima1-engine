@@ -2,7 +2,7 @@
 //! files.
 //!
 //!   u1 --game-dir <path> [--player N | --save FILE | --pos X,Y] [--mode ega|t1k|cga]
-//!      [--scale N] [--seed N] [--save-to FILE]
+//!      [--scale N] [--save-to FILE]
 //!   u1 --game-dir <path> ... --screenshot out.png [--keys TEXT] [--counter N]
 //!
 //! Game files are only read. Quit (Q, outdoors) writes the 820-byte player
@@ -34,7 +34,7 @@ const TICK: Duration = Duration::from_micros(54_925);
 const DEFAULT_POS: (u16, u16) = (49, 40);
 
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
-          [--mode ega|t1k|cga] [--scale N] [--seed N] [--save-to FILE]
+          [--mode ega|t1k|cga] [--scale N] [--save-to FILE]
           [--screenshot out.png [--keys TEXT] [--counter N]]
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
@@ -48,7 +48,7 @@ struct Args {
     pos: Option<(u16, u16)>,
     mode: Option<VideoMode>,
     scale: u32,
-    seed: u16,
+    seed: Option<u16>,
     save_to: Option<PathBuf>,
     screenshot: Option<PathBuf>,
     keys: String,
@@ -63,7 +63,7 @@ fn parse_args() -> Result<Args, String> {
         pos: None,
         mode: None,
         scale: 3,
-        seed: 0x1234,
+        seed: None,
         save_to: None,
         screenshot: None,
         keys: String::new(),
@@ -87,7 +87,8 @@ fn parse_args() -> Result<Args, String> {
             }
             "--mode" => a.mode = Some(VideoMode::parse(&v()?).ok_or("bad --mode")?),
             "--scale" => a.scale = v()?.parse().map_err(|_| "bad --scale")?,
-            "--seed" => a.seed = v()?.parse().map_err(|_| "bad --seed")?,
+            // Hidden: a fixed RNG seed and clock value for deterministic runs.
+            "--seed" => a.seed = Some(v()?.parse().map_err(|_| "bad --seed")?),
             "--save-to" => a.save_to = Some(v()?.into()),
             "--screenshot" => a.screenshot = Some(v()?.into()),
             "--keys" => a.keys = v()?,
@@ -142,7 +143,19 @@ fn load(a: &Args) -> Result<(Game, [Rgb; 16]), String> {
         o.y = y;
         rec.set_object(0, &o);
     }
-    let mut game = Game::new(assets, rec, a.seed);
+    let mut game = match a.seed {
+        Some(seed) => Game::new(assets, rec, seed),
+        None => {
+            // As the original: the generator starts at the save's seed word
+            // plus the time-of-day value modulo 999, and later time seeds
+            // read the clock again.
+            let ts = u1_assets::dgame::time_seed_from(local_time());
+            let seed = rec.u16_at(0x32).wrapping_add(ts % 999);
+            let mut g = Game::new(assets, rec, seed);
+            g.clock = Some(local_time);
+            g
+        }
+    };
     game.counter = a.counter;
     let save_to = a.save_to.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1"));
     let dir = save_to.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
@@ -310,4 +323,22 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Local wall-clock time as DOS reports it: hour, minute, second, hundredths.
+fn local_time() -> [u8; 4] {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let t = now.as_secs() as libc::time_t;
+    // SAFETY: localtime_r writes only into the zeroed `tm` we pass.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    let ok = unsafe { !libc::localtime_r(&t, &mut tm).is_null() };
+    let (h, m, s) = if ok {
+        (tm.tm_hour as u8, tm.tm_min as u8, tm.tm_sec as u8)
+    } else {
+        let d = now.as_secs() % 86400;
+        ((d / 3600) as u8, (d / 60 % 60) as u8, (d % 60) as u8)
+    };
+    [h, m, s, (now.subsec_millis() / 10) as u8]
 }

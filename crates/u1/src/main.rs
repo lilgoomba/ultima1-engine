@@ -24,6 +24,7 @@ use u1_assets::rules::ExeTables;
 use u1_assets::save::PlayerRecord;
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::{Term, H, W};
+use u1_assets::title::{self, TitleFiles};
 
 /// One keyboard/animation poll of the original main loop, measured in
 /// DOSBox (130 ms at 20000 cycles).
@@ -34,7 +35,7 @@ const TICK: Duration = Duration::from_micros(54_925);
 const DEFAULT_POS: (u16, u16) = (49, 40);
 
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
-          [--mode ega|t1k|cga | C] [--font FILE] [--scale N] [--save-to FILE]
+          [--mode ega|t1k|cga | C] [--font FILE] [--intro] [--scale N] [--save-to FILE]
           [--screenshot out.png [--keys TEXT] [--counter N]]
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
@@ -55,6 +56,7 @@ struct Args {
     keys: String,
     counter: u32,
     font: Option<PathBuf>,
+    intro: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -72,6 +74,7 @@ fn parse_args() -> Result<Args, String> {
         keys: String::new(),
         counter: 0,
         font: std::env::var_os("U1_FONT").map(PathBuf::from),
+        intro: false,
     };
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
@@ -103,6 +106,8 @@ fn parse_args() -> Result<Args, String> {
             "--screenshot" => a.screenshot = Some(v()?.into()),
             "--keys" => a.keys = v()?,
             "--font" => a.font = Some(v()?.into()),
+            // Start with the title sequence (ULTIMA.EXE) like the original.
+            "--intro" => a.intro = true,
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
             // The original's only video choice: a first argument starting
@@ -201,10 +206,27 @@ fn write_png(path: &Path, w: u32, h: u32, rgb: &[u8]) -> Result<(), String> {
     wr.write_image_data(rgb).map_err(|e| e.to_string())
 }
 
+/// The start-up program's files, when `--intro` asks for them.
+fn title_files(a: &Args, mode: VideoMode) -> Result<Option<TitleFiles>, String> {
+    if !a.intro {
+        return Ok(None);
+    }
+    let g = GameDir::new(&a.game_dir).map_err(|e| e.to_string())?;
+    TitleFiles::load(&g, mode).map(Some).map_err(|e| e.to_string())
+}
+
 fn screenshot(mut g: Game, palette: &[Rgb; 16], a: &Args, out: &Path) -> Result<(), String> {
     let mut io = ScriptIo::from_text(&a.keys);
-    let _ = g.run(&mut io);
     let scale = 2; // the size of a 640x400 DOSBox capture
+    if let Some(tf) = title_files(a, g.a.video)? {
+        let mut t = title::blank_term(&tf);
+        if title::run_intro(&tf, &mut t, &mut io).is_err() {
+            write_png(out, (W * scale) as u32, (H * scale) as u32, &t.to_rgb(palette, scale))?;
+            println!("{}: intro", out.display());
+            return Ok(());
+        }
+    }
+    let _ = g.run(&mut io);
     write_png(out, (W * scale) as u32, (H * scale) as u32, &g.term.to_rgb(palette, scale))?;
     println!("{}: mode={} loc={} at ({},{}) town ({},{})", out.display(), g.mode, g.loc, g.ow.x, g.ow.y, g.px, g.py);
     for l in g.term.messages() {
@@ -347,6 +369,12 @@ fn play(mut g: Game, palette: [Rgb; 16], a: &Args) -> Result<(), String> {
     let tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, W as u32, H as u32).map_err(|e| e.to_string())?;
     let events = sdl.event_pump()?;
     let mut io = SdlIo { canvas, tex, events, palette, next: Instant::now(), pending: Default::default() };
+    if let Some(tf) = title_files(a, g.a.video)? {
+        let mut t = title::blank_term(&tf);
+        if title::run_intro(&tf, &mut t, &mut io).is_err() {
+            return Ok(());
+        }
+    }
     let _ = g.run(&mut io);
     if let Some(s) = g.stopped {
         eprintln!("stopped: {s}");

@@ -34,6 +34,9 @@ pub struct Term {
     pub cga: bool,
     /// Cell holding the blinking cursor's last visible frame, if any.
     pub blink_at: Option<(usize, usize)>,
+    /// Palette registers reprogrammed (the start-up castle picture):
+    /// pixel value -> standard colour index.
+    pub remap: Option<[u8; 16]>,
 }
 
 impl Default for Term {
@@ -51,7 +54,7 @@ impl Term {
 
     /// The same frame for a CGA (`cga`) or a 16-colour screen.
     pub fn with_cga(cga: bool) -> Self {
-        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None };
+        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None };
         t.fill(0, 0, W - 1, H - 1, BLUE);
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
@@ -453,6 +456,9 @@ impl Term {
                 }
                 if self.inverted {
                     i = 15 - i;
+                }
+                if let Some(r) = &self.remap {
+                    i = r[i] as usize;
                 }
                 let c = palette[i];
                 let o = (y * W * scale + x) * 3;

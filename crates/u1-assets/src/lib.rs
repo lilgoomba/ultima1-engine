@@ -31,6 +31,7 @@ pub mod space;
 pub mod tcd;
 pub mod term;
 pub mod tiles;
+pub mod title;
 pub mod town;
 
 pub use error::{AssetError, Result};

@@ -339,3 +339,16 @@ fn leading_the_princess_out_pays_500_of_each() {
     assert_eq!(g.rec.coin(), coin + 500);
     assert_eq!(g.exp(), exp + 500);
 }
+
+#[test]
+fn intro_runs_to_the_credits_in_every_video_mode() {
+    use u1_assets::gamedir::VideoMode;
+    use u1_assets::title::{blank_term, run_intro, IntroEnd, TitleFiles};
+    let Some(g) = game_dir() else { return };
+    for v in [VideoMode::Ega, VideoMode::Cga, VideoMode::Tandy] {
+        let f = TitleFiles::load(&g, v).unwrap();
+        let mut t = blank_term(&f);
+        let mut io = ScriptIo::from_text("{w81}{w5}x");
+        assert!(matches!(run_intro(&f, &mut t, &mut io), Ok(IntroEnd::ToMenu)));
+    }
+}

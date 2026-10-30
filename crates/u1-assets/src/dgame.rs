@@ -3,6 +3,7 @@
 //! the original's behaviour ("verified from original executable"); every
 //! message and table comes from the user's OUT.EXE at run time.
 
+use crate::sound::Sfx;
 use crate::dungeon::{self, Cell, DungeonLevel, Item, DUNGEON_SIZE};
 use crate::dview::{self, ViewTables, EAST, NORTH, SOUTH, WEST};
 use crate::exe::m;
@@ -373,6 +374,7 @@ impl Game {
         let armour = i32::from(self.rec.u16_at(off::READY_ARMOUR));
         let def = i32::from(self.stat(STA)) / 2 + 8 * armour + 56;
         if self.r(1, 255) <= def {
+            self.cue(io, Sfx::Dodge);
             self.sayln(m::MISSED);
             return;
         }
@@ -418,7 +420,7 @@ impl Game {
             }
         }
         if hurt {
-            self.snd(io, 2);
+            self.snd_ev(io, 2, Sfx::Hurt);
             self.say(m::HIT_EX);
             self.term.num(dmg as u16, 1, ' ', TEXT, true);
             self.sayln(m::DAMAGE);
@@ -475,6 +477,7 @@ impl Game {
         let ok = if here == Cell::Door { matches!(tcell, Cell::Empty | Cell::LadderUp | Cell::LadderDown) } else { true };
         let roll = self.r(1, 100);
         if roll > hit || matches!(here, Cell::Wall | Cell::SecretDoor | Cell::ForceField) || !ok {
+            self.cue(io, Sfx::Miss);
             self.sayln(m::MISSED);
             return;
         }
@@ -526,7 +529,7 @@ impl Game {
         if self.w(slot::QUEST + 2 * k) == -1 {
             self.set(slot::QUEST + 2 * k, 1);
             self.say(m::QUEST_COMPLETED);
-            self.snd(io, 5);
+            self.snd_ev(io, 5, Sfx::Quest);
             self.nl();
         }
     }
@@ -582,7 +585,7 @@ impl Game {
         self.nl();
         if r > i32::from(self.stat(AGI)) && self.rec.class() != 3 {
             self.say(m::TRAP);
-            self.snd(io, 2);
+            self.snd_ev(io, 2, Sfx::Hurt);
             self.nl();
             let h = self.hits() - self.ds().depth as i16;
             self.set_stat(HITS, h);

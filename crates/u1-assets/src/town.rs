@@ -1,6 +1,7 @@
 //! Towns and castles: walking, the NPCs' turn, fighting, stealing, the
 //! jail door and the princess (SPEC §9; verified from original executable).
 
+use crate::sound::Sfx;
 use crate::exe::m;
 use crate::game::*;
 use crate::io::{Io, IoResult};
@@ -209,7 +210,7 @@ impl Game {
         if t == FREE {
             self.npcs[i].x = x as i16;
             self.npcs[i].y = y as i16;
-            self.snd(io, 4);
+            self.snd_ev(io, 4, Sfx::NpcStep);
         } else if t == PLAYER_TILE {
             let ready = self.rec.u16_at(off::READY_WEAPON) as usize;
             let mut stolen = false;
@@ -247,7 +248,7 @@ impl Game {
         if Self::in_town(x, y) && self.passable(x, y) == FREE {
             self.npcs[i].x = x as i16;
             self.npcs[i].y = y as i16;
-            self.snd(io, 4);
+            self.snd_ev(io, 4, Sfx::NpcStep);
         }
     }
 
@@ -266,7 +267,7 @@ impl Game {
             (sx != 0 && self.try_move(i, sx, 0)) || (sy != 0 && self.try_move(i, 0, sy))
         };
         if moved {
-            self.snd(io, 4);
+            self.snd_ev(io, 4, Sfx::NpcStep);
         }
     }
 
@@ -286,7 +287,7 @@ impl Game {
             moved = self.try_move(i, 0, sy);
         }
         if moved {
-            self.snd(io, 4);
+            self.snd_ev(io, 4, Sfx::NpcStep);
         }
         moved
     }
@@ -303,6 +304,7 @@ impl Game {
         let armour = i32::from(self.rec.u16_at(off::READY_ARMOUR));
         let sta = i32::from(self.stat(STA));
         if self.r(1, 255) < sta / 2 + 8 * armour + 56 {
+            self.cue(io, Sfx::Dodge);
             self.sayln(m::MISSED);
             return;
         }
@@ -311,7 +313,7 @@ impl Game {
         self.say(m::HIT_DOTS);
         self.term.num(d as u16, 1, ' ', TEXT, true);
         self.sayln(m::DAMAGE);
-        self.snd(io, 2);
+        self.snd_ev(io, 2, Sfx::Hurt);
         self.add(off::HITS, -(d as i16));
         self.show_hits();
     }
@@ -335,10 +337,12 @@ impl Game {
         }
         let idx = self.npcs.iter().position(|n| n.tile != -1 && i32::from(n.x) == x && i32::from(n.y) == y);
         let Some(i) = idx else {
+            self.cue(io, Sfx::Miss);
             self.sayln(m::MISSED);
             return;
         };
         if self.r(1, 100) > hit {
+            self.cue(io, Sfx::Miss);
             self.sayln(m::MISSED);
             return;
         }
@@ -356,7 +360,7 @@ impl Game {
         };
         self.say(name);
         self.hostile = true;
-        self.snd(io, 2);
+        self.snd_ev(io, 2, Sfx::Alarm);
         if dmg >= i32::from(self.npcs[i].hp) {
             self.sayln(m::KILLED);
             if tile == NPC_PRINCESS {

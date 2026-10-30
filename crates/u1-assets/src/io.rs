@@ -78,6 +78,16 @@ pub trait Io {
     /// original). Front ends may ignore it.
     fn sound(&mut self, _n: u8) {}
 
+    /// Effect `n` played for the game event `ev` (the enhanced sound mode
+    /// may give the event its own sound). By default just effect `n`.
+    fn sound_ev(&mut self, n: u8, _ev: crate::sound::Sfx) {
+        self.sound(n);
+    }
+
+    /// An event the original leaves silent; only the enhanced sound mode
+    /// may play something. Never waits.
+    fn cue(&mut self, _ev: crate::sound::Sfx) {}
+
     /// A keyboard check that does not wait (the space program's polls,
     /// which are paced by explicit delays instead).
     fn poll_now(&mut self, t: &Term) -> IoResult<Option<u8>> {

@@ -6,6 +6,7 @@
 //! user's MONDAIN.EXE; the pictures from EGAMOND.BIN, EGATILES.BIN and
 //! NIF.BIN, all read at runtime.
 
+use crate::sound::Sfx;
 use crate::exe::Exe;
 use crate::game::Game;
 use crate::gamedir::GameDir;
@@ -283,6 +284,12 @@ impl Lair<'_> {
     }
     fn snd(&mut self, n: u8) {
         self.g.snd(self.io, n);
+    }
+    fn snd_ev(&mut self, n: u8, ev: Sfx) {
+        self.g.snd_ev(self.io, n, ev);
+    }
+    fn cue(&mut self, ev: Sfx) {
+        self.g.cue(self.io, ev);
     }
     fn rnd(&mut self, lo: i16, hi: i16) -> i16 {
         self.rng.range(lo as u16, hi as u16) as i16
@@ -576,13 +583,13 @@ impl Lair<'_> {
             self.println(d::BLOCKED);
             self.snd(0);
         } else {
-            self.snd(0);
+            self.snd_ev(0, Sfx::Burn);
             self.flash(true);
             let n = (self.g.hits() / 10).max(1);
             self.puts(d::BURNED);
             self.num(n);
             self.println(d::DAMAGE);
-            self.snd(2);
+            self.snd_ev(2, Sfx::Hurt);
             self.hurt(n);
             self.show_hits();
             self.flash(false);
@@ -660,6 +667,7 @@ impl Lair<'_> {
             self.println(d::DAMAGE);
             self.snd(2);
         } else {
+            self.cue(Sfx::Miss);
             self.println(d::MISSED);
         }
     }
@@ -824,7 +832,7 @@ impl Lair<'_> {
         self.num(dmg);
         self.println(d::DAMAGE);
         for _ in 0..5 {
-            self.snd(2);
+            self.snd_ev(2, Sfx::Explosion);
         }
         self.println(d::GEM_DESTROYED);
         self.hurt(dmg);
@@ -972,6 +980,7 @@ impl Lair<'_> {
             let n = self.g.hits() / 32 + self.rnd(1, 20);
             self.hit(n);
         } else {
+            self.cue(Sfx::Dodge);
             self.println(d::MISSED);
         }
     }
@@ -982,7 +991,7 @@ impl Lair<'_> {
         self.num(n);
         self.println(d::DAMAGE);
         self.hurt(n);
-        self.snd(2);
+        self.snd_ev(2, Sfx::Hurt);
         self.show_hits();
     }
 
@@ -993,7 +1002,7 @@ impl Lair<'_> {
         let hit = match k {
             0 => {
                 self.println(d::MISSILE);
-                self.snd(5);
+                self.snd_ev(5, Sfx::EnemySpell);
                 let t = (0xc3 - (self.stat(off::STATS + 8) + self.stat(off::STATS + 10) / 2)) * 2;
                 let hit = self.rnd(1, 255) < t;
                 if hit {
@@ -1004,7 +1013,7 @@ impl Lair<'_> {
             }
             1 => {
                 self.println(d::BLASTER);
-                self.snd(5);
+                self.snd_ev(5, Sfx::EnemySpell);
                 let hit = self.rnd(1, 200) > 140;
                 if hit {
                     self.println(d::STATS_REDUCED);
@@ -1023,7 +1032,7 @@ impl Lair<'_> {
             _ => {
                 self.println(d::SHOCK);
                 self.flash(true);
-                self.snd(5);
+                self.snd_ev(5, Sfx::EnemySpell);
                 self.flash(false);
                 let hit = self.rnd(1, 200) > 140;
                 if hit {
@@ -1037,6 +1046,7 @@ impl Lair<'_> {
             }
         };
         if !hit {
+            self.cue(Sfx::Miss);
             self.println(d::MISSED);
         }
     }
@@ -1066,7 +1076,7 @@ impl Lair<'_> {
         let t = self.s(d::VICTORIOUS);
         self.g.term.print_at(11, 8, &t);
         for _ in 0..3 {
-            self.snd(5);
+            self.snd_ev(5, Sfx::Victory);
         }
         self.delay(10)?;
         self.io.flush();

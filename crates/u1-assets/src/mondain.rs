@@ -878,9 +878,12 @@ impl Lair<'_> {
                 self.anim = 0;
             }
         } else if self.phase != P_DEAD {
-            self.println(d::IS_DEAD);
+            // Printed without a newline: the next line ends it, so
+            // "...or is he?" follows on the same line (the gem case was
+            // compared in DOSBox).
+            self.puts(d::IS_DEAD);
             if self.gem_taken {
-                self.g.term.println("");
+                self.println(d::EMPTY_B);
                 self.ending = true;
             } else {
                 self.println(d::OR_IS_HE);
@@ -1075,12 +1078,21 @@ impl Lair<'_> {
             }
         }
         self.g.term.fill(0, 0, 319, 199, BLACK);
-        let nif = &self.f.nif;
-        for (i, &b) in nif[..NIF_SIZE].iter().enumerate() {
-            for bit in 0..8 {
-                let p = i * 8 + bit;
-                let c = if b & (0x80 >> bit) != 0 { WHITE } else { BLACK };
-                self.g.term.plot((p % 320) as i32, (p / 320) as i32, c);
+        // The original plots the picture a pixel at a time, so it appears
+        // from the top down; in DOSBox at cycles=20000 (the speed the poll
+        // timing is matched to) that takes about a second (SPEC §18). Eight
+        // rows per timer tick gives the same.
+        for row in 0..NIF_SIZE / 40 {
+            for i in row * 40..row * 40 + 40 {
+                let b = self.f.nif[i];
+                for bit in 0..8 {
+                    let p = i * 8 + bit;
+                    let c = if b & (0x80 >> bit) != 0 { WHITE } else { BLACK };
+                    self.g.term.plot((p % 320) as i32, (p / 320) as i32, c);
+                }
+            }
+            if row % 8 == 7 {
+                self.delay(1)?;
             }
         }
         self.delay(75)?;

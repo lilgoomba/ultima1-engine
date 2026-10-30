@@ -325,11 +325,30 @@ struct LairBot {
     left: u32,
     /// Every message line shown during the run.
     seen: Vec<String>,
+    /// With `U1_LAIR_FRAMES` set: the last distinct screens, as RGB.
+    frames: Option<std::collections::VecDeque<Vec<u8>>>,
 }
 
 impl LairBot {
     fn new(prefix: &str, polls: u32) -> Self {
-        LairBot { queue: ScriptIo::from_text(prefix).keys, left: polls, seen: Vec::new() }
+        LairBot {
+            queue: ScriptIo::from_text(prefix).keys,
+            left: polls,
+            seen: Vec::new(),
+            frames: std::env::var_os("U1_LAIR_FRAMES").map(|_| Default::default()),
+        }
+    }
+
+    fn keep(&mut self, t: &Term) {
+        if let Some(f) = &mut self.frames {
+            let rgb = t.to_rgb(&u1_assets::palette::EGA_PALETTE, 1);
+            if f.back() != Some(&rgb) {
+                f.push_back(rgb);
+                if f.len() > 40 {
+                    f.pop_front();
+                }
+            }
+        }
     }
 
     fn saw(&self, s: &str) -> bool {
@@ -423,6 +442,7 @@ impl Io for LairBot {
             return Err(Halt);
         }
         self.left -= 1;
+        self.keep(t);
         for l in t.messages() {
             if !l.trim().is_empty() && self.seen.last() != Some(&l) {
                 self.seen.push(l);
@@ -433,10 +453,12 @@ impl Io for LairBot {
         }
         Ok(Some(self.decide(t)))
     }
-    fn pause(&mut self, _t: &Term, _ticks: u32) -> IoResult<()> {
+    fn pause(&mut self, t: &Term, _ticks: u32) -> IoResult<()> {
+        self.keep(t);
         Ok(())
     }
-    fn wait_or_key(&mut self, _t: &Term) -> IoResult<()> {
+    fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
+        self.keep(t);
         Ok(())
     }
 }
@@ -457,6 +479,14 @@ fn defeating_mondain_shows_the_ending() {
     assert!(bot.saw("Hit Mondain!"));
     assert!(g.term.row_text(24).contains("Press CONTROL-ALT-DEL to Restart"), "{:?}", g.term.messages());
     assert!(g.stopped.unwrap().contains("Mondain"));
+    // For side-by-sides with DOSBox: the closing screens as PPM files.
+    if let (Some(dir), Some(f)) = (std::env::var_os("U1_LAIR_FRAMES"), &bot.frames) {
+        for (i, rgb) in f.iter().enumerate() {
+            let mut out = b"P6 320 200 255\n".to_vec();
+            out.extend_from_slice(rgb);
+            std::fs::write(std::path::Path::new(&dir).join(format!("lair{i:02}.ppm")), out).unwrap();
+        }
+    }
 }
 
 #[test]
@@ -580,4 +610,57 @@ fn outdoor_prayer_can_remove_an_adjacent_monster() {
     assert!(said(&g, "Monster removed!"));
     assert!(g.ow.entity_at(41, 39).is_none());
     assert_eq!(g.ow.uncounted, 1);
+}
+
+/// Keys from a script; at every timed pause the screen is checked for the
+/// light red of a fighter's laser in the viewer (the sun on the
+/// lift-off map is red too, hence the message check).
+struct LaserWatch {
+    s: ScriptIo,
+    shots: Vec<Vec<u8>>,
+}
+
+impl Io for LaserWatch {
+    fn poll(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.s.poll(t)
+    }
+    fn pause(&mut self, t: &Term, _ticks: u32) -> IoResult<()> {
+        let red = (24..140).flat_map(|y| (24..296).map(move |x| (x, y))).filter(|&(x, y)| t.at(x, y) == 12).count();
+        if red > 10 && t.messages().iter().any(|m| m.contains("Alien fires!")) {
+            self.shots.push(t.to_rgb(&u1_assets::palette::EGA_PALETTE, 1));
+        }
+        Ok(())
+    }
+    fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
+        self.s.wait_or_key(t)
+    }
+    fn timeout_polls(&self) -> u32 {
+        1
+    }
+}
+
+/// A fighter in a hyperjumped-to sector shoots now and then; a laser that
+/// ends at the bottom of the viewer hits and drains 321 of the shield
+/// (DOSBox with a 9999 shield: 9999, 9678, ... 8715).
+#[test]
+fn fighters_fire_back() {
+    let mut io = LaserWatch { s: ScriptIo::from_text("B{w12}VH{w300}"), shots: Vec::new() };
+    let Some(g) = play_io(40, 40, &mut io, 1, &[], |r| {
+        on_shuttle(r);
+        r.set_u16(off::SHUTTLE_0, 9999);
+        r.set_u16(off::SHUTTLE_1, 9999);
+    }) else {
+        return;
+    };
+    assert!(!io.shots.is_empty(), "{:?}", g.term.messages());
+    assert!(said(&g, "You've been hit!"));
+    let shield = g.term.row_text(21);
+    assert!(shield.contains("Shld:9678") || shield.contains("Shld:9357"), "{shield}");
+    if let Some(dir) = std::env::var_os("U1_LAIR_FRAMES") {
+        for (i, rgb) in io.shots.iter().enumerate() {
+            let mut out = b"P6 320 200 255\n".to_vec();
+            out.extend_from_slice(rgb);
+            std::fs::write(std::path::Path::new(&dir).join(format!("laser{i:02}.ppm")), out).unwrap();
+        }
+    }
 }

@@ -1075,11 +1075,18 @@ Done in Phase 6 (v0.6):
 18. Death (§14): skull picture pixel-identical; resurrection compared.
 19. Princess rescue reached in DOSBox: on a re-entry the key matched her
     door; leading her out added 500 hits, coin and experience.
+20. Victory reached in DOSBox (edited save copy, 9999 hits): taking the
+    gem cost 9999 -> 2500 hits as in the engine; "Mondain is dead!" is
+    followed by an empty line, then the victory panel and text; the
+    `NIF.BIN` picture and closing text match pixel for pixel (only the
+    restart line's font differs without a ROM font).
+21. Fighters firing back compared in DOSBox with a 9999 shield: the
+    "Alien fires!" message, the light-red beam from the fighter to the
+    bottom middle of the viewer on a hit, "You've been hit!" and a loss of
+    321 shield per hit (9999, 9678, ... 8715) all match.
 
 Still open:
 
-* The victory ending was not played through in DOSBox.
-* Space combat AI (fighters firing back) checked only against the code.
 * Dungeon levels 4–10 not yet compared in DOSBox; same code paths.
 * Exact monster frame choice (engine uses its own pseudo-random pick).
 * A DOSBox machine=tandy comparison.
@@ -1279,11 +1286,13 @@ code; nothing else is known to differ.
    timer ticks per poll, so its automatic Pass after 1500 polls is
    ~165 s in both. The very first Pass in one DOSBox run came after
    ~231 s; this was not reproduced and is unexplained.
-5. **Mondain ending.** After the victory text the original polls the
-   keyboard up to 10,000 times with no delay, so how long it waits
-   depends on the CPU. The engine waits ~5.5 s. The DOSBox victory screen
-   itself was not reached in automated play (the fight is slow to script);
-   the engine's ending follows the code and NIF.BIN.
+5. **Mondain ending timing.** Compared in DOSBox (§11 item 20); panel,
+   picture and closing text match. Two waits depend on the CPU: the
+   original polls the keyboard up to 10,000 times after the victory text
+   (engine: ~5.5 s), and it plots `NIF.BIN` one pixel at a time, so the
+   picture appears from the top down (about 5.5 s at cycles=4000, about
+   1.1 s at the cycles=20000 speed the engine is matched to; the engine
+   draws eight rows per timer tick, ~1.1 s).
 6. **Load-time waits.** The title text (12 ticks) and the "please wait"
    screen (9 ticks) stand in for DOS loading the next program.
 7. **Town NPC frames.** Which of an NPC's two frames is shown follows the

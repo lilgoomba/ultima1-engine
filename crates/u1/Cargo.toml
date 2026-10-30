@@ -1,0 +1,12 @@
+[package]
+name = "u1"
+description = "Playable Ultima I overworld for the u1 engine (needs your own game files)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+u1-assets = { path = "../u1-assets" }
+sdl2 = "0.37"
+png = "0.17"

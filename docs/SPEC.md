@@ -1403,7 +1403,9 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   picture. A sprite PNG with alpha is drawn over the pack's picture of the
   terrain under it, or over black if the pack lacks that terrain. So
   anything that has been drawn over (text, the cursor, hit flashes, the
-  map reveal) automatically shows the original art.
+  map reveal) automatically shows the original art. A filled rectangle
+  (a text box, a cleared view) also drops the ops under it, since black
+  over a black tile (Mondain's floor) would leave its pixels unchanged.
 * **Backdrops.** With `behind = true` the picture only shows where the
   original region is black (colour 0). The original's lit pixels stay as
   they are, and a backdrop pixel diagonally down-right of a lit one is

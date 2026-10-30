@@ -237,7 +237,10 @@ impl Term {
     }
 
     /// Filled rectangle, both corners inclusive (clipped to the screen).
+    /// Picture notes it overlaps are dropped: a black box over black
+    /// tiles must not bring their pictures back.
     pub fn fill(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, c: u8) {
+        self.art.retain(|o| o.x > x1 || x0 >= o.x + o.w || o.y > y1 || y0 >= o.y + o.h);
         let c = self.dc(c);
         for y in y0..=y1.min(H - 1) {
             for x in x0..=x1.min(W - 1) {
@@ -707,6 +710,16 @@ mod tests {
         t.num(7, 3, '.', TEXT, false);
         assert_eq!(&t.row_text(11)[..3], "..7");
         assert_eq!(t.col, 2);
+    }
+
+    #[test]
+    fn a_box_drops_the_black_tiles_under_it() {
+        let mut t = Term::new();
+        t.blit_art(ArtId::Mond(0), None, 40, 40, 16, 16, &[0; 256], 0);
+        t.blit_art(ArtId::Mond(0), None, 8, 136, 16, 16, &[0; 256], 0);
+        t.boxed(BLUE);
+        assert_eq!(t.art.len(), 1);
+        assert_eq!((t.art[0].x, t.art[0].y), (8, 136));
     }
 
     #[test]

@@ -247,8 +247,18 @@ cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --video enhanced --pa
   `--screenshot` writes the internal resolution.
 
 Pack art in this repository is original work, not derived from Origin's
-tiles, and is licensed CC-BY-SA 4.0 (see `assets/enhanced/LICENSE` where
-present); the engine code remains GPL-3.0-or-later.
+tiles, and is licensed CC-BY-SA 4.0 (see `assets/enhanced/LICENSE`); the
+engine code remains GPL-3.0-or-later.
+
+The current pack (batch 1, under review) covers the overworld: water
+(four frames), grass, forest, mountains, the castle (two pennant frames),
+the town (two smoke frames), the signpost, the dungeon entrance and the
+player on foot, as 32×32 tiles in a 16-bit-console style with one shared
+64-colour palette. The pictures were made with an image generator from
+text descriptions only (no original tiles as input), then cut to the
+pixel grid, made seamless, given a shared palette and hand-finished
+(pennants, smoke, tufts) with Python/Pillow. Everything else falls back
+to the original art.
 
 Tests that use your own files are skipped unless you point them at your
 install:

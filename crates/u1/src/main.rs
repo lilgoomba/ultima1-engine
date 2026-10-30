@@ -1,56 +1,57 @@
-//! `u1`: play the Ultima I overworld with your own game files.
+//! `u1`: play Ultima I (overworld, towns and castles) with your own game
+//! files.
 //!
 //!   u1 --game-dir <path> [--player N | --save FILE | --pos X,Y] [--mode ega|t1k|cga]
-//!      [--scale N] [--seed N]
-//!   u1 --game-dir <path> ... --screenshot out.png [--keys k1,k2,...] [--counter N]
+//!      [--scale N] [--seed N] [--save-to FILE]
+//!   u1 --game-dir <path> ... --screenshot out.png [--keys TEXT] [--counter N]
 //!
-//! The save file is only read, never written. Tables (monster, food and
-//! spawn tables, names, messages) come from the user's OUT.EXE at start-up.
+//! Game files are only read. Quit (Q, outdoors) writes the 820-byte player
+//! record to `--save-to` (default `./PLAYER1.U1` in the current directory,
+//! which must not be the game directory). Tables, names and messages come
+//! from the user's OUT.EXE at start-up.
 
-mod screen;
-
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use u1_assets::exe::Exe;
+use u1_assets::game::{Assets, Game};
 use u1_assets::gamedir::{GameDir, VideoMode};
-use u1_assets::locations::{kind_of, LocationTable};
-use u1_assets::map::WorldMap;
-use u1_assets::overworld::Overworld;
+use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
+use u1_assets::locations::LocationTable;
 use u1_assets::palette::{cga_as_16, Rgb, CGA_PALETTE_1_LOW, EGA_PALETTE};
-use u1_assets::rules::{Dir, ExeTables};
+use u1_assets::rules::ExeTables;
 use u1_assets::save::PlayerRecord;
-use u1_assets::tiles::TileSet;
+use u1_assets::tcd::TownCastleMaps;
+use u1_assets::term::{Term, H, W};
 
-use screen::{Screen, H, W};
-
-/// One animation/keyboard poll of the original: a 3-tick wait on the
-/// 18.2 Hz timer (2..3 ticks depending on phase) plus drawing time. Measured
-/// in DOSBox as 130 ms per poll at 20000 cycles (157 ms at 3000 cycles).
+/// One keyboard/animation poll of the original main loop, measured in
+/// DOSBox (130 ms at 20000 cycles).
 const POLL: Duration = Duration::from_micros(130_000);
-/// Polls without a key before the game passes a turn by itself.
-const IDLE_POLLS: u32 = 1500;
+/// One tick of the PC timer.
+const TICK: Duration = Duration::from_micros(54_925);
 /// Start of a new character (verified from GEN.EXE).
-const DEFAULT_POS: (i32, i32) = (49, 40);
+const DEFAULT_POS: (u16, u16) = (49, 40);
 
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
-          [--mode ega|t1k|cga] [--scale N] [--seed N]
-          [--screenshot out.png [--keys k1,k2,...] [--counter N]]
+          [--mode ega|t1k|cga] [--scale N] [--seed N] [--save-to FILE]
+          [--screenshot out.png [--keys TEXT] [--counter N]]
 
-Keys: arrows or keypad 8/2/4/6 move, Space passes, B boards, X exits a
-vehicle, E enters (stub), Esc quits. --keys accepts up, down, left, right,
-space, b, x, e.";
+Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
+Space passes). --keys is typed text; {up} {down} {left} {right} {enter}
+{esc} {bs} {space} name special keys and ~ ends a timed wait.";
 
 struct Args {
     game_dir: PathBuf,
     player: Option<u8>,
     save: Option<PathBuf>,
-    pos: Option<(i32, i32)>,
+    pos: Option<(u16, u16)>,
     mode: Option<VideoMode>,
     scale: u32,
     seed: u16,
+    save_to: Option<PathBuf>,
     screenshot: Option<PathBuf>,
-    keys: Vec<String>,
+    keys: String,
     counter: u32,
 }
 
@@ -63,8 +64,9 @@ fn parse_args() -> Result<Args, String> {
         mode: None,
         scale: 3,
         seed: 0x1234,
+        save_to: None,
         screenshot: None,
-        keys: vec![],
+        keys: String::new(),
         counter: 0,
     };
     let mut have_dir = false;
@@ -86,8 +88,9 @@ fn parse_args() -> Result<Args, String> {
             "--mode" => a.mode = Some(VideoMode::parse(&v()?).ok_or("bad --mode")?),
             "--scale" => a.scale = v()?.parse().map_err(|_| "bad --scale")?,
             "--seed" => a.seed = v()?.parse().map_err(|_| "bad --seed")?,
+            "--save-to" => a.save_to = Some(v()?.into()),
             "--screenshot" => a.screenshot = Some(v()?.into()),
-            "--keys" => a.keys = v()?.split(',').map(|s| s.trim().to_ascii_lowercase()).filter(|s| !s.is_empty()).collect(),
+            "--keys" => a.keys = v()?,
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
             other => return Err(format!("unknown argument {other}\n{USAGE}")),
@@ -100,95 +103,57 @@ fn parse_args() -> Result<Args, String> {
     Ok(a)
 }
 
-struct Game {
-    map: WorldMap,
-    tiles: TileSet,
-    palette: [Rgb; 16],
-    tables: ExeTables,
-    locs: LocationTable,
-    state: Overworld,
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
 }
 
-fn load(a: &Args) -> Result<Game, String> {
-    let g = GameDir::new(&a.game_dir).map_err(|e| e.to_string())?;
+fn load(a: &Args) -> Result<(Game, [Rgb; 16]), String> {
+    let e = |e: u1_assets::error::AssetError| e.to_string();
+    let g = GameDir::new(&a.game_dir).map_err(e)?;
     let mode = a.mode.or_else(|| g.detect_video_mode()).ok_or("no tile files found in the game directory")?;
-    let tiles = g.load_world_tiles(mode).map_err(|e| e.to_string())?;
-    let map = g.load_world_map().map_err(|e| e.to_string())?;
-    let exe = g.read("OUT.EXE").map_err(|e| e.to_string())?;
-    let tables = ExeTables::from_out_exe(&exe).map_err(|e| e.to_string())?;
-    let locs = LocationTable::from_out_exe(&exe).map_err(|e| e.to_string())?;
+    let exe_bytes = g.read("OUT.EXE").map_err(e)?;
+    let assets = Assets {
+        t: ExeTables::from_out_exe(&exe_bytes).map_err(e)?,
+        locs: LocationTable::from_out_exe(&exe_bytes).map_err(e)?,
+        exe: Exe::new(exe_bytes).map_err(e)?,
+        map: g.load_world_map().map_err(e)?,
+        world_tiles: g.load_world_tiles(mode).map_err(e)?,
+        town_tiles: g.load_town_tiles(mode).map_err(e)?,
+        tcd: TownCastleMaps::parse(&g.read("TCD.BIN").map_err(e)?).map_err(e)?,
+    };
     let palette = if mode == VideoMode::Cga { cga_as_16(&CGA_PALETTE_1_LOW) } else { EGA_PALETTE };
     let save_bytes = match (&a.save, a.player) {
         (Some(p), _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
-        (None, Some(n)) => Some(g.read(&format!("PLAYER{n}.U1")).map_err(|e| e.to_string())?),
+        (None, Some(n)) => Some(g.read(&format!("PLAYER{n}.U1")).map_err(e)?),
         _ => None,
     };
-    let mut state = match save_bytes {
-        Some(b) => Overworld::from_save(&PlayerRecord::parse(&b).map_err(|e| e.to_string())?, a.seed),
-        None => {
-            let (x, y) = DEFAULT_POS;
-            Overworld::new_at(x, y, a.seed)
-        }
+    let mut rec = match save_bytes {
+        Some(b) => PlayerRecord::parse(&b).map_err(e)?,
+        None => Game::default_record("Hero", DEFAULT_POS.0, DEFAULT_POS.1),
     };
     if let Some((x, y)) = a.pos {
-        let (x, y) = u1_assets::rules::wrap(x, y);
-        state.x = x;
-        state.y = y;
+        rec.set_u16(u1_assets::save::off::POS_X, x);
+        rec.set_u16(u1_assets::save::off::POS_Y, y);
+        let mut o = rec.objects()[0];
+        o.x = x;
+        o.y = y;
+        rec.set_object(0, &o);
     }
-    Ok(Game { map, tiles, palette, tables, locs, state })
-}
-
-enum Cmd {
-    Move(Dir),
-    Pass,
-    Board,
-    Exit,
-    Enter,
-}
-
-fn cmd_from_name(s: &str) -> Option<Cmd> {
-    Some(match s {
-        "up" | "n" | "north" | "8" => Cmd::Move(Dir::North),
-        "down" | "s" | "south" | "2" => Cmd::Move(Dir::South),
-        "left" | "w" | "west" | "4" => Cmd::Move(Dir::West),
-        "right" | "east" | "6" => Cmd::Move(Dir::East),
-        "space" | "pass" => Cmd::Pass,
-        "b" | "board" => Cmd::Board,
-        "x" | "exit" => Cmd::Exit,
-        "e" | "enter" => Cmd::Enter,
-        _ => return None,
-    })
-}
-
-impl Game {
-    fn run_cmd(&mut self, c: Cmd) {
-        let s = &mut self.state;
-        match c {
-            Cmd::Move(d) => s.step(d, &self.map, &self.tables, &self.locs),
-            Cmd::Pass => s.pass(&self.map, &self.tables),
-            Cmd::Board => s.board(),
-            Cmd::Exit => s.exit(),
-            Cmd::Enter => {
-                s.say(">Enter");
-                match s.location_here(&self.locs).map(|(id, n)| (id, n.to_string())) {
-                    Some((id, name)) => {
-                        s.say(format!("Entering {name}..."));
-                        let what = match kind_of(id) {
-                            Some(u1_assets::locations::LocationKind::Town) => "Towns",
-                            Some(u1_assets::locations::LocationKind::Castle) => "Castles",
-                            Some(u1_assets::locations::LocationKind::Landmark) => "Landmarks",
-                            _ => "Dungeons",
-                        };
-                        s.say(format!("({what} not yet in u1)"));
-                    }
-                    None => s.say("Nothing to enter here"),
-                }
-            }
-        }
+    let mut game = Game::new(assets, rec, a.seed);
+    game.counter = a.counter;
+    let save_to = a.save_to.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1"));
+    let dir = save_to.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    if same_dir(dir, &a.game_dir) {
+        return Err("--save-to must not point into the game directory (originals are never overwritten)".into());
     }
+    game.save_to = Some(save_to);
+    Ok((game, palette))
 }
 
-fn write_png(path: &PathBuf, w: u32, h: u32, rgb: &[u8]) -> Result<(), String> {
+fn write_png(path: &Path, w: u32, h: u32, rgb: &[u8]) -> Result<(), String> {
     let f = std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut enc = png::Encoder::new(std::io::BufWriter::new(f), w, h);
     enc.set_color(png::ColorType::Rgb);
@@ -197,90 +162,145 @@ fn write_png(path: &PathBuf, w: u32, h: u32, rgb: &[u8]) -> Result<(), String> {
     wr.write_image_data(rgb).map_err(|e| e.to_string())
 }
 
-fn screenshot(mut g: Game, a: &Args, out: &PathBuf) -> Result<(), String> {
-    for k in &a.keys {
-        let c = cmd_from_name(k).ok_or(format!("unknown key {k}"))?;
-        g.run_cmd(c);
+fn screenshot(mut g: Game, palette: &[Rgb; 16], a: &Args, out: &Path) -> Result<(), String> {
+    let mut io = ScriptIo::from_text(&a.keys);
+    let _ = g.run(&mut io);
+    let scale = 2; // the size of a 640x400 DOSBox capture
+    write_png(out, (W * scale) as u32, (H * scale) as u32, &g.term.to_rgb(palette, scale))?;
+    println!("{}: mode={} loc={} at ({},{}) town ({},{})", out.display(), g.mode, g.loc, g.ow.x, g.ow.y, g.px, g.py);
+    for l in g.term.messages() {
+        println!("| {l}");
     }
-    let mut s = Screen::new();
-    s.compose(&g.state, &g.map, &g.tiles, a.counter, false);
-    let scale = 2; // same size as a 640x400 DOSBox capture
-    write_png(out, (W * scale) as u32, (H * scale) as u32, &s.to_rgb(&g.palette, scale))?;
-    println!("{} at ({},{}) moves={} food={}", out.display(), g.state.x, g.state.y, g.state.moves, g.state.food);
+    if let Some(s) = g.stopped {
+        println!("stopped: {s}");
+    }
     Ok(())
 }
 
-fn play(mut g: Game, a: &Args) -> Result<(), String> {
-    use sdl2::event::Event;
-    use sdl2::keyboard::Keycode;
-    use sdl2::pixels::PixelFormatEnum;
+/// The window: every poll shows the screen and waits out the rest of the
+/// original's 130 ms.
+struct SdlIo {
+    canvas: sdl2::render::WindowCanvas,
+    tex: sdl2::render::Texture<'static>,
+    events: sdl2::EventPump,
+    palette: [Rgb; 16],
+    next: Instant,
+    pending: std::collections::VecDeque<u8>,
+}
 
+impl SdlIo {
+    fn present(&mut self, t: &Term) -> IoResult<()> {
+        let rgb = t.to_rgb(&self.palette, 1);
+        self.tex.update(None, &rgb, W * 3).map_err(|_| Halt)?;
+        self.canvas.copy(&self.tex, None, None).map_err(|_| Halt)?;
+        self.canvas.present();
+        Ok(())
+    }
+
+    fn pump(&mut self) -> IoResult<()> {
+        use sdl2::event::Event;
+        use sdl2::keyboard::{Keycode, Mod};
+        for ev in self.events.poll_iter() {
+            match ev {
+                Event::Quit { .. } => return Err(Halt),
+                Event::KeyDown { keycode: Some(k), keymod, .. } => {
+                    let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::CAPSMOD);
+                    let c = match k {
+                        Keycode::Left | Keycode::Kp4 => Some(keys::LEFT),
+                        Keycode::Right | Keycode::Kp6 => Some(keys::RIGHT),
+                        Keycode::Up | Keycode::Kp8 => Some(keys::UP),
+                        Keycode::Down | Keycode::Kp2 => Some(keys::DOWN),
+                        Keycode::Return | Keycode::KpEnter => Some(keys::ENTER),
+                        Keycode::Escape => Some(keys::ESC),
+                        Keycode::Backspace => Some(keys::BACKSPACE),
+                        _ => {
+                            let n = k.into_i32();
+                            if (0x20..0x7F).contains(&n) {
+                                let c = n as u8;
+                                Some(if shift { c.to_ascii_uppercase() } else { c })
+                            } else {
+                                None
+                            }
+                        }
+                    };
+                    if let Some(c) = c {
+                        self.pending.push_back(c);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Io for SdlIo {
+    fn poll(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.present(t)?;
+        loop {
+            self.pump()?;
+            if let Some(k) = self.pending.pop_front() {
+                self.next = Instant::now() + POLL;
+                return Ok(Some(k));
+            }
+            let now = Instant::now();
+            if now >= self.next {
+                self.next = (self.next + POLL).max(now);
+                return Ok(None);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
+        self.present(t)?;
+        let end = Instant::now() + TICK * ticks;
+        while Instant::now() < end {
+            self.pump()?;
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        Ok(())
+    }
+
+    fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
+        // About 1.5 s, or until a key (which is swallowed).
+        for _ in 0..12 {
+            if self.poll(t)?.is_some() {
+                break;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn play(mut g: Game, palette: [Rgb; 16], a: &Args) -> Result<(), String> {
+    use sdl2::pixels::PixelFormatEnum;
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
     let window = video
-        .window("u1 - Ultima I overworld", W as u32 * a.scale, H as u32 * a.scale)
+        .window("u1 - Ultima I", W as u32 * a.scale, H as u32 * a.scale)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
-    let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
-    let tc = canvas.texture_creator();
-    let mut tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, W as u32, H as u32).map_err(|e| e.to_string())?;
-    let mut events = sdl.event_pump()?;
-    let mut screen = Screen::new();
-    let mut counter: u32 = a.counter;
-    let mut idle: u32 = 0;
-    let mut next_poll = Instant::now();
-    let start = Instant::now();
-    'main: loop {
-        for ev in events.poll_iter() {
-            let cmd = match ev {
-                Event::Quit { .. } => break 'main,
-                Event::KeyDown { keycode: Some(k), .. } => match k {
-                    Keycode::Escape => break 'main,
-                    Keycode::Up | Keycode::Kp8 => Some(Cmd::Move(Dir::North)),
-                    Keycode::Down | Keycode::Kp2 => Some(Cmd::Move(Dir::South)),
-                    Keycode::Left | Keycode::Kp4 => Some(Cmd::Move(Dir::West)),
-                    Keycode::Right | Keycode::Kp6 => Some(Cmd::Move(Dir::East)),
-                    Keycode::Space => Some(Cmd::Pass),
-                    Keycode::B => Some(Cmd::Board),
-                    Keycode::X => Some(Cmd::Exit),
-                    Keycode::E => Some(Cmd::Enter),
-                    _ => None,
-                },
-                _ => None,
-            };
-            if let Some(c) = cmd {
-                idle = 0;
-                g.run_cmd(c);
-            }
-        }
-        let now = Instant::now();
-        while now >= next_poll {
-            next_poll += POLL;
-            counter = counter.wrapping_add(1);
-            idle += 1;
-            if idle >= IDLE_POLLS {
-                idle = 0;
-                g.run_cmd(Cmd::Pass);
-            }
-        }
-        let blink = (start.elapsed().as_millis() / 300) % 2 == 0;
-        screen.compose(&g.state, &g.map, &g.tiles, counter, blink);
-        let rgb = screen.to_rgb(&g.palette, 1);
-        tex.update(None, &rgb, W * 3).map_err(|e| e.to_string())?;
-        canvas.copy(&tex, None, None)?;
-        canvas.present();
-        std::thread::sleep(Duration::from_millis(15));
+    let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+    // The texture creator lives for the whole program.
+    let tc: &'static _ = Box::leak(Box::new(canvas.texture_creator()));
+    let tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, W as u32, H as u32).map_err(|e| e.to_string())?;
+    let events = sdl.event_pump()?;
+    let mut io = SdlIo { canvas, tex, events, palette, next: Instant::now(), pending: Default::default() };
+    let _ = g.run(&mut io);
+    if let Some(s) = g.stopped {
+        eprintln!("stopped: {s}");
     }
     Ok(())
 }
 
 fn main() -> ExitCode {
     let res = parse_args().and_then(|a| {
-        let g = load(&a)?;
+        let (g, pal) = load(&a)?;
         match &a.screenshot {
-            Some(out) => screenshot(g, &a, out),
-            None => play(g, &a),
+            Some(out) => screenshot(g, &pal, &a, out),
+            None => play(g, pal, &a),
         }
     });
     match res {

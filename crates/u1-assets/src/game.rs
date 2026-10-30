@@ -582,15 +582,16 @@ impl Game {
         if self.mode == OUTDOORS {
             self.to_ow();
             self.ow.messages.clear();
-            let hits0 = self.ow.hits;
+            self.ow.attacks.clear();
             self.ow.dead = false;
             self.ow.end_turn(&self.a.map, &self.a.t);
             let msgs: Vec<String> = self.ow.messages.drain(..).collect();
             for s in msgs {
                 self.term.println(&s);
             }
-            if self.ow.hits != hits0 {
-                self.snd(io, 2);
+            let attacks: Vec<_> = self.ow.attacks.drain(..).collect();
+            for at in attacks {
+                self.monster_attack_msg(io, at)?;
             }
             self.from_ow();
             self.show_stats();
@@ -603,6 +604,37 @@ impl Game {
     }
 
     // ------------------------------------------------------------ outdoors
+
+    /// The lines of an outdoor monster attack (`81fc`).
+    fn monster_attack_msg(&mut self, io: &mut dyn Io, at: crate::overworld::MonsterAttack) -> IoResult<()> {
+        let name = self.a.t.monster_names[at.kind].clone();
+        self.term.print(&name);
+        self.say(m::ATTACKS);
+        self.snd(io, 3);
+        match at.damage {
+            None => {
+                if name.len() > 8 {
+                    self.nl();
+                } else {
+                    self.term.print(" ");
+                }
+                self.sayln(m::MISSED);
+            }
+            Some(d) => {
+                self.snd(io, 2);
+                if name.len() > 10 {
+                    self.nl();
+                    self.say(m::HIT_EX);
+                } else {
+                    self.sayln(m::SP_HIT);
+                }
+                self.term.num(d, 2, ' ', TEXT, true);
+                self.sayln(m::SP_DAMAGE);
+                self.show_hits();
+            }
+        }
+        Ok(())
+    }
 
     fn cmd_move(&mut self, io: &mut dyn Io, d: Dir) -> IoResult<()> {
         if self.mode != OUTDOORS {

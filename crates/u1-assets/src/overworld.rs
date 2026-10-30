@@ -3,7 +3,7 @@
 
 use std::collections::VecDeque;
 
-use crate::locations::{kind_of, LocationKind, LocationTable};
+use crate::locations::LocationTable;
 use crate::map::WorldMap;
 use crate::rng::U1Rng;
 use crate::rules::{self, Dir, ExeTables, FoodClock, MoveBlock, MAP_H, MAP_W};
@@ -76,6 +76,8 @@ pub struct Overworld {
     pub messages: VecDeque<String>,
     pub rng: U1Rng,
     pub dead: bool,
+    /// Monster attacks of the last turn, in order.
+    pub attacks: Vec<MonsterAttack>,
 }
 
 impl Overworld {
@@ -97,6 +99,7 @@ impl Overworld {
             messages: VecDeque::new(),
             rng: U1Rng::new(seed),
             dead: false,
+            attacks: Vec::new(),
         }
     }
 
@@ -181,15 +184,7 @@ impl Overworld {
                 if land != old_land {
                     self.entities.retain(|e| !e.is_monster() || rules::land_of(e.x, e.y) == land);
                 }
-                if let Some((id, name)) = self.location_here(locs) {
-                    let line = match kind_of(id) {
-                        Some(LocationKind::Town) => format!("The town of {name}"),
-                        Some(LocationKind::Castle) | Some(LocationKind::Landmark) => name.to_string(),
-                        Some(LocationKind::Dungeon) => format!("The dungeon of {name}"),
-                        None => name.to_string(),
-                    };
-                    self.say(line);
-                }
+                let _ = locs;
             }
             Err(MoveBlock::Monster(k)) => {
                 let m = &t.move_messages[5];
@@ -211,37 +206,6 @@ impl Overworld {
         self.end_turn(map, t);
     }
 
-    /// Board a vehicle the player is standing on.
-    pub fn board(&mut self) {
-        self.say(">Board");
-        if self.transport != 0 {
-            self.say("You are already aboard!");
-            return;
-        }
-        match self.entity_at(self.x, self.y) {
-            Some(i) if transport_for_tile(self.entities[i].tile).is_some() => {
-                self.transport = transport_for_tile(self.entities[i].tile).unwrap();
-                self.entities.remove(i);
-            }
-            _ => self.say("Board what?"),
-        }
-    }
-
-    /// Leave the current vehicle, which stays on the map.
-    pub fn exit(&mut self) {
-        self.say(">X-it");
-        if self.transport == 0 {
-            self.say("X-it what?");
-            return;
-        }
-        if self.transport < 6 {
-            let tile = tile_for_transport(self.transport);
-            // A vehicle left by the player keeps its tile in the second word.
-            self.entities.push(Entity { tile, x: self.x, y: self.y, hp: 0, aux: u16::from(tile) });
-        }
-        self.transport = 0;
-    }
-
     /// Everything after a command: spawn, move counter, monsters, food.
     pub fn end_turn(&mut self, map: &WorldMap, t: &ExeTables) {
         if self.monster_count() <= MAX_MONSTERS {
@@ -251,8 +215,7 @@ impl Overworld {
         self.monsters_act(map, t);
         if self.food_clock.tick(&t.food_rate, self.transport) {
             self.food = self.food.saturating_sub(1);
-            if self.food == 0 && !self.dead {
-                self.say("You have starved!");
+            if self.food == 0 {
                 self.dead = true;
             }
         }
@@ -292,7 +255,7 @@ impl Overworld {
             }
             let (dx, dy) = (self.x - e.x, self.y - e.y);
             if dx.abs().max(dy.abs()) <= rules::attack_range(e.tile) {
-                self.monster_attacks(rules::monster_kind(e.tile), t);
+                self.monster_attacks(i, map, t);
                 continue;
             }
             let chance = t.monster_move_chance[(self.transport as usize).min(7)];
@@ -325,21 +288,51 @@ impl Overworld {
         }
     }
 
-    fn monster_attacks(&mut self, kind: usize, t: &ExeTables) {
-        let name = t.monster_names[kind].clone();
-        self.say(format!("{name} attacks!"));
-        match rules::monster_attack(t, kind, self.stats[2], self.armour, &mut self.rng) {
-            Some(d) => {
-                self.hits = self.hits.saturating_sub(d);
-                self.say(format!("Hit! {d} damage"));
-                if self.hits == 0 && !self.dead {
-                    self.say("You have died!");
-                    self.dead = true;
-                }
+    /// Outdoor monster attack (`81fc`, verified from original executable):
+    /// the shot travels from the monster towards the player and stops at a
+    /// mountain; the result is left in `attacks` for the caller to print.
+    fn monster_attacks(&mut self, i: usize, map: &WorldMap, t: &ExeTables) {
+        let e = self.entities[i];
+        let kind = rules::monster_kind(e.tile);
+        let (sx, sy) = ((self.x - e.x).signum(), (self.y - e.y).signum());
+        let (mut cx, mut cy) = (e.x, e.y);
+        let mut reached = false;
+        for _ in 0..rules::attack_range(e.tile) {
+            cx += sx;
+            cy += sy;
+            if (cx, cy) == (self.x, self.y) {
+                reached = true;
+                break;
             }
-            None => self.say("Missed!"),
+            let c = match self.entity_at(cx, cy) {
+                Some(j) => self.entities[j].tile,
+                None => Self::terrain(map, cx, cy),
+            };
+            if c == 3 {
+                break;
+            }
         }
+        let dmg = if reached {
+            rules::monster_attack(t, kind, self.stats[2], self.armour, &mut self.rng)
+        } else {
+            self.rng.range(1, 255);
+            None
+        };
+        if let Some(d) = dmg {
+            self.hits = self.hits.saturating_sub(d);
+            if self.hits == 0 {
+                self.dead = true;
+            }
+        }
+        self.attacks.push(MonsterAttack { kind, damage: dmg });
     }
+}
+
+/// One monster attack on the player during the outdoor turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MonsterAttack {
+    pub kind: usize,
+    pub damage: Option<u16>,
 }
 
 #[cfg(test)]
@@ -403,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn board_and_exit() {
+    fn walk_onto_and_sail() {
         let (mut t, locs) = setup();
         t.spawn_chance = [0; 10];
         let mut map = world(0);
@@ -412,14 +405,10 @@ mod tests {
         o.entities.push(Entity::new(0x0E, 6, 5, 0));
         o.step(Dir::East, &map, &t, &locs); // walk onto the frigate
         assert_eq!(o.x, 6);
-        o.board();
-        assert_eq!(o.transport, 4);
-        assert!(o.entities.is_empty());
-        o.step(Dir::East, &map, &t, &locs);
+        o.entities.clear();
+        o.transport = 4;
+        o.step(Dir::East, &map, &t, &locs); // a frigate sails on water
         assert_eq!(o.x, 7);
-        o.exit();
-        assert_eq!(o.transport, 0);
-        assert_eq!(o.entities[0].tile, tile_for_transport(4));
     }
 
     #[test]
@@ -437,7 +426,7 @@ mod tests {
         assert!(o.monster_count() <= MAX_MONSTERS + 1);
         // Grass only: every monster is a land type (9..=14).
         assert!(o.entities.iter().all(|e| rules::monster_kind(e.tile) >= 9));
-        assert!(o.messages.iter().any(|m| m.ends_with("attacks!") || m.starts_with("Hit") || m == "Missed!") || o.hits == 150);
+        assert!(!o.attacks.is_empty() || o.hits == 150);
     }
 
     #[test]

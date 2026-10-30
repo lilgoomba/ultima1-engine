@@ -254,6 +254,8 @@ pub mod m {
     pub const XIT_WHAT: usize = 0x16B1;
     pub const XIT: usize = 0x16BC;
     pub const ATTACKS: usize = 0x16E0;
+    pub const SP_HIT: usize = 0x16EA;
+    pub const HIT_EX: usize = 0x01AC;
     pub const ATTACKED_BY: usize = 0x16F0;
     pub const THOU_ART_DEAD: usize = 0x39FA;
     pub const RESURRECTION: usize = 0x3A0A;

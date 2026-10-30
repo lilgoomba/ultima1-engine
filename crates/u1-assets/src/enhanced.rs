@@ -685,4 +685,23 @@ file = "x.png"
         let i = Rgba::from_png(&buf).unwrap();
         assert_eq!((i.w, i.h, i.px.clone()), (2, 1, vec![1, 2, 3, 4, 5, 6, 7, 8]));
     }
+
+    #[test]
+    fn shipped_pack_loads_cleanly() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/enhanced");
+        let p = Pack::load(&dir).expect("assets/enhanced loads");
+        assert!(p.warnings.is_empty(), "{:?}", p.warnings);
+        assert_eq!(p.tile_size, 32);
+        for (id, n) in [(1u16, 4usize), (3, 3)] {
+            assert_eq!(p.entries[&ArtId::World(id)].variants.len(), n, "world.{id}");
+        }
+        for (id, e) in &p.entries {
+            if !matches!(id, ArtId::World(_)) {
+                continue;
+            }
+            for f in e.frames.iter().chain(&e.variants) {
+                assert_eq!((f.w, f.h), (p.tile_size, p.tile_size));
+            }
+        }
+    }
 }

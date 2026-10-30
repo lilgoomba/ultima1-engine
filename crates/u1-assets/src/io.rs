@@ -88,6 +88,22 @@ pub trait Io {
     /// may play something. Never waits.
     fn cue(&mut self, _ev: crate::sound::Sfx) {}
 
+    /// A display chosen in the options menu, with its files, for the game
+    /// to take at its next safe point (the main loop's key poll).
+    fn video_switch(&mut self) -> Option<crate::game::VideoSet> {
+        None
+    }
+
+    /// The title or character program stopped (a [`Halt`]) because a
+    /// display was chosen in the options menu on its screen: that display,
+    /// now shown, to start the program again in. `None` for a real halt.
+    fn display_restart(&mut self) -> Option<crate::gamedir::VideoMode> {
+        None
+    }
+
+    /// The game now draws in `mode` (the front end changes its palette).
+    fn video_shown(&mut self, _mode: crate::gamedir::VideoMode) {}
+
     /// Effect `n` for an event too far away for the enhanced sound mode
     /// to play (a distant townsperson's step): the original effect as
     /// usual, nothing in the enhanced mode (which still waits as long).

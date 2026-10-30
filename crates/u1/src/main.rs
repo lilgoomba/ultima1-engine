@@ -8,6 +8,10 @@
 //!   u1 --game-dir <path> ... --sound original|enhanced|mute
 //!   u1 --sound-demo out.wav [--pack DIR]
 //!
+//! F1 opens the options menu (display and sound, switched live); the
+//! choice is kept in ~/.config/ultima1-engine/config.toml, which the
+//! command-line options override.
+//!
 //! Game files are only read. Quit (Q, outdoors) writes the 820-byte player
 //! record to `--save-to` (default `./PLAYER1.U1` in the current directory,
 //! which must not be the game directory). Tables, names and messages come
@@ -17,9 +21,11 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use u1_assets::config::{self, Config, VideoChoice};
 use u1_assets::enhanced::{self, Pack};
+use u1_assets::options::{MenuKey, OptionsMenu};
 use u1_assets::exe::Exe;
-use u1_assets::game::{Assets, Game};
+use u1_assets::game::{Assets, Game, VideoSet};
 use u1_assets::gamedir::{GameDir, VideoMode};
 use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
 use u1_assets::locations::LocationTable;
@@ -31,8 +37,7 @@ use u1_assets::soundpack::{SoundMode, SoundPack};
 use std::sync::Arc;
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::{Term, H, W};
-use u1_assets::gen::{Gen, GenEnd, GenFiles};
-use u1_assets::title::{self, TitleFiles};
+use u1_assets::gen::GenEnd;
 
 /// One keyboard/animation poll of the original main loop, measured in
 /// DOSBox (130 ms at 20000 cycles).
@@ -45,7 +50,7 @@ const DEFAULT_POS: (u16, u16) = (49, 40);
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
           [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
           [--video original|enhanced] [--sound original|enhanced|mute] [--pack DIR]
-          [--screenshot out.png [--keys TEXT] [--counter N]]
+          [--screenshot out.png [--keys TEXT] [--counter N] [--options]]
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
 Space passes). --keys is typed text; {up} {down} {left} {right} {enter}
@@ -60,7 +65,13 @@ pack lacks are the original scaled up. The game itself is unchanged.
 PC-speaker effects, the original effect for any it lacks; the default is the
 original beeps (--mute, or --sound mute, plays nothing). Timing is the
 original's either way. --sound-demo FILE writes every enhanced sound, each
-after its original effect, to a WAV file.";
+after its original effect, to a WAV file.
+F1 (a key the original never reads) pauses the game and opens the options
+menu: the display (Enhanced, EGA, CGA, Tandy) and the sound (original beeps,
+enhanced, mute), switched without restarting. The choice is saved to
+~/.config/ultima1-engine/config.toml ($XDG_CONFIG_HOME if set); --video,
+--mode and --sound override the file for one run. Screenshots ignore the
+file; --options draws the menu over a screenshot.";
 
 struct Args {
     game_dir: PathBuf,
@@ -83,6 +94,11 @@ struct Args {
     sound_demo: Option<PathBuf>,
     enhanced: bool,
     pack: Option<PathBuf>,
+    /// The display and sound options given on the command line (they win
+    /// over the config file).
+    cli: config::Cli,
+    /// Screenshots: draw the options menu over the last screen.
+    options_shot: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -107,6 +123,8 @@ fn parse_args() -> Result<Args, String> {
         sound_demo: None,
         enhanced: false,
         pack: None,
+        cli: config::Cli::default(),
+        options_shot: false,
     };
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
@@ -124,7 +142,10 @@ fn parse_args() -> Result<Args, String> {
                 let (x, y) = s.split_once(',').ok_or("--pos wants X,Y")?;
                 a.pos = Some((x.trim().parse().map_err(|_| "bad X")?, y.trim().parse().map_err(|_| "bad Y")?));
             }
-            "--mode" => a.mode = Some(VideoMode::parse(&v()?).ok_or("bad --mode")?),
+            "--mode" => {
+                a.mode = Some(VideoMode::parse(&v()?).ok_or("bad --mode")?);
+                a.cli.mode = a.mode;
+            }
             "--scale" => a.scale = v()?.parse().map_err(|_| "bad --scale")?,
             // Hidden: a fixed RNG seed and clock value for deterministic runs.
             "--seed" => a.seed = Some(v()?.parse().map_err(|_| "bad --seed")?),
@@ -143,8 +164,14 @@ fn parse_args() -> Result<Args, String> {
             "--gen" => a.gen = true,
             "--roster" => a.roster = Some(v()?.into()),
             // No speaker output; effects still take their original time.
-            "--mute" => a.sound = SoundMode::Mute,
-            "--sound" => a.sound = SoundMode::parse(&v()?).ok_or("--sound wants original, enhanced or mute")?,
+            "--mute" => {
+                a.sound = SoundMode::Mute;
+                a.cli.sound = Some(a.sound);
+            }
+            "--sound" => {
+                a.sound = SoundMode::parse(&v()?).ok_or("--sound wants original, enhanced or mute")?;
+                a.cli.sound = Some(a.sound);
+            }
             "--sound-demo" => {
                 a.sound_demo = Some(v()?.into());
                 have_dir = true;
@@ -154,14 +181,19 @@ fn parse_args() -> Result<Args, String> {
                     "original" => false,
                     "enhanced" => true,
                     _ => return Err("--video wants original or enhanced".into()),
-                }
+                };
+                a.cli.enhanced = Some(a.enhanced);
             }
+            "--options" => a.options_shot = true,
             "--pack" => a.pack = Some(v()?.into()),
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
             // The original's only video choice: a first argument starting
             // with C forces CGA (`ULTIMA C`).
-            c if !c.starts_with('-') && c.to_ascii_uppercase().starts_with('C') => a.mode = Some(VideoMode::Cga),
+            c if !c.starts_with('-') && c.to_ascii_uppercase().starts_with('C') => {
+                a.mode = Some(VideoMode::Cga);
+                a.cli.mode = a.mode;
+            }
             other => return Err(format!("unknown argument {other}\n{USAGE}")),
         }
     }
@@ -218,8 +250,12 @@ fn load_pack(a: &Args) -> Result<Option<Pack>, String> {
     if !a.enhanced {
         return Ok(None);
     }
-    let pack = match pack_dir(a) {
-        Some(d) => Pack::load(&d)?,
+    open_pack(pack_dir(a).as_deref()).map(Some)
+}
+
+fn open_pack(dir: Option<&Path>) -> Result<Pack, String> {
+    let pack = match dir {
+        Some(d) => Pack::load(d)?,
         None => {
             eprintln!("no asset pack found (assets/enhanced); showing the original art scaled up");
             Pack::empty(32)
@@ -228,7 +264,7 @@ fn load_pack(a: &Args) -> Result<Option<Pack>, String> {
     for w in &pack.warnings {
         eprintln!("pack: {w}");
     }
-    Ok(Some(pack))
+    Ok(pack)
 }
 
 /// The screen as RGB at the output resolution: the original, or composed
@@ -293,23 +329,22 @@ fn front(a: &Args, mode: VideoMode, io: &mut dyn Io) -> Result<Front, String> {
         return Ok(Front::Skip);
     }
     let g = GameDir::new(&a.game_dir).map_err(|e| e.to_string())?;
+    // A display chosen on these screens starts the program again in it.
+    let mut mode = mode;
     if a.intro {
-        let tf = TitleFiles::load(&g, mode).map_err(|e| e.to_string())?;
-        let mut t = title::blank_term(&tf);
-        if title::run_intro(&tf, &mut t, io).is_err() {
+        if let Some(t) = u1_assets::front::intro(&g, &mut mode, io).map_err(|e| e.to_string())? {
             return Ok(Front::Halted(t));
         }
     }
-    let gf = GenFiles::load(&g, mode).map_err(|e| e.to_string())?;
     let dir = roster_dir(a)?;
     let fixed = a.seed.is_some();
-    let clock: Box<dyn FnMut() -> [u8; 4]> = if fixed { Box::new(|| [0, 0, 0, 0]) } else { Box::new(local_time) };
-    let mut gen = Gen::new(&gf, &dir, clock);
-    let mut t = Term::with_cga(mode == VideoMode::Cga);
-    match gen.run(&mut t, io) {
+    let mut clock = || -> Box<dyn FnMut() -> [u8; 4]> { if fixed { Box::new(|| [0, 0, 0, 0]) } else { Box::new(local_time) } };
+    let (t, r) = u1_assets::front::character(&g, &dir, &mut mode, &mut clock, io).map_err(|e| e.to_string())?;
+    match r {
         Ok(GenEnd::Play { path, .. }) => {
-            // The "please wait" screen stays up while the game loads.
-            if io.pause(&t, 9).is_err() {
+            // The "please wait" screen stays up while the game loads (a
+            // display chosen now is the game's).
+            if io.pause(&t, 9).is_err() && io.display_restart().is_none() {
                 return Ok(Front::Halted(t));
             }
             Ok(Front::Play(path))
@@ -318,10 +353,9 @@ fn front(a: &Args, mode: VideoMode, io: &mut dyn Io) -> Result<Front, String> {
     }
 }
 
-fn load(a: &Args, chosen: Option<&Path>) -> Result<(Game, [Rgb; 16]), String> {
+fn load(a: &Args, mode: VideoMode, chosen: Option<&Path>) -> Result<(Game, [Rgb; 16]), String> {
     let e = |e: u1_assets::error::AssetError| e.to_string();
     let g = GameDir::new(&a.game_dir).map_err(e)?;
-    let mode = video_mode(a)?;
     let exe_bytes = g.read("OUT.EXE").map_err(e)?;
     let assets = Assets {
         t: ExeTables::from_out_exe(&exe_bytes).map_err(e)?,
@@ -414,10 +448,24 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
         Front::Play(p) => Some(p),
         Front::Skip => None,
     };
-    let (mut g, palette) = load(a, chosen.as_deref())?;
+    let (mut g, palette) = load(a, mode, chosen.as_deref())?;
     let palette = &palette;
     let _ = g.run(&mut io);
-    shot(&g.term, palette)?;
+    if a.options_shot {
+        let avail = available(a);
+        let mut c = g.term.clone();
+        OptionsMenu::new(VideoChoice::from_parts(a.enhanced, mode), a.sound, avail).draw(&mut c);
+        // As in the window: the art stays on what the box leaves uncovered.
+        match &pack {
+            Some(p) => {
+                let rgb = enhanced::compose_boxed(&g.term, &c, palette, p, 0, OptionsMenu::BOX);
+                write_png(out, (W * p.scale()) as u32, (H * p.scale()) as u32, &rgb)?;
+            }
+            None => shot(&c, palette)?,
+        }
+    } else {
+        shot(&g.term, palette)?;
+    }
     println!("{}: mode={} loc={} at ({},{}) town ({},{})", out.display(), g.mode, g.loc, g.ow.x, g.ow.y, g.px, g.py);
     for l in g.term.messages() {
         println!("| {l}");
@@ -443,15 +491,51 @@ struct SdlIo {
     /// The enhanced sounds, loaded on first use.
     sounds: Option<SoundPack>,
     sound_src: Option<PathBuf>,
-    /// The enhanced mode's art.
+    /// The enhanced mode's art (drawn when `enhanced`; kept loaded when
+    /// the options menu turns it off).
     pack: Option<Pack>,
+    enhanced: bool,
+    pack_src: Option<PathBuf>,
     start: Instant,
+    /// The texture creator, for a new texture when the resolution changes.
+    tc: &'static sdl2::render::TextureCreator<sdl2::video::WindowContext>,
+    /// `--scale`: the window is this multiple of 320x200.
+    scale: u32,
+    game_dir: PathBuf,
+    /// The display the game draws in, and the one the menu asked for (the
+    /// game switches at its next key poll, `video_switch`).
+    shown: VideoMode,
+    wanted: VideoMode,
+    /// Which of the menu's displays this game directory has.
+    avail: [bool; 4],
+    /// F1 was pressed: the menu opens at the next screen update.
+    menu_wanted: bool,
+    in_menu: bool,
+    menu_keys: std::collections::VecDeque<u8>,
+    cfg_path: Option<PathBuf>,
+    /// On the title or character screens (until the game starts).
+    front: bool,
+    /// A display was chosen there: they stop and start again in it.
+    restart: bool,
 }
 
 impl SdlIo {
     fn present(&mut self, t: &Term) -> IoResult<()> {
+        self.present_boxed(t, None)
+    }
+
+    /// The screen, or (with `menu`) the screen with the options menu's box
+    /// over it; the enhanced art stays on what the box leaves uncovered.
+    fn present_boxed(&mut self, t: &Term, menu: Option<&Term>) -> IoResult<()> {
         let ms = self.start.elapsed().as_millis() as u64;
-        let (w, _, rgb) = frame_rgb(t, &self.palette, self.pack.as_ref(), 1, ms);
+        let pack = if self.enhanced { self.pack.as_ref() } else { None };
+        let (w, rgb) = match (pack, menu) {
+            (Some(p), Some(m)) => (W * p.scale(), enhanced::compose_boxed(t, m, &self.palette, p, ms, OptionsMenu::BOX)),
+            (_, m) => {
+                let (w, _, rgb) = frame_rgb(m.unwrap_or(t), &self.palette, pack, 1, ms);
+                (w, rgb)
+            }
+        };
         self.tex.update(None, &rgb, w * 3).map_err(|_| Halt)?;
         self.canvas.copy(&self.tex, None, None).map_err(|_| Halt)?;
         self.canvas.present();
@@ -474,6 +558,16 @@ impl SdlIo {
                         Keycode::Return | Keycode::KpEnter => Some(keys::ENTER),
                         Keycode::Escape => Some(keys::ESC),
                         Keycode::Backspace => Some(keys::BACKSPACE),
+                        // The options menu: no key of the original's.
+                        Keycode::F1 => {
+                            if self.in_menu {
+                                self.menu_keys.push_back(keys::ESC);
+                            } else {
+                                self.menu_wanted = true;
+                                self.in_menu = true;
+                            }
+                            None
+                        }
                         _ => {
                             let n = k.into_i32();
                             if (0x20..0x7F).contains(&n) {
@@ -485,7 +579,12 @@ impl SdlIo {
                         }
                     };
                     if let Some(c) = c {
-                        self.pending.push_back(c);
+                        // Keys typed while the menu is up are the menu's.
+                        if self.in_menu {
+                            self.menu_keys.push_back(c);
+                        } else {
+                            self.pending.push_back(c);
+                        }
                     }
                 }
                 _ => {}
@@ -500,6 +599,8 @@ impl Io for SdlIo {
         self.present(t)?;
         loop {
             self.pump()?;
+            self.menu(t)?;
+            self.restarting()?;
             if let Some(k) = self.pending.pop_front() {
                 self.next = Instant::now() + POLL;
                 return Ok(Some(k));
@@ -515,9 +616,11 @@ impl Io for SdlIo {
 
     fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
         self.present(t)?;
-        let end = Instant::now() + TICK * ticks;
+        let mut end = Instant::now() + TICK * ticks;
         while Instant::now() < end {
             self.pump()?;
+            end += self.menu(t)?;
+            self.restarting()?;
             std::thread::sleep(Duration::from_millis(5));
         }
         Ok(())
@@ -526,14 +629,18 @@ impl Io for SdlIo {
     fn poll_now(&mut self, t: &Term) -> IoResult<Option<u8>> {
         self.present(t)?;
         self.pump()?;
+        self.menu(t)?;
+        self.restarting()?;
         Ok(self.pending.pop_front())
     }
 
     fn retrace(&mut self, t: &Term, n: u32) -> IoResult<()> {
         self.present(t)?;
-        let end = Instant::now() + Duration::from_micros(14_286) * n;
+        let mut end = Instant::now() + Duration::from_micros(14_286) * n;
         while Instant::now() < end {
             self.pump()?;
+            end += self.menu(t)?;
+            self.restarting()?;
             std::thread::sleep(Duration::from_millis(2));
         }
         Ok(())
@@ -587,6 +694,36 @@ impl Io for SdlIo {
         }
     }
 
+    fn video_switch(&mut self) -> Option<VideoSet> {
+        if self.wanted == self.shown {
+            return None;
+        }
+        let mode = self.wanted;
+        match load_video(&self.game_dir, mode) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                eprintln!("display {}: {e}", mode_name(mode));
+                self.wanted = self.shown;
+                None
+            }
+        }
+    }
+
+    fn display_restart(&mut self) -> Option<VideoMode> {
+        if !std::mem::take(&mut self.restart) {
+            return None;
+        }
+        self.pending.clear();
+        let m = self.wanted;
+        self.video_shown(m);
+        Some(m)
+    }
+
+    fn video_shown(&mut self, mode: VideoMode) {
+        self.shown = mode;
+        self.palette = palette_for(mode);
+    }
+
     fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
         // About 1.5 s, or until a key (which is swallowed).
         for _ in 0..12 {
@@ -599,6 +736,112 @@ impl Io for SdlIo {
 }
 
 impl SdlIo {
+    /// The options menu, if F1 was pressed: drawn over a copy of `t` and
+    /// run with the game paused until F1, Enter or Esc. Returns how long it
+    /// was open (timed waits resume where they were).
+    fn menu(&mut self, t: &Term) -> IoResult<Duration> {
+        if !self.menu_wanted {
+            return Ok(Duration::ZERO);
+        }
+        self.menu_wanted = false;
+        let opened = Instant::now();
+        let mut m = OptionsMenu::new(VideoChoice::from_parts(self.enhanced, self.wanted), self.sound, self.avail);
+        let r = loop {
+            let mut c = t.clone();
+            m.draw(&mut c);
+            if let Err(e) = self.present_boxed(t, Some(&c)) {
+                break Err(e);
+            }
+            if let Err(e) = self.pump() {
+                break Err(e);
+            }
+            let mut close = false;
+            while let Some(k) = self.menu_keys.pop_front() {
+                match m.key(k) {
+                    MenuKey::Changed => self.choose(m.video, m.sound),
+                    MenuKey::Close => close = true,
+                    MenuKey::Stay => {}
+                }
+            }
+            if close {
+                break Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(15));
+        };
+        self.in_menu = false;
+        self.menu_keys.clear();
+        r?;
+        let paused = opened.elapsed();
+        self.next = Instant::now() + POLL;
+        self.present(t)?;
+        Ok(paused)
+    }
+
+    /// The title or character program stops here for a display chosen on
+    /// its screen ([`Io::display_restart`]).
+    fn restarting(&self) -> IoResult<()> {
+        if self.restart { Err(Halt) } else { Ok(()) }
+    }
+
+    /// Apply the menu's choice now (the display's pictures at the game's
+    /// next key poll; the title and character programs start again in it
+    /// when the menu closes) and save it.
+    fn choose(&mut self, video: VideoChoice, sound: SoundMode) {
+        self.sound = sound;
+        self.wanted = video.mode();
+        self.restart = self.front && self.wanted != self.shown;
+        if video.enhanced() != self.enhanced {
+            self.set_enhanced(video.enhanced());
+        }
+        if let Some(p) = &self.cfg_path {
+            // The file's other lines are kept; one that cannot be read is
+            // left alone.
+            let mut c = Config::load(p);
+            if p.exists() && std::fs::read_to_string(p).is_err() {
+                eprintln!("{}: not saved (the file cannot be read)", p.display());
+                return;
+            }
+            c.video = Some(video);
+            c.sound = Some(sound);
+            c.warnings.clear();
+            if let Err(e) = c.save(p) {
+                eprintln!("{}: {e}", p.display());
+            }
+        }
+    }
+
+    /// Turn the enhanced art on or off: a new internal resolution, and the
+    /// window resized to the same multiple of the original it started at.
+    fn set_enhanced(&mut self, on: bool) {
+        if on && self.pack.is_none() {
+            match open_pack(self.pack_src.as_deref()) {
+                Ok(p) => self.pack = Some(p),
+                Err(e) => {
+                    eprintln!("pack: {e}");
+                    return;
+                }
+            }
+        }
+        self.enhanced = on;
+        let k = if on { self.pack.as_ref().map_or(1, |p| p.scale()) as u32 } else { 1 };
+        let (iw, ih) = (W as u32 * k, H as u32 * k);
+        let tex = match self.tc.create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGB24, iw, ih) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("{e}");
+                return;
+            }
+        };
+        self.tex = tex;
+        let _ = self.canvas.set_logical_size(iw, ih);
+        let n = (self.scale.max(k) / k).max(1);
+        let w = self.canvas.window_mut();
+        let full = !matches!(w.fullscreen_state(), sdl2::video::FullscreenType::Off);
+        if !full && !w.is_maximized() {
+            let _ = w.set_size(iw * n, ih * n);
+        }
+    }
+
     /// The enhanced sound for `ev`, if that mode is on and the pack has one.
     fn clip(&mut self, ev: Sfx) -> Option<Arc<Vec<i16>>> {
         if self.sound != SoundMode::Enhanced {
@@ -671,13 +914,51 @@ fn open_speaker(sdl: &sdl2::Sdl) -> Option<(sdl2::audio::AudioDevice<Mixer>, u32
     Some((q, rate))
 }
 
+/// One display's pictures, read from the game directory.
+fn load_video(dir: &Path, mode: VideoMode) -> Result<VideoSet, String> {
+    let e = |e: u1_assets::error::AssetError| e.to_string();
+    let g = GameDir::new(dir).map_err(e)?;
+    Ok(VideoSet {
+        mode,
+        world_tiles: g.load_world_tiles(mode).map_err(e)?,
+        town_tiles: g.load_town_tiles(mode).map_err(e)?,
+        space: u1_assets::space::SpaceFiles::load(&g, mode).ok(),
+        mondain: u1_assets::mondain::MondainFiles::load(&g, mode).ok(),
+    })
+}
+
+fn mode_name(m: VideoMode) -> &'static str {
+    VideoChoice::from_parts(false, m).label()
+}
+
+/// Which of the menu's displays ([`VideoChoice::ALL`]) the game directory
+/// has (the enhanced art sits on EGA).
+fn available(a: &Args) -> [bool; 4] {
+    let Ok(g) = GameDir::new(&a.game_dir) else { return [false; 4] };
+    VideoChoice::ALL.map(|v| g.load_world_tiles(v.mode()).is_ok() && g.load_town_tiles(v.mode()).is_ok())
+}
+
 fn play(a: &Args) -> Result<(), String> {
-    let mode = video_mode(a)?;
+    // The command line, then the config file, then the defaults.
+    let cfg_path = config::default_path();
+    let cfg = cfg_path.as_deref().map(Config::load).unwrap_or_default();
+    for w in &cfg.warnings {
+        eprintln!("config: {w}");
+    }
+    let avail = available(a);
+    let detected = video_mode(a)?;
+    let mut set = config::resolve(a.cli, &cfg, detected);
+    if !avail[VideoChoice::ALL.iter().position(|&v| v == VideoChoice::from_parts(false, set.mode)).unwrap_or(1)] {
+        eprintln!("no {} files in the game directory; using {}", mode_name(set.mode), mode_name(detected));
+        set.mode = detected;
+    }
+    let mode = set.mode;
     let palette = palette_for(mode);
     use sdl2::pixels::PixelFormatEnum;
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
-    let pack = load_pack(a)?;
+    let pack_src = pack_dir(a);
+    let pack = if set.enhanced { Some(open_pack(pack_src.as_deref())?) } else { None };
     // Internal resolution: 320x200, or the pack's multiple of it; the
     // window is a whole multiple of that and stays integer-scaled.
     let k = pack.as_ref().map_or(1, |p| p.scale()) as u32;
@@ -698,7 +979,7 @@ fn play(a: &Args) -> Result<(), String> {
     let events = sdl.event_pump()?;
     // Opened even when muted, so the options can turn sound on.
     let audio = open_speaker(&sdl);
-    let sound_src = pack_dir(a).map(|d| d.join("sounds"));
+    let sound_src = pack_src.as_ref().map(|d| d.join("sounds"));
     let mut io = SdlIo {
         canvas,
         tex,
@@ -707,18 +988,38 @@ fn play(a: &Args) -> Result<(), String> {
         next: Instant::now(),
         pending: Default::default(),
         audio,
-        sound: a.sound,
+        sound: set.sound,
         sounds: None,
         sound_src,
         pack,
+        enhanced: set.enhanced,
+        pack_src,
         start: Instant::now(),
+        tc,
+        scale: a.scale,
+        game_dir: a.game_dir.clone(),
+        shown: mode,
+        wanted: mode,
+        avail,
+        menu_wanted: false,
+        in_menu: false,
+        menu_keys: Default::default(),
+        cfg_path,
+        front: true,
+        restart: false,
     };
     let chosen = match front(a, mode, &mut io)? {
         Front::Halted(_) => return Ok(()),
         Front::Play(p) => Some(p),
         Front::Skip => None,
     };
-    let (mut g, _) = load(a, chosen.as_deref())?;
+    // A display chosen during the title or the character menu starts the
+    // game.
+    io.front = false;
+    io.restart = false;
+    let mode = io.wanted;
+    io.video_shown(mode);
+    let (mut g, _) = load(a, mode, chosen.as_deref())?;
     let _ = g.run(&mut io);
     if let Some(s) = g.stopped {
         eprintln!("stopped: {s}");

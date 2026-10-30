@@ -6,6 +6,7 @@
 //! executable") reference study of the original program. No original code
 //! or game data is embedded; tests use synthetic data built from the spec.
 
+pub mod config;
 pub mod demo;
 pub mod dgame;
 pub mod dungeon;
@@ -14,6 +15,7 @@ pub mod enhanced;
 pub mod error;
 pub mod exe;
 pub mod font;
+pub mod front;
 pub mod game;
 pub mod gamedir;
 pub mod gen;
@@ -22,6 +24,7 @@ pub mod io;
 pub mod locations;
 pub mod map;
 pub mod mondain;
+pub mod options;
 pub mod overworld;
 pub mod palette;
 pub mod render;

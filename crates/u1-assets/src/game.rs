@@ -80,6 +80,15 @@ pub struct Assets {
     pub video: crate::gamedir::VideoMode,
 }
 
+/// One display's pictures, swapped in live by the options menu.
+pub struct VideoSet {
+    pub mode: crate::gamedir::VideoMode,
+    pub world_tiles: TileSet,
+    pub town_tiles: TileSet,
+    pub space: Option<crate::space::SpaceFiles>,
+    pub mondain: Option<crate::mondain::MondainFiles>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Npc {
     pub tile: i16,
@@ -402,6 +411,32 @@ impl Game {
         self.term.cursor(c, r);
     }
 
+    /// Take another display's pictures (the options menu), and redraw.
+    /// The game's state is untouched; space and Mondain's pictures are
+    /// replaced only when given (they load when entered).
+    pub fn set_video(&mut self, v: VideoSet) {
+        self.take_video(v);
+        let (c, r) = (self.term.col, self.term.row);
+        self.redraw();
+        self.term.cursor(c, r);
+    }
+
+    /// [`Game::set_video`] without the redraw (space and Mondain's lair
+    /// redraw their own screens): the pictures, and the screen's colours
+    /// converted to the new display's.
+    pub fn take_video(&mut self, v: VideoSet) {
+        self.a.video = v.mode;
+        self.a.world_tiles = v.world_tiles;
+        self.a.town_tiles = v.town_tiles;
+        if v.space.is_some() {
+            self.space = v.space;
+        }
+        if v.mondain.is_some() {
+            self.mondain = v.mondain;
+        }
+        self.term.set_cga(v.mode == crate::gamedir::VideoMode::Cga);
+    }
+
     /// Redraw the viewport for the current mode and the stats.
     pub fn redraw(&mut self) {
         if self.mode == OUTDOORS {
@@ -681,6 +716,10 @@ impl Game {
         let mut polls = 0u32;
         let key = loop {
             let k = self.poll_key(io)?;
+            if let Some(v) = io.video_switch() {
+                self.set_video(v);
+                io.video_shown(self.a.video);
+            }
             polls += 1;
             if self.mode == OUTDOORS {
                 self.world_tick(polls);

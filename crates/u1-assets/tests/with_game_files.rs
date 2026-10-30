@@ -907,6 +907,68 @@ fn space_scene_notes_the_pictures_drawn() {
     assert!(g.term.sscene.is_none());
 }
 
+/// Scripted keys, with the options menu's display switch asked for after
+/// `at` polls (as F1 would).
+struct SwitchIo {
+    inner: ScriptIo,
+    polls: usize,
+    at: usize,
+    to: Vec<u1_assets::gamedir::VideoMode>,
+    shown: Vec<u1_assets::gamedir::VideoMode>,
+}
+
+impl Io for SwitchIo {
+    fn poll(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.polls += 1;
+        self.inner.poll(t)
+    }
+    fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
+        self.inner.pause(t, ticks)
+    }
+    fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
+        self.inner.wait_or_key(t)
+    }
+    fn video_switch(&mut self) -> Option<u1_assets::game::VideoSet> {
+        if self.polls < self.at || self.to.is_empty() {
+            return None;
+        }
+        let mode = self.to.remove(0);
+        let g = game_dir()?;
+        Some(u1_assets::game::VideoSet {
+            mode,
+            world_tiles: g.load_world_tiles(mode).ok()?,
+            town_tiles: g.load_town_tiles(mode).ok()?,
+            space: SpaceFiles::load(&g, mode).ok(),
+            mondain: u1_assets::mondain::MondainFiles::load(&g, mode).ok(),
+        })
+    }
+    fn video_shown(&mut self, mode: u1_assets::gamedir::VideoMode) {
+        self.shown.push(mode);
+    }
+}
+
+#[test]
+fn options_menu_switches_the_display_live() {
+    use u1_assets::gamedir::VideoMode;
+    let keys = "{right}{right}{left}";
+    let Some(plain) = play(45, 38, keys) else { return };
+    let mut io = SwitchIo { inner: ScriptIo::from_text(keys), polls: 0, at: 2, to: vec![VideoMode::Cga], shown: vec![] };
+    let g = play_io(45, 38, &mut io, 2, &[], |_| {}).unwrap();
+    assert_eq!(io.shown, vec![VideoMode::Cga]);
+    assert_eq!(g.a.video, VideoMode::Cga);
+    assert!(g.term.cga);
+    assert!(g.term.px.iter().all(|&c| c < 4), "CGA colours only");
+    assert_eq!((g.ow.x, g.ow.y), (plain.ow.x, plain.ow.y), "the game itself is unchanged");
+    assert_eq!(g.term.messages(), plain.term.messages());
+    // And back: the same screen as a game that never left EGA.
+    let mut io = SwitchIo { inner: ScriptIo::from_text(keys), polls: 0, at: 2, to: vec![VideoMode::Cga, VideoMode::Ega], shown: vec![] };
+    let g = play_io(45, 38, &mut io, 2, &[], |_| {}).unwrap();
+    assert_eq!(io.shown, vec![VideoMode::Cga, VideoMode::Ega]);
+    assert!(!g.term.cga);
+    let diff: Vec<(usize, usize, u8, u8)> = (0..g.term.px.len()).filter(|&i| g.term.px[i] != plain.term.px[i]).map(|i| (i % 320, i / 320, g.term.px[i], plain.term.px[i])).collect();
+    assert!(diff.is_empty(), "{} differ, e.g. {:?}", diff.len(), &diff[..diff.len().min(12)]);
+}
+
 #[test]
 fn only_near_townspeople_steps_get_the_enhanced_sound() {
     use u1_assets::sound::Sfx;
@@ -926,4 +988,129 @@ fn only_near_townspeople_steps_get_the_enhanced_sound() {
     let beeps = io.sounds.iter().filter(|&&n| n == 4).count() - own;
     let near = io.events.iter().filter(|&&e| e == Sfx::NpcStep).count();
     assert!(near > 0 && beeps > near, "{near} near of {beeps}");
+}
+
+#[test]
+fn options_menu_switches_the_display_in_space() {
+    use u1_assets::gamedir::VideoMode;
+    let keys = "B{w12}{w5}";
+    let Some(plain) = play_with(40, 40, keys, 1, &[], on_shuttle) else { return };
+    let mut io = SwitchIo { inner: ScriptIo::from_text(keys), polls: 0, at: 14, to: vec![VideoMode::Cga], shown: vec![] };
+    let g = play_io(40, 40, &mut io, 1, &[], on_shuttle).unwrap();
+    assert_eq!(io.shown, vec![VideoMode::Cga], "taken in space, not at the return to OUT");
+    assert!(g.term.sscene.is_some(), "still in space");
+    assert!(g.term.cga && g.term.px.iter().all(|&c| c < 4), "CGA colours only");
+    assert_eq!(g.term.messages(), plain.term.messages());
+    // And back: the same screen as a flight that never left EGA.
+    let mut io = SwitchIo { inner: ScriptIo::from_text(keys), polls: 0, at: 14, to: vec![VideoMode::Cga, VideoMode::Ega], shown: vec![] };
+    let g = play_io(40, 40, &mut io, 1, &[], on_shuttle).unwrap();
+    assert_eq!(io.shown, vec![VideoMode::Cga, VideoMode::Ega]);
+    let diff = (0..g.term.px.len()).filter(|&i| g.term.px[i] != plain.term.px[i]).count();
+    assert_eq!(diff, 0);
+}
+
+#[test]
+fn options_menu_switches_the_display_in_mondains_lair() {
+    use u1_assets::gamedir::VideoMode;
+    let keys = format!("{TO_GEM}{{w3}}");
+    let Some(plain) = play_with(40, 40, &keys, 1, &[], at_time_machine) else { return };
+    // Mid-way along the corridor to the gem.
+    let at = 12;
+    let mut io = SwitchIo { inner: ScriptIo::from_text(&keys), polls: 0, at, to: vec![VideoMode::Cga, VideoMode::Ega], shown: vec![] };
+    let g = play_io(40, 40, &mut io, 1, &[], at_time_machine).unwrap();
+    assert_eq!(io.shown, vec![VideoMode::Cga, VideoMode::Ega]);
+    assert!(said(&g, "You hear a strange chanting!"));
+    let diff = (0..g.term.px.len()).filter(|&i| g.term.px[i] != plain.term.px[i]).count();
+    assert_eq!(diff, 0, "back on EGA: the same arena");
+    let mut io = SwitchIo { inner: ScriptIo::from_text(&keys), polls: 0, at, to: vec![VideoMode::Cga], shown: vec![] };
+    let g = play_io(40, 40, &mut io, 1, &[], at_time_machine).unwrap();
+    assert_eq!(io.shown, vec![VideoMode::Cga]);
+    assert!(g.term.cga && g.term.px.iter().all(|&c| c < 4), "CGA colours only");
+}
+
+/// Scripted keys; after `at` waits the options menu's display change stops
+/// the start-up program (once), as the front end does.
+struct RestartIo {
+    inner: ScriptIo,
+    calls: usize,
+    at: usize,
+    to: Option<u1_assets::gamedir::VideoMode>,
+    pending: Option<u1_assets::gamedir::VideoMode>,
+    shown: Vec<u1_assets::gamedir::VideoMode>,
+}
+
+impl RestartIo {
+    fn step(&mut self) -> IoResult<()> {
+        self.calls += 1;
+        if self.calls == self.at {
+            if let Some(m) = self.to {
+                self.pending = Some(m);
+                return Err(Halt);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Io for RestartIo {
+    fn poll(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.step()?;
+        self.inner.poll(t)
+    }
+    fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
+        self.step()?;
+        self.inner.pause(t, ticks)
+    }
+    fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
+        self.step()?;
+        self.inner.wait_or_key(t)
+    }
+    fn display_restart(&mut self) -> Option<u1_assets::gamedir::VideoMode> {
+        let m = self.pending.take()?;
+        self.shown.push(m);
+        Some(m)
+    }
+    fn video_shown(&mut self, mode: u1_assets::gamedir::VideoMode) {
+        self.shown.push(mode);
+    }
+}
+
+#[test]
+fn a_display_chosen_on_the_title_restarts_it_in_that_display() {
+    use u1_assets::gamedir::VideoMode;
+    let Some(g) = game_dir() else { return };
+    let mut io = RestartIo { inner: ScriptIo::from_text("{w81}{w5}x"), calls: 0, at: 4, to: Some(VideoMode::Cga), pending: None, shown: vec![] };
+    let mut mode = VideoMode::Ega;
+    assert!(u1_assets::front::intro(&g, &mut mode, &mut io).unwrap().is_none(), "ran to the credits");
+    assert_eq!((mode, io.shown.clone()), (VideoMode::Cga, vec![VideoMode::Cga]));
+    // A real halt stays a halt.
+    let mut io = RestartIo { inner: ScriptIo::from_text("{w3}"), calls: 0, at: 0, to: None, pending: None, shown: vec![] };
+    let mut mode = VideoMode::Ega;
+    assert!(u1_assets::front::intro(&g, &mut mode, &mut io).unwrap().is_some());
+    assert_eq!(mode, VideoMode::Ega);
+}
+
+#[test]
+fn a_display_chosen_in_the_character_program_restarts_it_in_that_display() {
+    use u1_assets::gamedir::VideoMode;
+    use u1_assets::gen::GenEnd;
+    let Some(g) = game_dir() else { return };
+    let s = format!(
+        "a{{right}}{{right}}{{down}}{{right}}{{up}}{}{{down}}{} baaHero{{enter}}yb1",
+        "{right}".repeat(13),
+        "{right}".repeat(14)
+    );
+    let dir = std::env::temp_dir().join(format!("u1-gen-restart-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // Stopped on its first screen, before a key was read.
+    let mut io = RestartIo { inner: ScriptIo::from_text(&s), calls: 0, at: 1, to: Some(VideoMode::Tandy), pending: None, shown: vec![] };
+    let mut mode = VideoMode::Ega;
+    let mut clock = || -> Box<dyn FnMut() -> [u8; 4]> { Box::new(|| [0, 0, 0, 0]) };
+    let (t, r) = u1_assets::front::character(&g, &dir, &mut mode, &mut clock, &mut io).unwrap();
+    let Ok(GenEnd::Play { slot, path }) = r else { panic!("{r:?}") };
+    assert_eq!((slot, mode, io.shown.clone()), (1, VideoMode::Tandy, vec![VideoMode::Tandy]));
+    assert!(!t.cga);
+    assert_eq!(&std::fs::read(&path).unwrap()[..5], b"Hero\0");
+    std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -112,6 +112,7 @@ mod d {
 }
 
 /// SPACE.EXE and its two sprite files.
+#[derive(Clone)]
 pub struct SpaceFiles {
     pub exe: Exe,
     /// The original's video index `112c`: 0 CGA, 1 EGA, 2 Tandy; it picks
@@ -221,7 +222,10 @@ fn sign(v: i16) -> i16 {
 struct Space<'a> {
     g: &'a mut Game,
     io: &'a mut dyn Io,
-    f: &'a SpaceFiles,
+    f: SpaceFiles,
+    /// A display chosen in the options menu has no space pictures: it
+    /// waits for the return to OUT.
+    keep_video: bool,
     rng: U1Rng,
     gal: Box<[[Sector; 7]; 7]>,
     gx: usize,
@@ -257,13 +261,13 @@ struct Space<'a> {
 /// OUT. Assumes the record is in sync with the live game.
 pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
     let Some(files) = g.space.take() else { return Ok(SpaceEnd::Landed) };
-    let mut s = Space::new(g, io, &files);
+    let mut s = Space::new(g, io, files);
     let r = s.main();
     let died = s.g.hits() <= 0;
     if !matches!(r, Err(Stop::Halt)) {
         s.g.term.sscene = None;
     }
-    drop(s);
+    let Space { f: files, .. } = s;
     g.space = Some(files);
     match r {
         Err(Stop::Halt) => Err(Halt),
@@ -272,12 +276,13 @@ pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
 }
 
 impl<'a> Space<'a> {
-    fn new(g: &'a mut Game, io: &'a mut dyn Io, files: &'a SpaceFiles) -> Self {
+    fn new(g: &'a mut Game, io: &'a mut dyn Io, files: SpaceFiles) -> Self {
         let seed = g.rec.u16_at(off::SEED);
         Space {
             g,
             io,
             f: files,
+            keep_video: false,
             rng: U1Rng::new(seed),
             gal: Box::new([[Sector::default(); 7]; 7]),
             gx: 3,
@@ -438,6 +443,7 @@ impl<'a> Space<'a> {
             let key = loop {
                 self.tick()?;
                 let k = self.io.poll_now(&self.g.term)?;
+                self.switch_video();
                 n = n.wrapping_add(1);
                 if !self.fp {
                     self.delay(2)?;
@@ -460,6 +466,36 @@ impl<'a> Space<'a> {
                 }
             }
         }
+    }
+
+    /// A display chosen in the options menu, taken at the command poll:
+    /// its pictures, the screen's colours converted, and the view redrawn
+    /// as it stands (nothing in the flight changes).
+    fn switch_video(&mut self) {
+        if self.keep_video {
+            return;
+        }
+        let Some(mut v) = self.io.video_switch() else { return };
+        let Some(f) = v.space.take() else {
+            self.keep_video = true;
+            return;
+        };
+        self.f = f;
+        let mode = v.mode;
+        self.g.take_video(v);
+        self.io.video_shown(mode);
+        if self.fp {
+            self.g.term.fill(16, 16, 303, 143, BLACK);
+            self.frame();
+            self.g.term.space_begin(self.fp);
+            self.crosshair(C_WHITE);
+        } else {
+            let r = self.redraw;
+            self.draw_all();
+            self.redraw = r;
+        }
+        self.show_fuel();
+        self.show_shield();
     }
 
     fn command(&mut self, key: u8) -> R<()> {
@@ -1671,7 +1707,7 @@ mod real_game {
         g.rec.set_u16(off::ENEMIES, 19);
         let exp = g.rec.u16_at(off::EXPERIENCE);
         let mut io = ScriptIo::from_text("{w1}");
-        let mut s = Space::new(&mut g, &mut io, &files);
+        let mut s = Space::new(&mut g, &mut io, files.clone());
         fighter_in_sights(&mut s);
         let _ = s.cmd_fire();
         assert_eq!(s.g.w(off::ENEMIES), 20);
@@ -1680,7 +1716,7 @@ mod real_game {
         drop(s);
         assert_eq!(g.rec.u16_at(off::EXPERIENCE), exp + 100);
         let mut io = ScriptIo::from_text("{w1}");
-        let mut s = Space::new(&mut g, &mut io, &files);
+        let mut s = Space::new(&mut g, &mut io, files.clone());
         fighter_in_sights(&mut s);
         // The boxed panel was replaced by the redraw; a further kill says so.
         let _ = s.cmd_fire();
@@ -1693,7 +1729,7 @@ mod real_game {
         // The original's hit box for size 0 asks for 5 <= dy <= 4.
         let Some((mut g, files)) = setup() else { return };
         let mut io = ScriptIo::from_text("");
-        let mut s = Space::new(&mut g, &mut io, &files);
+        let mut s = Space::new(&mut g, &mut io, files.clone());
         fighter_in_sights(&mut s);
         s.esize = 0;
         for dy in -10..10 {
@@ -1712,7 +1748,7 @@ mod real_game {
         g.rec.set_u16(off::COIN, 1000);
         g.rec.set_u16(off::SHUTTLE_0, 100);
         let mut io = ScriptIo::from_text("1");
-        let mut s = Space::new(&mut g, &mut io, &files);
+        let mut s = Space::new(&mut g, &mut io, files.clone());
         s.make_galaxy();
         let mut h = *s.sec();
         s.dock_ship(&mut h, 2, 1, 0);
@@ -1727,7 +1763,7 @@ mod real_game {
         assert_eq!(s.slot().ty, 1);
         // Without the coin there is no refill.
         let mut io = ScriptIo::from_text("x1");
-        let mut s = Space::new(&mut g, &mut io, &files);
+        let mut s = Space::new(&mut g, &mut io, files.clone());
         s.make_galaxy();
         s.g.rec.set_u16(off::COIN, 100);
         s.slot_mut().fuel = 7;

@@ -8,7 +8,7 @@
 # 1's palette plus 15 colours) and the first-person dungeon (textures,
 # objects and monster sprites of any size, their own 64-colour palette;
 # the force field is unquantized for its translucent blues).
-name = "u1-enhanced 16-bit (batches 1-2)"
+name = "u1-enhanced 16-bit (batches 1-3)"
 tile_size = 32
 license = "CC-BY-SA-4.0"
 
@@ -242,3 +242,44 @@ file = "dungeon/m23.png"
 file = "dungeon/m24.png"
 
 # dmon.20 (invisible seeker) has no picture: it is not seen.
+
+# Batch 3 (for review): space flight, original 16-bit-console-style art
+# with its own colours. The frames and backgrounds are stretched over the
+# original's view; ships are drawn nose up and turned to their heading,
+# each fitted to the box the original drew.
+
+[space.frame]     # the top-down view's border
+file = "space/frame.png"
+
+[space.cockpit]   # the front view's border
+file = "space/cockpit.png"
+
+[space.starfield] # top-down background
+file = "space/starfield.png"
+
+[space.deep]      # front view background
+file = "space/deep.png"
+
+[space.earth]
+file = "space/earth.png"
+
+[space.sun]
+file = "space/sun.png"
+
+[space.station]
+file = "space/station.png"
+
+[space.ship0]     # the shuttle
+file = "space/ship0.png"
+
+[space.ship1]
+file = "space/ship1.png"
+
+[space.ship2]
+file = "space/ship2.png"
+
+[space.fighter]   # the enemy, front view
+file = "space/fighter.png"
+
+[space.reticle]
+file = "space/reticle.png"

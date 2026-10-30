@@ -466,13 +466,154 @@ Public sources ([S13]-[S16]) describe the behaviour. The algorithm below is
      Going down therefore lands on the next level's up ladder. Level 10
      has no ladder down. Level 1 has no up ladder at [7][3]; instead its
      up ladder (the exit) is at [1][1].
-  6. Monsters are placed by a separate routine, called three times
-     (details UNKNOWN).
+  6. Three monsters are placed (§6.3), still drawing from the generator
+     reseeded in step 4.
 * The engine re-implements this in `u1_assets::dungeon` and `::rng`.
-  `u1view --dungeon X,Y,LEVEL,SEED` prints a level. The generated layouts
-  have the documented look (five corridors separated by door-pierced
-  walls, ladders in the 2nd and 4th corridors). They have **not** yet been
-  compared with in-game dungeon views (UNKNOWN until checked in DOSBox).
+  `u1view --dungeon X,Y,LEVEL,SEED` prints a level. **Compared in DOSBox
+  (Phase 5):** levels 1–3 of the Mines of Mt. Drash II match cell for
+  cell, as do their items and monsters once the clock values are known.
+
+### 6.3 Monster placement: VERIFIED (original executable, DOSBox)
+
+* One placement tries up to 500 random interior cells. Each try draws
+  `a = R(0,242) mod 9 + 1`, then `b` the same way. A cell is accepted when it
+  has no monster, is not wall, secret door or force field, and holds no
+  chest. If no cell is found, or the cell is the player's own, nothing is
+  placed.
+* The kind is `R(0,49) div 10` (0..4), redrawn until it names a kind not
+  yet on the level. The monster number is `5·((level-1) div 2) + kind`, so
+  each level pair has its own five kinds, in the order of the list below
+  (0 ranger, 1 skeleton, 2 thief, ... 24 balron). Its hit points are
+  `R(1, level² + 1) + 10 + number`.
+* A level gets three placements when it is set up. Each kill frees that
+  kind again (`number mod 5`) and makes one new placement at once. An
+  opened coffin can release a monster into the cell ahead (§6.5).
+* Because the item reseed in §6.2 step 4 uses the time of day, and the
+  monsters continue from that state, a level's contents depend only on
+  the clock reading at the moment it is set up (entering, or each
+  K-limb) and on the keys pressed since. The original's overworld seed
+  is also clock-based (§6.1); the engine now reads the local clock the
+  same way. A hidden `--seed N [--times t1,t2,...]` option fixes the
+  start seed and the successive clock values for tests and side-by-side
+  runs.
+
+### 6.4 Moving, the view and the screen
+
+* The player starts on level 1 at [1][1], facing south, on the up ladder.
+  Facing codes: 1 west, 2 east, 3 north, 4 south. ↑ goes forward, ←/→
+  turn, ↓ turns around ("Forward", "Turn left", "Turn right", "Turn
+  around"). Forward is refused ("Forward - path blocked!" with a sound)
+  by a wall, a secret door, a force field, a monster, or a door when the
+  player already stands in a door.
+* The view replaces the map window. The top border shows "Level n"
+  between two ornaments, and the border under the view shows the compass
+  word ("North", "South", "East", "West") in the same way. Both borders
+  are restored on leaving, and during Ztats.
+* Sight runs ahead until a wall, secret door, door or a monster that
+  blocks the eye, up to 5 cells. The invisible seeker, the mimic and the
+  gelatinous cube do not block it. The view is drawn from the far end
+  towards the player. For each depth it draws the left and right side
+  (open, wall, or wall with a door outline; a secret door looks like
+  wall), then a vertical edge wherever the side changes between solid
+  and open, then the cell contents: a front wall or door, a ladder (the
+  outline depends on up or down, and on whether the player faces
+  north/south or east/west), a
+  force field in light red, a chest or coffin outline, or a monster
+  outline. When a monster stands on a ladder, only the hole is drawn.
+  Standing in a doorway draws the door frame around the view.
+* All coordinate tables and outlines (walls per depth, ladder, chest,
+  coffin and all monster figures) are read from the user's `OUT.EXE` at
+  run time. The name of the nearest thing seen is printed in the message
+  area (e.g. "Coffin", "Thief").
+* **Compared in DOSBox:** the view interior (x 9–310, y 9–150 in
+  320×200) is pixel-identical in every frame checked (about 50 frames on
+  levels 1–3, including doors, secret doors, both ladders, coffins, walls
+  at every depth and several monster figures). Text is identical in
+  content; the engine draws it with its own font (§3).
+
+### 6.5 Commands in the dungeon
+
+* **K-limb**: only on a ladder ("K-limb what?" otherwise), and only when
+  facing north or south ("Thou must face the ladder!"). Up prints
+  "K-limb up to level n", down "K-limb down to level n"; each sets up the
+  new level (§6.2). Up to level 0 returns to the overworld at the
+  dungeon's tile. On the way out, the hit point bonus earned below is
+  added ("Thou dost gain n hit points", capped so hits stay ≤ 9999).
+* **Open**: "Open coffin". On a coffin, `R(1,255)` below 104 releases a
+  monster into the cell ahead when that cell is open floor or a ladder
+  with no monster; otherwise the coffin is emptied and holds
+  `R(3, level²+9)` coins. "Open coffin - none here!" otherwise.
+* **Unlock**: "Unlock chest". On a chest, if `R(1,75)` exceeds Agility and
+  the character is not a thief, a trap costs hits equal to the level;
+  otherwise the chest is emptied for `R(3, level²+9)` coins.
+* **Inform and search**: "Thou dost find a secret door!" turns the secret
+  door ahead into a door (not while standing in a door); otherwise
+  "Thou dost find nothing".
+* **Attack** uses the ready weapon without asking a direction. It looks
+  ahead up to the weapon's range for the first monster, stopping at
+  walls and doors; with none, "Nothing". The hit chance is `AGI + 50` out
+  of `R(1,100)`. Damage is `R(2, STR + 8·weapon)`. Blows from or into a
+  doorway only land on open cells.
+* A blow that does not kill prints "Hit! n damage!". A kill prints
+  "<name> killed!" (the Kill spell prints a "destroyed" message instead), then
+  "Thou dost find: " and `R(2, 3·level + 10 + number)` coins, adds
+  experience `R(2, level² + 10)`, and adds twice that to the climb-out hit
+  bonus. Killing a gelatinous cube, carrion creeper, lich or balron
+  completes the matching open castle quest ("Quest completed!").
+* A quirk kept on purpose: when a monster moves, its hit points stay in
+  the cell it left. Attacking a monster that has just stepped up may
+  report "Nothing", and a monster that walks into a cell where another
+  was wounded inherits the lower count. DOSBox shows the same.
+* Get, Steal, Drop, Fire, Board, X-it, Transact and Quit give their
+  dungeon refusals as in the original.
+
+### 6.6 Monsters' turn
+
+* After each player turn (no food is eaten below ground) the grid is
+  scanned a = 1..9, b = 1..9. Each monster that has not already moved
+  this turn either attacks, if it is orthogonally next to the player,
+  or, within 6 steps (city-block distance), tries one step towards the
+  player along a first and then along b. It cannot step into wall,
+  secret door, force field or another monster.
+* No attack happens while the player stands in a force field, or across
+  a door from a wall or door cell.
+* An attack prints "Attacked by <name>!". It misses ("Missed!") when
+  `R(1,255)` ≤ `STA/2 + 8·armour + 56`. Otherwise the damage is
+  `number² + level`, or `R(number+1, 255)` when that exceeds 255:
+  "Hit! n damage!".
+* Special attacks replace the damage:
+  * Gelatinous cube with armour ready: a message that the armour is
+    destroyed. One of that armour is lost and none is ready.
+  * Gremlin: a message that food was stolen, and food is halved.
+  * Mind whipper, half the time: a mental-attack message, and
+    Intelligence becomes `INT/2 + 5`.
+  * Thief: steals one weapon other than the ready one, the first in
+    inventory order, names it with "a" or "an", and still deals damage.
+* The mimic's printed name comes from its own string ("Mimic").
+* All of these strings are read from the user's `OUT.EXE`.
+
+### 6.7 Spells
+
+* **Cast** uses the ready spell. In towns, castles and space: "Cast -- no
+  effect!". Each cast uses one; with none left: "Used up!". The
+  incantation is printed first.
+* Prayer (never used up): in the dungeon it acts as a random spell,
+  `R(1,10)` with 4 (Magic missile is excluded and 4 becomes 5). Outdoors it
+  raises hits or food to 15 if below; otherwise "no effect".
+* Open (1) / Unlock (2): open the coffin/chest under the player for
+  coins. Magic missile (3): first monster within 5 cells, always hits,
+  damage `R(1, INT)` ×2 with a wand, ×3/2 with an amulet, ×3 with a staff
+  or triangle. Steal (4): no effect beyond being cast. Ladder down (5):
+  not on level 10, not in a field, and only on a cell with an odd
+  coordinate: "Ladder created!". Ladder up (6): likewise. Blink (7):
+  teleport to a random free interior cell. Create (8): force field ahead
+  if the cell is empty floor with nothing in it. Destroy (9): removes a
+  force field ahead. Kill (10): destroys the monster ahead outright.
+  Failure prints "Failed!". Outside the dungeon only Magic missile and Kill
+  are allowed; other spells print the "dungeon only" refusal.
+* **Not reproduced (engine deviation):** outdoor Magic missile and Kill
+  print "Failed!". Prayer's 1-in-4 chance to remove an adjacent outdoor
+  monster is not reproduced; the roll is still drawn.
 
 Dungeon inhabitants by level pair [S13][S16][S15]:
 1–2 ranger, skeleton, thief, giant rat, bat · 3–4 spider, viper, orc,
@@ -807,8 +948,7 @@ generator from the clock.
 100. Experience and Coin always show in the text colour [DOSBox].
 
 **UNKNOWN / approximate:** the exact NPC frame choice; the duration of
-some waits; dungeon interiors (the engine stops after the name); the
-space and time-machine parts.
+some waits; the space and time-machine parts.
 
 ## 10. What the engine implements today
 
@@ -822,7 +962,8 @@ space and time-machine parts.
 | Software renderer (incl. water scroll, castle/town cadence) | `u1-assets::render`, `::map` | colours, off-map, animation timing |
 | Location table loader (reads user's OUT.EXE) | `u1-assets::locations` | synthetic EXE image, id ranges, TCD map rule |
 | RNG | `u1-assets::rng` | hand-computed sequences, range bounds |
-| Dungeon generator | `u1-assets::dungeon` | borders, ladders, determinism, synthetic spot list |
+| Dungeon generator and monster placement | `u1-assets::dungeon` | borders, ladders, determinism, synthetic spot list |
+| Dungeon view, movement, monsters, combat, spells | `u1-assets::dview`, `::dgame` | turns, time seed; end-to-end DOSBox replay over three levels in `tests/with_game_files.rs` |
 | CASTLE.16 / CASTLE.4 / NIF.BIN | `u1-assets::images` | handcrafted bytes |
 | Outdoor rules, prices, stock, run-time tables from OUT.EXE | `u1-assets::rules` | synthetic EXE, wrap, passability, food, prices, monsters |
 | Overworld turn logic (movement, monsters, food, messages) | `u1-assets::overworld` | synthetic map/tables |
@@ -834,7 +975,7 @@ original files (one location check, plus `crates/u1-assets/tests/with_game_files
 run only when `U1_GAME_DIR` points at the user's own install; otherwise they pass
 without doing anything.
 
-## 11. Verification status (v0.4)
+## 11. Verification status (v0.5)
 
 Done against the CD-ROM copy:
 
@@ -870,13 +1011,19 @@ Done in Phase 4 (v0.4):
     armour, weapon and pub transactions; king pence and quest; exits;
     quit-save byte-equal.
 
+Done in Phase 5 (v0.5):
+
+14. Dungeons (§6.3–6.7) compared side by side with DOSBox on levels 1–3 of
+    the Mines of Mt. Drash II. Clock values recovered from the DOSBox
+    frames (one per level set-up) reproduce every frame: view
+    pixel-identical, monster movement, attacks, kills, coins, hits and
+    experience.
+
 Still open:
 
 * Jail/princess rescue and hostile guards: implemented from the
   executable but not yet compared in DOSBox.
-
-* Compare generated dungeons with in-game dungeon views.
-* Monster placement in dungeons.
+* Dungeon levels 4–10 not yet compared in DOSBox; same code paths.
 * What 0xB0/0xB2 mean in the space part.
 * Exact monster frame choice (engine uses its own pseudo-random pick).
 * A DOSBox machine=tandy comparison.

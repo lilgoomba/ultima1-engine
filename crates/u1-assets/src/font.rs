@@ -107,6 +107,10 @@ const GLYPHS: [[u8; 7]; 95] = [
 /// The 8 rows of an 8x8 cell for `c` (unknown characters show as '?').
 /// Bit 7 is the leftmost pixel.
 pub fn glyph(c: char) -> [u8; 8] {
+    if c == '\u{4}' {
+        // The diamond used for the gems (our own drawing).
+        return [0x10, 0x38, 0x7C, 0xFE, 0x7C, 0x38, 0x10, 0x00];
+    }
     let i = match c as u32 {
         0x20..=0x7E => c as usize - 0x20,
         _ => '?' as usize - 0x20,

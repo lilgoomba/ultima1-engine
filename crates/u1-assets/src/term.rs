@@ -24,6 +24,8 @@ pub struct Term {
     pub row: usize,
     /// The graphics pen of the line routines (`lineto` starts here).
     pub pen: (i32, i32),
+    /// The EGA palette swapped end for end (MONDAIN.EXE's flash).
+    pub inverted: bool,
 }
 
 impl Default for Term {
@@ -36,7 +38,7 @@ impl Term {
     /// The static frame: blue border, white viewport frame, black viewport,
     /// the message box (left) and the stats box (right) with their labels.
     pub fn new() -> Self {
-        let mut t = Term { px: vec![BLUE; W * H], col: 1, row: 24, pen: (0, 0) };
+        let mut t = Term { px: vec![BLUE; W * H], col: 1, row: 24, pen: (0, 0), inverted: false };
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);
         t.fill(0, 159, 241, 199, WHITE);
@@ -348,7 +350,11 @@ impl Term {
         let mut out = vec![0u8; W * H * 3 * scale * scale];
         for y in 0..H * scale {
             for x in 0..W * scale {
-                let c = palette[(self.px[(y / scale) * W + x / scale] & 15) as usize];
+                let mut i = (self.px[(y / scale) * W + x / scale] & 15) as usize;
+                if self.inverted {
+                    i = 15 - i;
+                }
+                let c = palette[i];
                 let o = (y * W * scale + x) * 3;
                 out[o..o + 3].copy_from_slice(&c);
             }

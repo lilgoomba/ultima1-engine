@@ -58,6 +58,7 @@ fn play_with(
     adjust(&mut rec);
     let mut game = Game::new(assets, rec, seed);
     game.space = SpaceFiles::load(&g).ok();
+    game.mondain = u1_assets::mondain::MondainFiles::load(&g).ok();
     game.fixed_times = times.iter().copied().collect();
     let _ = game.run(&mut ScriptIo::from_text(keys));
     Some(game)
@@ -237,4 +238,67 @@ fn shuttle_launch_flight_and_landing() {
     assert_eq!(g.transport(), 6);
     assert!(g.rec.u16_at(off::SHUTTLE_1) < 1000);
     assert!(g.term.row_text(21).contains("Hits:"));
+}
+
+/// Standing on the time machine with the four gems.
+fn at_time_machine(r: &mut PlayerRecord) {
+    r.set_object(1, &MapObject { kind: 0x12, unknown_02: 1, x: 40, y: 40, hits: 0 });
+    r.set_u16(off::LAST_OBJECT, 1);
+    for k in 0..4 {
+        r.set_u16(off::GEMS + 2 * k, 1);
+    }
+    r.set_u16(off::HITS, 900);
+    r.set_u16(off::FOOD, 500);
+}
+
+const TO_GEM: &str = "B    {right}{right}{right}{right}{right}{right}{right}{right}{right}{right}";
+
+#[test]
+fn time_machine_intro_and_arena() {
+    let Some(g) = play_with(40, 40, "B", 1, &[], at_time_machine) else { return };
+    assert!(g.term.row_text(3).contains("Entering the craft"));
+    assert!(g.stopped.is_none());
+    let g = play_with(40, 40, &format!("{TO_GEM}{{w1}}"), 1, &[], at_time_machine).unwrap();
+    assert!(said(&g, "You hear a strange chanting!"));
+    // Without all four gems the machine does not go.
+    let g = play_with(40, 40, "B ", 1, &[], |r| {
+        at_time_machine(r);
+        r.set_u16(off::GEMS, 0);
+    })
+    .unwrap();
+    assert!(!g.term.row_text(3).contains("Entering the craft"));
+}
+
+#[test]
+fn taking_the_gem_and_dying_returns_to_out() {
+    let Some(g) = play_with(40, 40, &format!("{TO_GEM}G{{w1}}"), 1, &[], at_time_machine) else { return };
+    assert!(said(&g, "The Gem is DESTROYED!"));
+    assert_eq!(g.hits(), 225);
+    let spaces = " ".repeat(6);
+    let g = play_with(40, 40, &format!("{TO_GEM}G{{w1}}{spaces}"), 1, &[], |r| {
+        at_time_machine(r);
+        r.set_u16(off::HITS, 20);
+    })
+    .unwrap();
+    assert!(said(&g, "thou art dead"));
+    assert!(said(&g, "Attempting resurrection!"));
+}
+
+#[test]
+fn defeating_mondain_shows_the_ending() {
+    let swings = "A{left}A{right}A{up}A{down}".repeat(30);
+    let Some(g) = play_with(40, 40, &format!("{TO_GEM}G{swings}{{w5}}"), 1, &[], |r| {
+        at_time_machine(r);
+        // 9999 hits: three quarters of that overflows the original's
+        // 16-bit sum, so taking the gem *adds* hits, as in MONDAIN.EXE.
+        r.set_u16(off::HITS, 9999);
+        r.set_u16(off::STATS, 99);
+        r.set_u16(off::STATS + 2, 99);
+        r.set_u16(off::STATS + 4, 99);
+        r.set_u16(off::READY_WEAPON, 15);
+    }) else {
+        return;
+    };
+    assert!(g.term.row_text(24).contains("Press CONTROL-ALT-DEL to Restart"));
+    assert!(g.stopped.unwrap().contains("Mondain"));
 }

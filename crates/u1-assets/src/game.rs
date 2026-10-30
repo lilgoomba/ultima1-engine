@@ -128,6 +128,8 @@ pub struct Game {
     pub fixed_times: std::collections::VecDeque<u16>,
     /// SPACE.EXE and its sprites, when present.
     pub space: Option<crate::space::SpaceFiles>,
+    /// MONDAIN.EXE and its pictures, when present.
+    pub mondain: Option<crate::mondain::MondainFiles>,
     /// OUT was restarted (after space); the turn ends without a world turn.
     pub restarted: bool,
 }
@@ -177,6 +179,7 @@ impl Game {
             fixed_time: seed,
             fixed_times: Default::default(),
             space: None,
+            mondain: None,
             restarted: false,
         };
         g.redraw();
@@ -727,7 +730,11 @@ impl Game {
             }
         } else if t == 0x12 {
             if (0..4).all(|k| self.qty(slot::GEM, k) > 0) {
-                self.stopped = Some("the time machine ending (MONDAIN.EXE) is not part of this engine yet");
+                if self.mondain.is_some() {
+                    self.time_travel(io)?;
+                } else {
+                    self.stopped = Some("MONDAIN.EXE (the time machine ending) was not found");
+                }
             } else {
                 self.term.boxed(self.term_blue());
                 for (col, row, o) in m::TIME_MACHINE_LINES {
@@ -747,6 +754,19 @@ impl Game {
         self.sync_record();
         crate::space::run_space(self, io)?;
         self.restart_out();
+        Ok(())
+    }
+
+    /// The time machine with all four gems: OUT hands over to MONDAIN.EXE.
+    /// A fallen player comes back through OUT's death and resurrection; a
+    /// victory ends the game (the original waits for a reboot).
+    fn time_travel(&mut self, io: &mut dyn Io) -> IoResult<()> {
+        self.ow.transport = self.transport();
+        self.sync_record();
+        match crate::mondain::run_mondain(self, io)? {
+            crate::mondain::MondainEnd::Won => self.stopped = Some("Mondain is defeated; the game ends here as in the original"),
+            crate::mondain::MondainEnd::Died => self.restart_out(),
+        }
         Ok(())
     }
 
@@ -1283,7 +1303,7 @@ impl Game {
     // ------------------------------------------------------------ ready / ztats
 
     /// Ready `bc20`.
-    fn cmd_ready(&mut self, io: &mut dyn Io) -> IoResult<()> {
+    pub(crate) fn cmd_ready(&mut self, io: &mut dyn Io) -> IoResult<()> {
         self.say(m::READY_MENU);
         let k = self.key_timeout(io)?;
         self.term.fill(56, 192, 230, 199, BLACK);

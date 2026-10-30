@@ -19,6 +19,7 @@ pub mod images;
 pub mod io;
 pub mod locations;
 pub mod map;
+pub mod mondain;
 pub mod overworld;
 pub mod palette;
 pub mod render;

@@ -1,6 +1,6 @@
 //! Mondain's lair (MONDAIN.EXE): the time machine trip, the fight in the
 //! arena, the gem, Mondain's transformation, his death and the ending
-//! (SPEC §16).
+//! (SPEC §13).
 //!
 //! The strings, the arena layout and the weapon/spell tables come from the
 //! user's MONDAIN.EXE; the pictures from EGAMOND.BIN, EGATILES.BIN and

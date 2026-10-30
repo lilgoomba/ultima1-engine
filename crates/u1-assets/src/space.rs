@@ -1,5 +1,5 @@
 //! The space program (SPACE.EXE): launch, the galaxy, top-down and
-//! first-person flight, fighters, docking and landing (SPEC §15).
+//! first-person flight, fighters, docking and landing (SPEC §12).
 //!
 //! Everything runs on the player record; the strings and bitmaps come
 //! from the user's SPACE.EXE, EGASPACE.BIN and EGAFIGHT.BIN at runtime.

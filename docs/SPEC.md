@@ -76,8 +76,8 @@ Sizes are from Daniel D'Agostino's file list [S1]; descriptions merge [S1],
 | `ULTIMA.EXE` | 36,880 | Intro program | code; not read by engine |
 | `GEN.EXE` | 20,112 | Main menu & character generation | code; not read |
 | `OUT.EXE` | 69,858 | Sosaria: overworld, towns, dungeons | code; engine reads two small tables from it at run time (§4.1, §6) |
-| `SPACE.EXE` | 39,824 | Space flight / combat | code — never read |
-| `MONDAIN.EXE` | 31,650 | Final battle with Mondain | code — never read |
+| `SPACE.EXE` | 39,824 | Space flight / combat | strings, tables read at run time (§12) |
+| `MONDAIN.EXE` | 31,650 | Final battle with Mondain | strings, arena, tables read at run time (§13) |
 | `MAP.BIN` | 13,104 | Overworld map (§4) | CONFIRMED (docs), height CONFLICT |
 | `TCD.BIN` | 6,840 | 10 town/castle maps (§5) | CONFIRMED (docs) |
 | `EGATILES.BIN` | 6,656 | Overworld tiles, EGA (§3) | CONFIRMED (docs) |
@@ -679,7 +679,7 @@ note [S17]; method in [S18].
 | 0xAA | u16 | Number of used map objects − 1 | VERIFIED [M-save]: matches the non-empty object slots |
 | 0xAC | u16 | Move counter | VERIFIED [M-save]: increments per turn |
 | 0xAE | u16 | Move counter, high word | VERIFIED (exe): 0xAC/0xAE form one 32-bit counter |
-| 0xB0, 0xB2 | u16 x2 | Shuttle values | VERIFIED (exe): both set to 1000 when a shuttle is bought. Meaning UNCONFIRMED (fuel/shields per [S8b]); only used by the space part |
+| 0xB0, 0xB2 | u16 x2 | Shuttle fuel, shield | VERIFIED (exe, Phase 6): both set to 1000 when a shuttle is bought; read at launch, written back on a safe landing, zeroed when the shuttle burns up (§12) |
 | 0xB4–0x333 | 40 x 16 B | Map objects | below |
 
 Map object (16 bytes): `+0 u16` object tile (index into §3.2) · `+2 u16`
@@ -746,8 +746,8 @@ restated here; larger tables are read from the user's `OUT.EXE` at run time
 * Character creation bonuses: [S8b]. A new character starts at
   (49,40) on foot with Hits 150, Food 200 and Coin 100: VERIFIED (GEN.EXE +
   DOSBox).
-* Space sequence, Mondain battle, NPC dialogue: UNKNOWN beyond observed
-  behaviour. Sound is PC-speaker code; there are no sound data files.
+* Space and Mondain's lair: see §12 and §13. Sound is PC-speaker code;
+  there are no sound data files.
 
 ### 9.1 Outdoor rules and run-time tables: VERIFIED (original executable), Phase 3
 
@@ -888,7 +888,8 @@ from the user's `OUT.EXE` at run time, and maps come from `TCD.BIN`.
   §5) the key opens. `U` with the key opens only that one; the other
   stays shut. The key is found by killing the castle's jester. A freed
   princess follows the player once the castle is roused. Stepping off the
-  map next to her adds 500 coin, 500 hits and 500 experience. If at least
+  map with her in one of the eight cells around the player adds 500 coin,
+  500 hits and 500 experience [DOSBox, Phase 6]. If at least
   20 enemy ships were destroyed and experience is 7000 or more, a time
   machine is also placed on land near the castle.
 
@@ -904,7 +905,8 @@ merchants, guards, the king and princesses each have their own turn
 routine. Guards walk toward the player once the town is hostile, and
 strike when next to the player. The town turns hostile when the player
 attacks someone or a theft is noticed. A kill gives 1 experience (a
-guard gives 15).
+guard gives 15). Only the first point is redrawn at once; the guard's
+extra 14 show up at the next stats redraw [DOSBox].
 
 **Shops** (`T` next to a counter; a counter's region code picks the
 shop, §5; "not by a counter" otherwise [DOSBox]):
@@ -948,7 +950,7 @@ generator from the clock.
 100. Experience and Coin always show in the text colour [DOSBox].
 
 **UNKNOWN / approximate:** the exact NPC frame choice; the duration of
-some waits; the space and time-machine parts.
+some waits.
 
 ## 10. What the engine implements today
 
@@ -968,6 +970,9 @@ some waits; the space and time-machine parts.
 | Outdoor rules, prices, stock, run-time tables from OUT.EXE | `u1-assets::rules` | synthetic EXE, wrap, passability, food, prices, monsters |
 | Overworld turn logic (movement, monsters, food, messages) | `u1-assets::overworld` | synthetic map/tables |
 | Towns, castles, NPCs, shops, pub, kings, princess, quit-save | `u1-assets::game`, `::town`, `::shops`, `::term` | stat colours; end-to-end scripts in `tests/with_game_files.rs` (need `U1_GAME_DIR`) |
+| Space: launch, galaxy, views, fighters, docking, landing | `u1-assets::space` | Space Ace, small fighters, docking, landing (need `U1_GAME_DIR`) |
+| Mondain's lair and the ending | `u1-assets::mondain` | intro, arena, gem, death, victory (need `U1_GAME_DIR`) |
+| Death picture and resurrection | `u1-assets::game` | starving run (need `U1_GAME_DIR`) |
 | Playable game binary | `u1` (SDL2) | screen layout, animation, font |
 
 All unit-test data is synthetic, built from this spec. Tests that read
@@ -975,7 +980,7 @@ original files (one location check, plus `crates/u1-assets/tests/with_game_files
 run only when `U1_GAME_DIR` points at the user's own install; otherwise they pass
 without doing anything.
 
-## 11. Verification status (v0.5)
+## 11. Verification status (v0.6)
 
 Done against the CD-ROM copy:
 
@@ -1025,14 +1030,102 @@ Done in Phase 5 (v0.5):
     door that the key opens is chosen at random on each entry. In that
     run the princess was behind the door that would not open.
 
+Done in Phase 6 (v0.6):
+
+16. Space (§12): launch, top-down view, landing after a crunch and wrap
+    compared in DOSBox; Space Ace, untouchable small fighters, docking and
+    the ship change checked by tests against the user's `SPACE.EXE`.
+17. Mondain (§13): intro panels and arena pixel-identical in DOSBox; the
+    fight, gem, transformation and ending reproduced from the executable.
+18. Death (§14): skull picture pixel-identical; resurrection compared.
+19. Princess rescue reached in DOSBox: on a re-entry the key matched her
+    door; leading her out added 500 hits, coin and experience.
+
 Still open:
 
-* The princess rescue reward was not seen in DOSBox (in the run checked,
-  the princess was behind the door the key would not open).
+* The victory ending was not played through in DOSBox.
+* Space combat AI (fighters firing back) checked only against the code.
 * Dungeon levels 4–10 not yet compared in DOSBox; same code paths.
-* What 0xB0/0xB2 mean in the space part.
 * Exact monster frame choice (engine uses its own pseudo-random pick).
 * A DOSBox machine=tandy comparison.
+
+## 12. Space (`SPACE.EXE`): Phase 6
+
+VERIFIED (original executable) unless marked; [DOSBox] = compared side by
+side. Strings, the galaxy layout tables and the ship and fighter sprites
+(`EGASPACE.BIN`, `EGAFIGHT.BIN`) are read from the user's files at run time.
+
+* **Launch.** Boarding a shuttle outdoors hands over to the space program.
+  The shuttle's fuel and shield come from save 0xB0/0xB2; other ships
+  start full. A countdown is shown, then the home sector [DOSBox].
+* **Galaxy.** A 7x7 grid of sectors, home at (3,3); each holds a few stations, enemy
+  fighters and possibly a star. The sector scan draws the whole grid.
+  Hyperjump moves to a neighbouring sector.
+* **Views.** Top-down (turn, thrust, retro; an idle ship keeps drifting
+  and the prompt prints Pass) and the first-person front view (speed 1-8,
+  crosshair, streaming stars). The top-down view matched DOSBox pixel for
+  pixel; front-view star positions are random in both.
+* **Fire** works only in front view, costs 10 fuel and draws two laser
+  lines to the crosshair. A fighter inside the hit box of its current size
+  is destroyed: +100 experience and +1 to the kill counter (save 0xA6).
+  The smallest (size 0) fighter's box is empty, so a distant fighter
+  cannot be hit, as in the original. Fighters sometimes shoot back.
+* **Space Ace.** The 20th kill shows a three-line panel; each later kill
+  prints a short "still an ace" line.
+* **Touching something** is checked in this order: a star (the ship
+  melts, death); the planet, only in sector (3,3) within 25 units of
+  (60,75): a shuttle lands safely and its fuel and shield are written to
+  0xB0/0xB2, any other ship burns up (0xB0/0xB2 zeroed, death); otherwise
+  "Crunch!": the shield loses a quarter plus 5, the velocity reverses and
+  an empty shield kills. An idle shuttle drifting into the home station
+  crunches, bounces back, wraps at the sector edge and lands [DOSBox].
+* **Docking** at a station: without vacuum-proof armour (ready armour
+  below 4) the pilot dies. Otherwise 500 coin refuels and recharges the
+  ship (a short message if there is not enough). With more than one ship
+  docked the player picks a port 1-4 and can leave in that ship.
+* **Back to OUT.** Landing or death restarts the outdoor game from the
+  record; death leaves hits and food at 0, so the death flow (§14) runs.
+
+## 13. The time machine and Mondain's lair (`MONDAIN.EXE`): Phase 6
+
+* A time machine is outdoor object 0x12. It is placed near a castle when
+  a space ace (20+ kills, 7000+ experience) rescues a princess (§9.2),
+  up to nine times. Boarding it without all four gems shows a short
+  panel and nothing happens; with all four gems the lair starts.
+* Four intro panels, each closed with "Press Space to continue", then the
+  arena: a fixed grid read from the executable, tiles from `EGAMOND.BIN`
+  and `EGATILES.BIN` [DOSBox: intro and arena pixel-identical].
+* Mondain starts with 1000 hit points. Until the player acts he only
+  chants now and then. Attacks use the ready weapon's range (walls do not
+  stop a shot). Spells: Magic Missile, Blink, Create, Destroy; Kill only
+  doubles his hit points (up to 15000).
+* His turn: next to the player he strikes (chance from Agility and
+  armour; damage hits/32 + 1..20); within 7 cells, half the time he
+  casts one of three spells (a missile, a blast that lowers all six
+  stats, or a shock with a palette flash); otherwise he steps toward the
+  player.
+* **The gem.** `G` next to it takes it for three quarters of the current
+  hits. Fire bursts then start appearing on random empty cells. Below 501
+  hit points he becomes a demon that wanders and regains 5 when stuck.
+  At 0 he falls; without the gem taken he rises again (+25 per turn).
+* **Ending.** With the gem taken and Mondain at 0, the victory panel is
+  shown, then the `NIF.BIN` picture and the closing text with the
+  restart prompt. The original stops there; so does the engine.
+* **Death in the lair** returns to OUT with hits and food at 0 (§14).
+
+## 14. Death and resurrection: Phase 6
+
+VERIFIED (original executable) [DOSBox].
+
+* Triggered when hits or food reach 0 (outdoors, in a dungeon, or on the
+  way back from space or the lair).
+* The view is cleared and a 64x95 one-bit picture (a skull, stored in
+  `OUT.EXE`'s data segment) is drawn at (128,31) in white; three death
+  sounds; "<name>, thou art dead", a pause, then "Attempting
+  resurrection!". Hits count up to 99, every outdoor monster in all four
+  lands is removed, food counts up to 99, and coin, transport, weapons and
+  armour are cleared before the player is placed back on land. The
+  picture matched DOSBox pixel for pixel.
 
 ## Sources
 

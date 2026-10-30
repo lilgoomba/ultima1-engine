@@ -50,7 +50,7 @@ pub mod off {
     pub const STEPS_HIGH: usize = 0xAE;
     /// The shuttle's fuel and shield, carried between space trips: both set
     /// to 1000 when a shuttle is sold, read at launch, written back on a
-    /// safe landing and zeroed when the shuttle is lost (SPEC §15).
+    /// safe landing and zeroed when the shuttle is lost (SPEC §12).
     pub const SHUTTLE_0: usize = 0xB0;
     pub const SHUTTLE_1: usize = 0xB2;
 }

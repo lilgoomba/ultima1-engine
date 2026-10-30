@@ -329,7 +329,9 @@ impl Lair<'_> {
     fn draw_tile(&mut self, t: i16, x: i16, y: i16) {
         let i = t.clamp(0, 20) as usize;
         let px = &self.f.tiles[i];
-        self.g.term.blit_art(ArtId::Mond(i as u16), None, 8 + 16 * x as usize, 8 + 16 * y as usize, 16, 16, px, 0);
+        // Sprites stand on the floor tile (a pack's floor shows around them).
+        let under = (i != 0 && i != 5).then_some(ArtId::Mond(0));
+        self.g.term.blit_art(ArtId::Mond(i as u16), under, 8 + 16 * x as usize, 8 + 16 * y as usize, 16, 16, px, 0);
     }
     fn draw_cell(&mut self, x: i16, y: i16) {
         let c = self.cell(x, y);

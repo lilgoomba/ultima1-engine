@@ -1373,7 +1373,7 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   (`frame`, `cockpit`, `starfield`, `deep`, `earth`, `sun`, `station`,
   `ship0`–`ship2`, `fighter`, `reticle`). It holds `file`,
   `frames` or `variants` (PNG paths relative to the pack), and optionally
-  `scroll` and `fps`. An unknown section is skipped with a warning, and a wrong-sized
+  `scroll`, `fps` and `behind`. An unknown section is skipped with a warning, and a wrong-sized
   PNG is resized nearest-neighbour with a warning. A malformed line, an
   unknown key in a picture section or a missing or unreadable PNG is an
   error, and the pack is not loaded.
@@ -1386,7 +1386,8 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   pixels it drew, the map cell it shows (world map x,y outdoors, town
   map cell in towns and castles) and, for a sprite, the ground under it
   (outdoors the terrain under a tile > 9; in towns the town map tile
-  under the player or a person). A later blit that overlaps an op
+  under the player or a person; in Mondain's arena the floor tile 0 under
+  every tile but the floor and the wall). A later blit that overlaps an op
   removes it.
 * **Variants.** `variants = [...]` lists alternative pictures for one id
   (with `file`, the file is the first). Each map cell shows variant
@@ -1403,6 +1404,11 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   terrain under it, or over black if the pack lacks that terrain. So
   anything that has been drawn over (text, the cursor, hit flashes, the
   map reveal) automatically shows the original art.
+* **Backdrops.** With `behind = true` the picture only shows where the
+  original region is black (colour 0). The original's lit pixels stay as
+  they are, and a backdrop pixel diagonally down-right of a lit one is
+  darkened to a quarter, a drop shadow. This is how a screen of text
+  (the ending, `screen.nif`) gets a picture without changing its words.
 * **Animation.** With `scroll = true` (water) the frame is chosen from
   the original scroll offset (frame = offset · n / 16 for n frames) and
   the picture is shifted by offset·S pixels, so the motion keeps the

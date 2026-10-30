@@ -29,6 +29,8 @@
 //!
 //! [screen.nif]
 //! file = "screens/nif.png"
+//! behind = true           # only under the original's black pixels: its
+//!                         # lit pixels (text) stay, with a drop shadow
 //!
 //! [dungeon.wall]          # first-person view textures, any size
 //! file = "dungeon/wall.png"
@@ -258,6 +260,10 @@ pub struct Entry {
     /// Alternative pictures (`variants`), one chosen per map cell so large
     /// areas do not repeat; empty if none. `frames[0]` is the first.
     pub variants: Vec<Rgba>,
+    /// The picture is a backdrop: it shows only where the original region
+    /// is black, and the original's lit pixels stay on top with a dark
+    /// shadow (screens of text, such as the ending).
+    pub behind: bool,
 }
 
 /// Which of `n` variants a map cell shows: a fixed hash of the cell, so a
@@ -352,7 +358,7 @@ impl Pack {
             };
             let mut files = Vec::new();
             let mut vfiles = Vec::new();
-            let (mut scroll, mut fps) = (false, 0.0);
+            let (mut scroll, mut fps, mut behind) = (false, 0.0, false);
             for (k, v) in keys {
                 match (k.as_str(), v) {
                     ("file", Value::Str(f)) => files.push(f.clone()),
@@ -373,6 +379,7 @@ impl Pack {
                         }
                     }
                     ("scroll", Value::Bool(b)) => scroll = *b,
+                    ("behind", Value::Bool(b)) => behind = *b,
                     ("fps", Value::Int(n)) => fps = *n as f64,
                     ("fps", Value::Float(f)) => fps = *f,
                     ("name" | "notes", _) => {}
@@ -401,7 +408,7 @@ impl Pack {
             if frames.is_empty() {
                 frames.push(variants[0].clone());
             }
-            pack.entries.insert(id, Entry { frames, scroll, fps, variants });
+            pack.entries.insert(id, Entry { frames, scroll, fps, variants, behind });
         }
         Ok(pack)
     }
@@ -702,6 +709,35 @@ fn space(out: &mut [u8], s: usize, t: &Term, sc: &crate::term::SScene, pack: &Pa
     }
 }
 
+/// Draw backdrop `img` over region `op` where the original is black; the
+/// original's lit pixels stay, each with a shadow one original pixel down
+/// and right on the backdrop.
+fn backdrop(out: &mut [u8], s: usize, t: &Term, op: &crate::term::ArtOp, img: &Rgba) {
+    let ow = W * s;
+    let lit = |x: usize, y: usize| x < W && y < H && t.px[y * W + x] != 0;
+    for y in 0..op.h * s {
+        for x in 0..op.w * s {
+            let (dx, dy) = (op.x * s + x, op.y * s + y);
+            if dx >= ow || dy >= H * s {
+                continue;
+            }
+            let (ox, oy) = (dx / s, dy / s);
+            if lit(ox, oy) {
+                continue;
+            }
+            let (ix, iy) = (x * img.w / (op.w * s), y * img.h / (op.h * s));
+            let src = (iy * img.w + ix) * 4;
+            let d = (dy * ow + dx) * 3;
+            let a = u32::from(img.px[src + 3]);
+            let shade = if ox > 0 && oy > 0 && lit(ox - 1, oy - 1) { 4 } else { 1 };
+            for c in 0..3 {
+                let v = (u32::from(img.px[src + c]) * a + u32::from(out[d + c]) * (255 - a)) / 255;
+                out[d + c] = (v / shade) as u8;
+            }
+        }
+    }
+}
+
 /// The screen at `pack.scale()` times 320x200 as RGB: the original scaled
 /// up nearest-neighbour, with the pack's art over every intact region
 /// whose picture it has. `ms` drives clock animations.
@@ -755,6 +791,10 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
         }
         let (x0, y0) = (op.x * s, op.y * s);
         let f = Pack::pick(e, op.pos, op.shift as usize, op.w, ms);
+        if e.behind {
+            backdrop(&mut out, s, t, op, f);
+            continue;
+        }
         if f.px.chunks(4).any(|p| p[3] < 255) {
             // A sprite: the terrain behind it, else black (the original
             // tiles have black backgrounds).
@@ -854,6 +894,23 @@ file = "x.png"
         assert_eq!(parse_id("space.ship1"), Some(ArtId::Space(8)));
         assert_eq!(parse_id("space.reticle"), Some(ArtId::Space(sp::RETICLE)));
         assert_eq!(parse_id("space.planet"), None);
+    }
+
+    #[test]
+    fn a_backdrop_shows_only_behind_the_original_text() {
+        let mut t = Term::new();
+        let mut pic = vec![0u8; W * 168];
+        pic[10 * W + 10] = 15;
+        t.blit_art(ArtId::Screen("nif"), None, 0, 0, W, 168, &pic, 0);
+        let p = Pack::parse("tile_size = 32\n[screen.nif]\nfile = \"bg.png\"\nbehind = true", |_| Ok(solid(64, 64, [40, 80, 120, 255]))).unwrap();
+        assert!(p.entries[&ArtId::Screen("nif")].behind);
+        let rgb = compose(&t, &EGA_PALETTE, &p, 0);
+        // Black: the backdrop; lit: the original; down-right: shadowed.
+        assert_eq!(px(&rgb, 2, 0, 0), [40, 80, 120]);
+        assert_eq!(px(&rgb, 2, 20, 20), EGA_PALETTE[15]);
+        assert_eq!(px(&rgb, 2, 22, 22), [10, 20, 30]);
+        // Below the screen region: original.
+        assert_eq!(px(&rgb, 2, 0, 2 * 170), [0, 0, 0]);
     }
 
     #[test]

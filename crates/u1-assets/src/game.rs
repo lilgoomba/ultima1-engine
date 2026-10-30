@@ -848,7 +848,7 @@ impl Game {
         self.set(off::COIN, 0);
         self.show_stats();
         self.term.clear_view();
-        // (The original draws a picture here; not reproduced, see SPEC.)
+        self.draw_death_picture();
         for _ in 0..3 {
             self.snd(io, 2);
         }
@@ -862,8 +862,9 @@ impl Game {
             self.show_hits();
             io.pause(&self.term, 1)?;
         }
+        // `86e1` once for each of the four lands: every monster outdoors goes.
+        self.ow.entities.retain(|e| e.tile < 0x13);
         let land = rules::land_of(self.ow.x, self.ow.y);
-        self.ow.entities.retain(|e| !(e.tile >= 0x13 && rules::land_of(e.x, e.y) == land));
         for f in 1..=99 {
             self.set(off::FOOD, f);
             self.show_food();
@@ -902,10 +903,28 @@ impl Game {
                 break;
             }
         }
+        // The record holds the restored values; the outdoor state takes
+        // them before handing back its new position.
+        self.to_ow();
         self.from_ow();
         self.ow.dead = false;
         self.redraw();
         Ok(())
+    }
+
+    /// `ab9d`: the death picture, a 64x95 one-colour bitmap from OUT's
+    /// data drawn at (128,31) in the foreground colour (white on EGA).
+    fn draw_death_picture(&mut self) {
+        for r in 0..95 {
+            for k in 0..4 {
+                let w = self.a.exe.w(m::DEATH_PICTURE + r * 8 + k * 2);
+                for i in 0..16 {
+                    if w & (0x8000 >> i) != 0 {
+                        self.term.plot(128 + (k * 16 + i) as i32, 31 + r as i32, 15);
+                    }
+                }
+            }
+        }
     }
 
     /// Enter `52ab` (verified from original executable).

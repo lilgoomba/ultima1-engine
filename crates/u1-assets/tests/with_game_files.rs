@@ -274,7 +274,7 @@ fn taking_the_gem_and_dying_returns_to_out() {
     let Some(g) = play_with(40, 40, &format!("{TO_GEM}G{{w1}}"), 1, &[], at_time_machine) else { return };
     assert!(said(&g, "The Gem is DESTROYED!"));
     assert_eq!(g.hits(), 225);
-    let spaces = " ".repeat(6);
+    let spaces = " ".repeat(4);
     let g = play_with(40, 40, &format!("{TO_GEM}G{{w1}}{spaces}"), 1, &[], |r| {
         at_time_machine(r);
         r.set_u16(off::HITS, 20);
@@ -301,4 +301,20 @@ fn defeating_mondain_shows_the_ending() {
     };
     assert!(g.term.row_text(24).contains("Press CONTROL-ALT-DEL to Restart"));
     assert!(g.stopped.unwrap().contains("Mondain"));
+}
+
+#[test]
+fn starving_shows_the_death_picture_then_resurrects() {
+    let starving = |r: &mut PlayerRecord| r.set_u16(off::FOOD, 1);
+    // Stopped at the pause after "thou art dead": the skull fills the view.
+    let Some(g) = play_with(40, 40, "{right}{right}{p}", 1, &[], starving) else { return };
+    assert!(said(&g, "thou art dead"));
+    assert_eq!(g.term.at(160, 60), 15);
+    assert_eq!(g.term.at(129, 31), 0);
+    // Afterwards the restored values stick: no second death on the next moves.
+    let g = play_with(40, 40, "{right}{right}{right}{right}{w1}", 1, &[], starving).unwrap();
+    assert_eq!(g.hits(), 99);
+    assert!(g.food() >= 95, "food {}", g.food());
+    assert_eq!(g.rec.coin(), 0);
+    assert!(!said(&g, "thou art dead"));
 }

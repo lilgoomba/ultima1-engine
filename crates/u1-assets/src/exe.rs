@@ -329,6 +329,8 @@ pub mod m {
     pub const VIEW_X: usize = 0x3808;
     pub const VIEW_Y: usize = 0x3814;
     pub const RESURRECTION: usize = 0x3A0A;
+    /// The death picture: 95 rows of four words, most significant bit leftmost.
+    pub const DEATH_PICTURE: usize = 0x1A14;
     pub const QUEST_COMPLETED: usize = 0x0B66;
     pub const YOU_FIND_A: usize = 0x0B82;
     pub const THOU_DOST_GAIN: usize = 0x0B8D;

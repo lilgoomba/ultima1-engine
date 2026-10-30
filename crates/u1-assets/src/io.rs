@@ -32,6 +32,9 @@ pub mod keys {
     pub const WAIT: u8 = 0xFF;
     /// Script-only: one poll that finds no key (lets time pass).
     pub const IDLE: u8 = 0xFE;
+    /// Script-only: `{p}` stops the script at the next timed pause, so a
+    /// screenshot can catch a picture that the pause would show.
+    pub const STOP_AT_PAUSE: u8 = 0xFD;
 }
 
 pub trait Io {
@@ -124,6 +127,7 @@ impl ScriptIo {
                         "enter" => keys::ENTER,
                         "bs" => keys::BACKSPACE,
                         "space" => b' ',
+                        "p" => keys::STOP_AT_PAUSE,
                         _ => b'?',
                     });
                 }
@@ -139,7 +143,7 @@ impl Io for ScriptIo {
         loop {
             match self.keys.pop_front() {
                 // A stray wait token where a key is expected is skipped.
-                Some(keys::WAIT) => continue,
+                Some(keys::WAIT | keys::STOP_AT_PAUSE) => continue,
                 Some(keys::IDLE) => return Ok(None),
                 Some(k) => return Ok(Some(k)),
                 None => return Err(Halt),
@@ -152,6 +156,9 @@ impl Io for ScriptIo {
     }
 
     fn pause(&mut self, _t: &Term, _ticks: u32) -> IoResult<()> {
+        if self.keys.front() == Some(&keys::STOP_AT_PAUSE) {
+            return Err(Halt);
+        }
         Ok(())
     }
 

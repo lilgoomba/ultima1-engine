@@ -213,6 +213,11 @@ pub mod m {
     pub const GOLD: usize = 0x39B9;
     pub const ENEMY_VESSELS: usize = 0x39C7;
     pub const MORE: usize = 0x3962;
+    pub const FIRE: usize = 0x0BD0;
+    pub const FIRE_WHAT: usize = 0x0BD6;
+    pub const CANNONS: usize = 0x0BDC;
+    pub const DROP_WEAPON: usize = 0x040E;
+    pub const DROP_ARMOUR: usize = 0x041A;
 
     // Pointer tables.
     pub const WEAPON_LONG: usize = 0x277E;

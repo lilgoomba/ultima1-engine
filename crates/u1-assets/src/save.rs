@@ -35,6 +35,10 @@ pub mod off {
     pub const SPELLS: usize = 0x82; // 10 x i16
     pub const VEHICLES: usize = 0x98; // 7 x i16: horse cart raft frigate aircar shuttle timemachine
     pub const LAST_SIGNPOST: usize = 0xA8;
+    /// Enemy vessels destroyed (space).
+    pub const ENEMIES: usize = 0xA6;
+    /// Index of the last used object slot (slot 0 is the player).
+    pub const LAST_OBJECT: usize = 0xAA;
     /// Sound on/off flag toggled by the "Noise" command.
     pub const SOUND: usize = 0x38;
     /// Quest words, one per castle: slot k (1..=8) at QUESTS + 2k; slot 0 unused.
@@ -148,6 +152,14 @@ impl PlayerRecord {
             0xFFFF => QuestState::Active,
             1 => QuestState::Done,
             n => QuestState::Other(n),
+        }
+    }
+
+    /// Overwrite the first ten bytes of object slot `i`.
+    pub fn set_object(&mut self, i: usize, o: &MapObject) {
+        let b = OBJECTS_OFFSET + i * OBJECT_SIZE;
+        for (k, v) in [o.kind, o.unknown_02, o.x, o.y, o.hits].into_iter().enumerate() {
+            self.set_u16(b + 2 * k, v);
         }
     }
 

@@ -23,9 +23,16 @@ pub struct Entity {
     pub x: i32,
     pub y: i32,
     pub hp: u16,
+    /// Second word of the save slot (terrain under a placed vehicle; kept
+    /// as loaded so a save round trip is byte-equal).
+    pub aux: u16,
 }
 
 impl Entity {
+    pub fn new(tile: u8, x: i32, y: i32, hp: u16) -> Self {
+        Entity { tile, x, y, hp, aux: 0 }
+    }
+
     pub fn is_monster(&self) -> bool {
         rules::is_monster_tile(self.tile)
     }
@@ -109,9 +116,9 @@ impl Overworld {
         o.entities = p
             .objects()
             .iter()
+            .take(usize::from(p.u16_at(off::LAST_OBJECT)).min(39) + 1)
             .skip(1)
-            .filter(|ob| ob.kind != 0)
-            .map(|ob| Entity { tile: ob.kind as u8, x: i32::from(ob.x), y: i32::from(ob.y), hp: ob.hits })
+            .map(|ob| Entity { tile: ob.kind as u8, x: i32::from(ob.x), y: i32::from(ob.y), hp: ob.hits, aux: ob.unknown_02 })
             .collect();
         o
     }
@@ -152,6 +159,12 @@ impl Overworld {
         if self.dead {
             return;
         }
+        self.step_only(dir, map, t, locs);
+        self.end_turn(map, t);
+    }
+
+    /// The movement command itself, without the rest of the turn.
+    pub fn step_only(&mut self, dir: Dir, map: &WorldMap, t: &ExeTables, locs: &LocationTable) {
         self.say(format!(">{}", t.direction_names[dir as usize]));
         let (dx, dy) = dir.delta();
         let (nx, ny) = rules::player_step(self.x, self.y, dx, dy);
@@ -186,7 +199,6 @@ impl Overworld {
             }
             Err(b) => self.say(t.move_messages[b.message_index()].clone()),
         }
-        self.end_turn(map, t);
     }
 
     /// "Pass": a turn without moving (also what the game does by itself
@@ -223,7 +235,9 @@ impl Overworld {
             return;
         }
         if self.transport < 6 {
-            self.entities.push(Entity { tile: tile_for_transport(self.transport), x: self.x, y: self.y, hp: 0 });
+            let tile = tile_for_transport(self.transport);
+            // A vehicle left by the player keeps its tile in the second word.
+            self.entities.push(Entity { tile, x: self.x, y: self.y, hp: 0, aux: u16::from(tile) });
         }
         self.transport = 0;
     }
@@ -264,7 +278,7 @@ impl Overworld {
             if Self::terrain(map, x, y) == want && rules::in_monster_band(x, y) && self.entity_at(x, y).is_none() {
                 let tile = rules::FIRST_MONSTER_TILE + 2 * kind as u8;
                 let hp = rules::monster_hp(t, kind, self.exp);
-                self.entities.push(Entity { tile, x, y, hp });
+                self.entities.push(Entity::new(tile, x, y, hp));
                 return;
             }
         }
@@ -383,7 +397,7 @@ mod tests {
         assert_eq!((o.x, o.y), (10, 10));
         assert_eq!(o.messages.back().unwrap(), "m1");
         assert_eq!(o.moves, 1);
-        o.entities.push(Entity { tile: 0x15, x: 10, y: 11, hp: 5 });
+        o.entities.push(Entity::new(0x15, 10, 11, 5));
         o.step(Dir::South, &map, &t, &locs);
         assert!(o.messages.iter().any(|m| m == "m5 Mon1"));
     }
@@ -395,7 +409,7 @@ mod tests {
         let mut map = world(0);
         map.cells[5 * 168 + 5] = 1;
         let mut o = Overworld::new_at(5, 5, 1);
-        o.entities.push(Entity { tile: 0x0E, x: 6, y: 5, hp: 0 });
+        o.entities.push(Entity::new(0x0E, 6, 5, 0));
         o.step(Dir::East, &map, &t, &locs); // walk onto the frigate
         assert_eq!(o.x, 6);
         o.board();
@@ -433,8 +447,8 @@ mod tests {
         t.monster_move_chance = [0; 8];
         let map = world(1);
         let mut o = Overworld::new_at(83, 20, 1);
-        o.entities.push(Entity { tile: 0x2B, x: 60, y: 20, hp: 5 });
-        o.entities.push(Entity { tile: 0x0B, x: 60, y: 21, hp: 0 });
+        o.entities.push(Entity::new(0x2B, 60, 20, 5));
+        o.entities.push(Entity::new(0x0B, 60, 21, 0));
         o.step(Dir::East, &map, &t, &locs);
         assert_eq!(o.x, 84);
         assert_eq!(o.entities.len(), 1);

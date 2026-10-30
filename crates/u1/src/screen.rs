@@ -162,7 +162,7 @@ mod tests {
     fn layout_and_player_cell() {
         let map = WorldMap { width: 168, height: 156, cells: vec![1; 168 * 156] };
         let mut o = Overworld::new_at(50, 50, 1);
-        o.entities.push(Entity { tile: 0x0B, x: 51, y: 50, hp: 0 });
+        o.entities.push(Entity::new(0x0B, 51, 50, 0));
         o.say(">North");
         let mut s = Screen::new();
         s.compose(&o, &map, &tiles(), 0, true);

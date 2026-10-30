@@ -7,7 +7,7 @@
 
 use crate::error::{AssetError, Result};
 use crate::map::WorldMap;
-use crate::tiles::{TileFileSpec, TileSet, CGA_TILES, EGA_TILES, T1K_TILES};
+use crate::tiles::{TileFileSpec, TileSet, CGA_TILES, CGA_TOWN, EGA_TILES, EGA_TOWN, T1K_TILES, T1K_TOWN};
 use std::path::{Path, PathBuf};
 
 /// Graphics modes the 1986 DOS release ships data for.
@@ -24,6 +24,15 @@ impl VideoMode {
             VideoMode::Ega => EGA_TILES,
             VideoMode::Tandy => T1K_TILES,
             VideoMode::Cga => CGA_TILES,
+        }
+    }
+
+    /// The 8x8 town and castle tiles of this mode.
+    pub fn town_tiles(self) -> TileFileSpec {
+        match self {
+            VideoMode::Ega => EGA_TOWN,
+            VideoMode::Tandy => T1K_TOWN,
+            VideoMode::Cga => CGA_TOWN,
         }
     }
 
@@ -80,6 +89,11 @@ impl GameDir {
 
     pub fn load_world_tiles(&self, mode: VideoMode) -> Result<TileSet> {
         let spec = mode.world_tiles();
+        TileSet::decode_spec(&self.read(spec.file_name)?, &spec)
+    }
+
+    pub fn load_town_tiles(&self, mode: VideoMode) -> Result<TileSet> {
+        let spec = mode.town_tiles();
         TileSet::decode_spec(&self.read(spec.file_name)?, &spec)
     }
 

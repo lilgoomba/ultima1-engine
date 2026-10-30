@@ -314,28 +314,35 @@ impl FoodClock {
 
 // ------------------------------------------------------------------- shops
 
+// All shop arithmetic is 16-bit signed with truncating division, as in the
+// original (verified from original executable).
+
 /// Weapon purchase price, item 1..=15.
-pub fn weapon_buy_price(item: u32, int: u32) -> u32 {
-    255u32.saturating_sub(int) * item * item / 256 + 5
+pub fn weapon_buy_price(item: i16, int: i16) -> i16 {
+    (255i16.wrapping_sub(int)).wrapping_mul(item).wrapping_mul(item) / 256 + 5
 }
 /// What a weapon shop pays for item 1..=15.
-pub fn weapon_sell_price(item: u32, cha: u32) -> u32 {
-    (cha + 40) * item * item / 256 + 1
+pub fn weapon_sell_price(item: i16, cha: i16) -> i16 {
+    (cha.wrapping_add(40)).wrapping_mul(item).wrapping_mul(item) / 256 + 1
 }
 /// Armour purchase price, item 1..=5.
-pub fn armour_buy_price(item: u32, int: u32) -> u32 {
-    200u32.saturating_sub(int) / 4 * item
+pub fn armour_buy_price(item: i16, int: i16) -> i16 {
+    (200i16.wrapping_sub(int) / 4).wrapping_mul(item)
 }
-pub fn armour_sell_price(item: u32, cha: u32) -> u32 {
-    cha / 4 * item
+pub fn armour_sell_price(item: i16, cha: i16) -> i16 {
+    (cha / 4).wrapping_mul(item)
 }
 /// Spell price, spell 1..=10 (magic shops do not buy spells).
-pub fn spell_price(item: u32, wis: u32) -> u32 {
-    200u32.saturating_sub(wis) / 32 * item
+pub fn spell_price(item: i16, wis: i16) -> i16 {
+    (200i16.wrapping_sub(wis) / 32).wrapping_mul(item)
 }
-/// Transport price, item 1..=7 (shops do not buy used vehicles).
-pub fn transport_price(item: u32, int: u32) -> u32 {
-    200u32.saturating_sub(int) / 5 * item * item
+/// Transport price, item 1..=6 (shops do not buy used vehicles).
+pub fn transport_price(item: i16, int: i16) -> i16 {
+    (200i16.wrapping_sub(int) / 5).wrapping_mul(item).wrapping_mul(item)
+}
+/// Price of 10 packs of food.
+pub fn food_price_per_10(int: i16) -> i16 {
+    5 - int / 20
 }
 
 /// The game's "era": 0..=3 from the move counter.
@@ -347,9 +354,15 @@ pub fn era(moves: u32) -> u32 {
     }
 }
 
-/// Weapons offered in town `id` (1..=32).
-pub fn weapon_stock(town_id: u32, moves: u32) -> Vec<u32> {
-    let first = if (town_id - 1) % 8 % 2 == 0 { 1 } else { 2 };
+/// Town map layout (2..=9) of town `id` (1..=32).
+pub fn town_layout(town_id: u32) -> u32 {
+    (town_id - 1) % 8 + 2
+}
+
+/// Weapons offered by a town with map `layout`: every other item from
+/// 1 or 2, era + 2 of them.
+pub fn weapon_stock(layout: u32, moves: u32) -> Vec<u32> {
+    let first = 1 + ((layout - 1) & 1);
     (0..era(moves) + 2).map(|k| first + 2 * k).collect()
 }
 
@@ -358,16 +371,12 @@ pub fn armour_stock(moves: u32) -> Vec<u32> {
     if moves > 3000 { vec![1, 2, 3, 4, 5] } else { vec![1, 2, 3] }
 }
 
-/// Spells offered by a magic shop in town `id`; wizards (class 2) see more.
-pub fn spell_stock(town_id: u32, wizard: bool) -> Vec<u32> {
-    let p = (town_id - 1) % 2;
+/// Spells listed by a magic shop with map `layout`; wizards (class 2) see
+/// more. Spell 4 is never listed.
+pub fn spell_stock(layout: u32, wizard: bool) -> Vec<u32> {
+    let p = layout & 1;
     let last = if wizard { 9 + p } else { 5 + p };
     (1 + p..=last).step_by(2).filter(|&s| s != 4).collect()
-}
-
-/// Price of 10 packs of food (SPEC §7).
-pub fn food_price_per_10(int: u32) -> u32 {
-    5u32.saturating_sub(int / 20)
 }
 
 // ---------------------------------------------------------------- monsters
@@ -534,19 +543,23 @@ pub(crate) mod tests {
     #[test]
     fn prices_and_stock() {
         assert_eq!(weapon_buy_price(1, 15), 240 / 256 + 5);
-        assert_eq!(weapon_buy_price(15, 0), 255 * 225 / 256 + 5);
+        // 16-bit arithmetic: 255*225 wraps negative, as in the original.
+        assert_eq!(weapon_buy_price(15, 0), (255i32 * 225) as i16 / 256 + 5);
+        assert_eq!(weapon_buy_price(10, 0), 255 * 100 / 256 + 5);
+        assert_eq!(weapon_buy_price(15, 99), -113); // never offered for sale
         assert_eq!(weapon_sell_price(2, 20), 60 * 4 / 256 + 1);
         assert_eq!(armour_buy_price(3, 20), 45 * 3);
         assert_eq!(spell_price(10, 40), 50);
         assert_eq!(transport_price(2, 50), 120);
         assert_eq!(food_price_per_10(45), 3);
-        assert_eq!(weapon_stock(1, 0), vec![1, 3]);
-        assert_eq!(weapon_stock(2, 1600), vec![2, 4, 6]);
-        assert_eq!(weapon_stock(9, 5000), vec![1, 3, 5, 7, 9]);
+        assert_eq!(town_layout(1), 2);
+        assert_eq!(weapon_stock(town_layout(1), 0), vec![2, 4]);
+        assert_eq!(weapon_stock(town_layout(2), 1600), vec![1, 3, 5]);
+        assert_eq!(weapon_stock(town_layout(9), 5000), vec![2, 4, 6, 8, 10]);
         assert_eq!(armour_stock(10), vec![1, 2, 3]);
-        assert_eq!(spell_stock(1, false), vec![1, 3, 5]);
-        assert_eq!(spell_stock(2, false), vec![2, 6]);
-        assert_eq!(spell_stock(2, true), vec![2, 6, 8, 10]);
+        assert_eq!(spell_stock(town_layout(1), false), vec![1, 3, 5]);
+        assert_eq!(spell_stock(town_layout(2), false), vec![2, 6]);
+        assert_eq!(spell_stock(town_layout(2), true), vec![2, 6, 8, 10]);
     }
 
     #[test]

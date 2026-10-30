@@ -27,6 +27,7 @@ pub mod mondain;
 pub mod options;
 pub mod overworld;
 pub mod palette;
+pub mod qol;
 pub mod render;
 pub mod rng;
 pub mod rules;

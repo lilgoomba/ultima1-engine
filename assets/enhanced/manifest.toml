@@ -16,14 +16,14 @@ cga = "Same art as EGA; the pack does not imitate CGA colours."
 frames = ["world/water0.png", "world/water1.png", "world/water2.png", "world/water3.png"]
 scroll = true
 
-[world.1]   # grass
-file = "world/grass.png"
+[world.1]   # grass: four variants, one per map cell, with shared edges
+variants = ["world/grass0.png", "world/grass1.png", "world/grass2.png", "world/grass3.png"]
 
 [world.2]   # forest
 file = "world/forest.png"
 
-[world.3]   # mountains
-file = "world/mountain.png"
+[world.3]   # mountains: rock to every edge, three peak layouts per map cell
+variants = ["world/mountain0.png", "world/mountain1.png", "world/mountain2.png"]
 
 [world.4]   # castle, pennant frame A
 file = "world/castle0.png"

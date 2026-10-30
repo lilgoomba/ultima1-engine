@@ -250,14 +250,17 @@ Pack art in this repository is original work, not derived from Origin's
 tiles, and is licensed CC-BY-SA 4.0 (see `assets/enhanced/LICENSE`); the
 engine code remains GPL-3.0-or-later.
 
-The current pack (batch 1, under review) covers the overworld: water
-(four frames), grass, forest, mountains, the castle (two pennant frames),
-the town (two smoke frames), the signpost, the dungeon entrance and the
-player on foot, as 32×32 tiles in a 16-bit-console style with one shared
-64-colour palette. The pictures were made with an image generator from
-text descriptions only (no original tiles as input), then cut to the
-pixel grid, made seamless, given a shared palette and hand-finished
-(pennants, smoke, tufts) with Python/Pillow. Everything else falls back
+The current pack (batch 1) covers the overworld: water (four frames),
+grass (four variants), forest, mountains (three variants), the castle
+(two pennant frames), the town (two smoke frames), the signpost, the
+dungeon entrance and the player on foot, as 32×32 tiles in a
+16-bit-console style with one shared 64-colour palette. Grass and
+mountain variants share an identical edge band, so any mix of them
+tiles seamlessly; the engine picks one per map cell. The pictures were
+made with an image generator from text descriptions only (no original
+tiles as input), then cut to the pixel grid, made seamless, given a
+shared palette and hand-finished (pennants, smoke, tufts, the
+hand-placed town cottages) with Python/Pillow. Everything else falls back
 to the original art.
 
 Tests that use your own files are skipped unless you point them at your
@@ -293,8 +296,7 @@ docs/demo.png      demo screenshot (synthetic art)
 1. Finish the remaining open items in SPEC §11.
 2. Space and the Mondain battle.
 3. Optional quality-of-life features, kept apart from the faithful mode.
-4. Enhanced video mode art (first batch under review on the
-   `enhanced-art-review` branch).
+4. Enhanced video mode art: towns, castles and dungeons next.
 
 ## License
 

@@ -35,7 +35,17 @@ pub mod off {
     pub const SPELLS: usize = 0x82; // 10 x i16
     pub const VEHICLES: usize = 0x98; // 7 x i16: horse cart raft frigate aircar shuttle timemachine
     pub const LAST_SIGNPOST: usize = 0xA8;
+    /// Sound on/off flag toggled by the "Noise" command.
+    pub const SOUND: usize = 0x38;
+    /// Quest words, one per castle: slot k (1..=8) at QUESTS + 2k; slot 0 unused.
+    pub const QUESTS: usize = 0x3A;
+    /// Outdoor move counter, 32-bit: low word here, high word at STEPS_HIGH.
     pub const STEPS: usize = 0xAC;
+    pub const STEPS_HIGH: usize = 0xAE;
+    /// Both set to 1000 when a shuttle is bought (probably fuel/shield values
+    /// for the space section; meaning not confirmed).
+    pub const SHUTTLE_0: usize = 0xB0;
+    pub const SHUTTLE_1: usize = 0xB2;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +55,23 @@ pub struct MapObject {
     pub x: u16,
     pub y: u16,
     pub hits: u16,
+}
+
+/// Value of a castle quest word (SPEC §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuestState {
+    None,
+    /// 0xFFFF: given by the king, not yet done.
+    Active,
+    /// 1: done, waiting to be reported to the king.
+    Done,
+    Other(u16),
+}
+
+/// What a quest slot asks for: even slots = kill a dungeon monster, odd slots
+/// = visit a landmark (landmark index 8 - k).
+pub fn quest_landmark(k: usize) -> Option<usize> {
+    (k % 2 == 1 && k <= 7).then(|| 8 - k)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +129,26 @@ impl PlayerRecord {
 
     pub fn position(&self) -> (u16, u16) {
         (self.u16_at(off::POS_X), self.u16_at(off::POS_Y))
+    }
+
+    /// 32-bit outdoor move counter.
+    pub fn moves(&self) -> u32 {
+        u32::from(self.u16_at(off::STEPS)) | (u32::from(self.u16_at(off::STEPS_HIGH)) << 16)
+    }
+
+    pub fn set_moves(&mut self, m: u32) {
+        self.set_u16(off::STEPS, m as u16);
+        self.set_u16(off::STEPS_HIGH, (m >> 16) as u16);
+    }
+
+    /// Quest state for castle slot k (1..=8; castle location id - 32).
+    pub fn quest(&self, k: usize) -> QuestState {
+        match self.u16_at(off::QUESTS + 2 * k) {
+            0 => QuestState::None,
+            0xFFFF => QuestState::Active,
+            1 => QuestState::Done,
+            n => QuestState::Other(n),
+        }
     }
 
     pub fn objects(&self) -> Vec<MapObject> {
@@ -170,5 +217,21 @@ mod tests {
         p.set_u16(off::COIN, 500);
         assert_eq!(p.coin(), 500);
         assert!(PlayerRecord::parse(&d[..334]).is_err());
+    }
+
+    #[test]
+    fn moves_and_quests() {
+        let mut p = PlayerRecord::parse(&synthetic()).unwrap();
+        p.set_moves(70_000);
+        assert_eq!(p.u16_at(off::STEPS_HIGH), 1);
+        assert_eq!(p.moves(), 70_000);
+        p.set_u16(off::QUESTS + 2 * 3, 0xFFFF);
+        p.set_u16(off::QUESTS + 2 * 4, 1);
+        assert_eq!(p.quest(3), QuestState::Active);
+        assert_eq!(p.quest(4), QuestState::Done);
+        assert_eq!(p.quest(5), QuestState::None);
+        assert_eq!(quest_landmark(1), Some(7));
+        assert_eq!(quest_landmark(7), Some(1));
+        assert_eq!(quest_landmark(2), None);
     }
 }

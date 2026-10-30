@@ -247,41 +247,7 @@ struct Space<'a> {
 /// OUT. Assumes the record is in sync with the live game.
 pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
     let Some(files) = g.space.take() else { return Ok(SpaceEnd::Landed) };
-    let seed = g.rec.u16_at(off::SEED);
-    let mut s = Space {
-        g,
-        io,
-        f: &files,
-        rng: U1Rng::new(seed),
-        gal: Box::new([[Sector::default(); 7]; 7]),
-        gx: 3,
-        gy: 3,
-        cur: 0,
-        fp: false,
-        speed: 5,
-        entry_speed: 0,
-        vx: 0,
-        vy: 0,
-        last_hd: 0,
-        flame: 0,
-        flame_on: false,
-        redraw: false,
-        redrew: false,
-        cx: 159,
-        cy: 79,
-        dvx: 0,
-        dvy: 0,
-        star_mode: 2,
-        rel: [(0, 0); 40],
-        old: [(0, 0); 40],
-        ex: 0,
-        ey: 0,
-        eox: 0,
-        eoy: 0,
-        esize: 0,
-        hyper: false,
-        grow: 0,
-    };
+    let mut s = Space::new(g, io, &files);
     let r = s.main();
     let died = s.g.hits() <= 0;
     drop(s);
@@ -292,7 +258,45 @@ pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
     }
 }
 
-impl Space<'_> {
+impl<'a> Space<'a> {
+    fn new(g: &'a mut Game, io: &'a mut dyn Io, files: &'a SpaceFiles) -> Self {
+        let seed = g.rec.u16_at(off::SEED);
+        Space {
+            g,
+            io,
+            f: files,
+            rng: U1Rng::new(seed),
+            gal: Box::new([[Sector::default(); 7]; 7]),
+            gx: 3,
+            gy: 3,
+            cur: 0,
+            fp: false,
+            speed: 5,
+            entry_speed: 0,
+            vx: 0,
+            vy: 0,
+            last_hd: 0,
+            flame: 0,
+            flame_on: false,
+            redraw: false,
+            redrew: false,
+            cx: 159,
+            cy: 79,
+            dvx: 0,
+            dvy: 0,
+            star_mode: 2,
+            rel: [(0, 0); 40],
+            old: [(0, 0); 40],
+            ex: 0,
+            ey: 0,
+            eox: 0,
+            eoy: 0,
+            esize: 0,
+            hyper: false,
+            grow: 0,
+        }
+    }
+
     // ---------------------------------------------------------- helpers
 
     fn s(&self, o: usize) -> String {
@@ -1529,5 +1533,116 @@ impl Space<'_> {
             t.plot(x + 4, y + 5, C_WHITE);
             t.plot(x + 2, y + 6, C_BLUE);
         }
+    }
+}
+
+/// Checks against the user's own files (`U1_GAME_DIR`); skipped without.
+#[cfg(test)]
+mod real_game {
+    use super::*;
+    use crate::game::Assets;
+    use crate::io::ScriptIo;
+    use crate::save::PlayerRecord;
+
+    fn setup() -> Option<(Game, SpaceFiles)> {
+        let g = crate::gamedir::GameDir::new(std::env::var_os("U1_GAME_DIR")?).ok()?;
+        let mode = g.detect_video_mode()?;
+        let exe = g.read("OUT.EXE").ok()?;
+        let assets = Assets {
+            t: crate::rules::ExeTables::from_out_exe(&exe).unwrap(),
+            locs: crate::locations::LocationTable::from_out_exe(&exe).unwrap(),
+            exe: crate::exe::Exe::new(exe).unwrap(),
+            map: g.load_world_map().unwrap(),
+            world_tiles: g.load_world_tiles(mode).unwrap(),
+            town_tiles: g.load_town_tiles(mode).unwrap(),
+            tcd: crate::tcd::TownCastleMaps::parse(&g.read("TCD.BIN").unwrap()).unwrap(),
+        };
+        let rec = PlayerRecord::parse(&g.read("PLAYER2.U1").ok()?).unwrap();
+        Some((Game::new(assets, rec, 1), SpaceFiles::load(&g).ok()?))
+    }
+
+    /// Put a size-1 fighter where the laser box of `2252` catches it.
+    fn fighter_in_sights(s: &mut Space) {
+        s.fp = true;
+        s.slot_mut().fuel = 500;
+        s.sec_mut().enemies = 3;
+        s.esize = 1;
+        s.ex = s.cx - 2;
+        s.ey = s.cy - 5;
+    }
+
+    #[test]
+    fn twentieth_kill_makes_a_space_ace() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 19);
+        let exp = g.rec.u16_at(off::EXPERIENCE);
+        let mut io = ScriptIo::from_text("{w1}");
+        let mut s = Space::new(&mut g, &mut io, &files);
+        fighter_in_sights(&mut s);
+        let _ = s.cmd_fire();
+        assert_eq!(s.g.w(off::ENEMIES), 20);
+        assert_eq!(s.sec().enemies, 2);
+        assert_eq!(s.slot().fuel, 490);
+        drop(s);
+        assert_eq!(g.rec.u16_at(off::EXPERIENCE), exp + 100);
+        let mut io = ScriptIo::from_text("{w1}");
+        let mut s = Space::new(&mut g, &mut io, &files);
+        fighter_in_sights(&mut s);
+        // The boxed panel was replaced by the redraw; a further kill says so.
+        let _ = s.cmd_fire();
+        assert_eq!(s.g.w(off::ENEMIES), 21);
+        assert!(s.g.term.messages().iter().any(|l| l.contains("still a Space")));
+    }
+
+    #[test]
+    fn the_smallest_fighters_cannot_be_hit() {
+        // The original's hit box for size 0 asks for 5 <= dy <= 4.
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        let mut s = Space::new(&mut g, &mut io, &files);
+        fighter_in_sights(&mut s);
+        s.esize = 0;
+        for dy in -10..10 {
+            s.ey = s.cy - dy;
+            let _ = s.cmd_fire();
+        }
+        assert_eq!(s.g.w(off::ENEMIES), 0);
+    }
+
+    /// Docking: 500 coin refills the ship, then any ship docked at the
+    /// station can be taken by its port number.
+    #[test]
+    fn docking_refuels_and_changes_ships() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::READY_ARMOUR, 4);
+        g.rec.set_u16(off::COIN, 1000);
+        g.rec.set_u16(off::SHUTTLE_0, 100);
+        let mut io = ScriptIo::from_text("1");
+        let mut s = Space::new(&mut g, &mut io, &files);
+        s.make_galaxy();
+        let mut h = *s.sec();
+        s.dock_ship(&mut h, 2, 1, 0);
+        h.slots[2].fuel = 100;
+        s.gal[3][3] = h;
+        assert_eq!(s.docked_port(2), Some(1));
+        let _ = s.dock();
+        assert_eq!(s.g.coin(), 500);
+        assert_eq!(s.sec().slots[2].fuel, 1000);
+        // Port 1 holds the type-1 ship of the home station.
+        assert_eq!(s.cur, 1);
+        assert_eq!(s.slot().ty, 1);
+        // Without the coin there is no refill.
+        let mut io = ScriptIo::from_text("x1");
+        let mut s = Space::new(&mut g, &mut io, &files);
+        s.make_galaxy();
+        s.g.rec.set_u16(off::COIN, 100);
+        s.slot_mut().fuel = 7;
+        let mut h = *s.sec();
+        s.cur = 0;
+        h.slots[0].fuel = 7;
+        s.gal[3][3] = h;
+        let _ = s.dock();
+        assert_eq!(s.g.coin(), 100);
+        assert_eq!(s.sec().slots[0].fuel, 7);
     }
 }

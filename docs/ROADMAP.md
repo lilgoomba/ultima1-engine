@@ -56,7 +56,7 @@ the tests keep the original behaviour.
   animations.
 * **Turn off the CPU-speed quirks.** Some of the original's timing
   depends on the processor (the idle Pass after a number of key polls,
-  speaker-effect lengths, some space and Mondain waits; SPEC §2, §11,
+  speaker-effect lengths, some space and Mondain waits; SPEC §3, §11,
   §18, §19); the engine reproduces them at one measured reference speed.
   An option replaces them with fixed timings chosen for comfort.
 

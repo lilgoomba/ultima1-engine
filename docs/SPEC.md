@@ -1278,9 +1278,10 @@ code; nothing else is known to differ.
    and the prompt cursor advance once per keyboard poll, and the number
    of polls depends on how long the player waits. Side-by-sides differ
    only in these phases.
-3. **Sound.** The ten effects are played (§19), but their pitch and
-   length in the original depend on the CPU; the engine fixes them to a
-   4.77 MHz 8088 model.
+3. **Sound.** The ten effects are played (§19); half-wave counts and the
+   pitch ratio of effects 0 and 1 were checked against a DOSBox capture.
+   Pitch and length in the original depend on the CPU; the engine fixes
+   them to a 4.77 MHz 8088 model.
 4. **Poll speed.** One poll is taken as 130 ms outdoors (DOSBox
    cycles=20000); the original's speed depends on the CPU. Space waits 2
    timer ticks per poll, so its automatic Pass after 1500 polls is
@@ -1343,6 +1344,15 @@ VERIFIED (original executables, reference reading).
   and waits until it ends, as the original does. `--mute` keeps the
   waits but plays nothing; script and screenshot runs only record which
   effects were asked for.
+* **DOSBox capture** [M-DOSBox] (`pcspeaker=true`, wave capture,
+  cycles=4000): "Huh?" gave two bursts of 48 half-waves, bumping into
+  water three bursts of 16, matching effects 1 and 0. Their half-waves
+  were 0.18 ms and 0.50 ms, a ratio of 2.75 (the model gives 2.8). At
+  cycles=4000 DOSBox runs these loops about 7.6 times faster than an
+  8088, so its pitches (about 2.8 kHz and 1 kHz) are higher in the same
+  ratio; the model's 372 Hz and 132 Hz correspond to roughly
+  cycles=530. Effect 4 (the step click) is too short to resolve at
+  44.1 kHz in the capture.
 
 ## Sources
 

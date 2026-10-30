@@ -242,7 +242,8 @@ mod tests {
         assert_eq!(half, 4 + 4 + wait16(1000) + 17 + 10);
         let hz = CPU_HZ / f64::from(2 * half);
         assert!((hz - 132.0).abs() < 1.0, "{hz}");
-        // Effect 1 is about 2.8 times higher.
+        // Effect 1 is about 2.8 times higher (a DOSBox capture gave
+        // half-waves of 22 and 8 samples at 44.1 kHz: 2.75).
         let h1 = effect(1).spans[2].1;
         assert!((f64::from(half) / f64::from(h1) - 2.8).abs() < 0.05);
     }

@@ -415,6 +415,16 @@ impl Game {
     /// The game's state is untouched; space and Mondain's pictures are
     /// replaced only when given (they load when entered).
     pub fn set_video(&mut self, v: VideoSet) {
+        self.take_video(v);
+        let (c, r) = (self.term.col, self.term.row);
+        self.redraw();
+        self.term.cursor(c, r);
+    }
+
+    /// [`Game::set_video`] without the redraw (space and Mondain's lair
+    /// redraw their own screens): the pictures, and the screen's colours
+    /// converted to the new display's.
+    pub fn take_video(&mut self, v: VideoSet) {
         self.a.video = v.mode;
         self.a.world_tiles = v.world_tiles;
         self.a.town_tiles = v.town_tiles;
@@ -425,9 +435,6 @@ impl Game {
             self.mondain = v.mondain;
         }
         self.term.set_cga(v.mode == crate::gamedir::VideoMode::Cga);
-        let (c, r) = (self.term.col, self.term.row);
-        self.redraw();
-        self.term.cursor(c, r);
     }
 
     /// Redraw the viewport for the current mode and the stats.

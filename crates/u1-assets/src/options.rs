@@ -38,6 +38,9 @@ pub enum MenuKey {
 }
 
 impl OptionsMenu {
+    /// The box's rectangle on the 320x200 screen (inclusive).
+    pub const BOX: (usize, usize, usize, usize) = (31, 23, 287, 127);
+
     pub fn new(video: VideoChoice, sound: SoundMode, avail: [bool; 4]) -> Self {
         OptionsMenu { row: 0, video, sound, avail }
     }
@@ -127,6 +130,8 @@ mod tests {
         let m = OptionsMenu::new(VideoChoice::Cga, SoundMode::Mute, [true; 4]);
         m.draw(&mut t);
         assert_eq!(t.at(34, 26), BLUE, "the shops' frame");
+        let (x0, y0, x1, y1) = OptionsMenu::BOX;
+        assert_eq!((t.at(x0 - 1, y0), t.at(x0, y0 - 1), t.at(x1 + 1, y1), t.at(x1, y1 + 1)), (0, 0, 0, 0), "nothing outside the box");
         assert!(t.row_text(4).contains("Options"));
         assert!(t.row_text(7).contains("Video:") && t.row_text(7).contains("<CGA>"));
         assert!(t.row_text(9).contains("<Mute>"));

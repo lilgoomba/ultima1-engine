@@ -741,6 +741,24 @@ fn backdrop(out: &mut [u8], s: usize, t: &Term, op: &crate::term::ArtOp, img: &R
     }
 }
 
+/// A box drawn over the screen (the options menu), `over` being `under`
+/// with the box on it: `under` composed with the pack as usual, and the
+/// box's rectangle (inclusive, in 320x200 pixels) from `over`, so tiles the
+/// box only partly covers keep their art outside it.
+pub fn compose_boxed(under: &Term, over: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64, rect: (usize, usize, usize, usize)) -> Vec<u8> {
+    let s = pack.scale();
+    let mut out = compose(under, palette, pack, ms);
+    let top = compose(over, palette, pack, ms);
+    let (x0, y0, x1, y1) = rect;
+    let ow = W * s;
+    for y in y0 * s..((y1 + 1) * s).min(H * s) {
+        let a = (y * ow + x0 * s) * 3;
+        let b = (y * ow + ((x1 + 1) * s).min(ow)) * 3;
+        out[a..b].copy_from_slice(&top[a..b]);
+    }
+    out
+}
+
 /// The screen at `pack.scale()` times 320x200 as RGB: the original scaled
 /// up nearest-neighbour, with the pack's art over every intact region
 /// whose picture it has. `ms` drives clock animations.
@@ -983,6 +1001,24 @@ file = "x.png"
         let rgb = compose(&t, &EGA_PALETTE, &p, 0);
         // Shift 12: frame 1.
         assert_eq!(px(&rgb, 2, 16, 16), [0, 0, 100]);
+    }
+
+    #[test]
+    fn a_box_over_part_of_a_tile_leaves_the_rest_of_its_art() {
+        let mut t = Term::new();
+        t.blit_art(ArtId::World(0), None, 24, 16, 16, 16, &[1; 256], 0);
+        let p = Pack::parse(MANIFEST, load).unwrap();
+        let mut over = t.clone();
+        over.fill(31, 23, 287, 127, 0);
+        over.plot(40, 30, 12);
+        // Composed on its own the covered tile drops to the original...
+        assert_eq!(px(&compose(&over, &EGA_PALETTE, &p, 0), 2, 2 * 25, 2 * 17), EGA_PALETTE[1]);
+        // ...but with the box laid over the screen it keeps its art.
+        let rgb = compose_boxed(&t, &over, &EGA_PALETTE, &p, 0, (31, 23, 287, 127));
+        assert_eq!(px(&rgb, 2, 2 * 25, 2 * 17), [0, 0, 200]);
+        assert_eq!(px(&rgb, 2, 2 * 30 + 1, 2 * 22 + 1), [0, 0, 200]);
+        assert_eq!(px(&rgb, 2, 2 * 31, 2 * 23), [0, 0, 0], "inside: the box");
+        assert_eq!(px(&rgb, 2, 2 * 40, 2 * 30), EGA_PALETTE[12]);
     }
 
     #[test]

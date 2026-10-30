@@ -337,9 +337,12 @@ original's own shop and king windows:
 * **Sound**: Original beeps, Enhanced or Mute.
 
 Up/Down chooses a line, Left/Right changes it, and F1, Enter or Esc
-returns to the game. Changes apply at once without restarting (a new
-display's tiles appear at the next command prompt; in space or Mondain's
-lair, when you are back on the ground). F1 is not one of the original's
+returns to the game. Changes apply at once without restarting: a new
+display's pictures appear at the next command prompt, in space and
+Mondain's lair too; on the title and character screens the program
+starts again in the new display when the menu closes (a character being
+made is dropped). With the enhanced art on, tiles the box only partly
+covers keep their art around it. F1 is not one of the original's
 keys; Esc is not used to open the menu because the character program
 uses it.
 
@@ -350,6 +353,8 @@ The choice is saved to `~/.config/ultima1-engine/config.toml`
 video = "enhanced"   # enhanced | ega | cga | tandy
 sound = "original"   # original | enhanced | mute
 ```
+
+Comments, other keys and tables in the file are kept when the menu saves.
 
 `--video`, `--mode` (or `C`) and `--sound`/`--mute` override the file for
 one run. Screenshots (`--screenshot`) ignore it; `--options` draws the menu

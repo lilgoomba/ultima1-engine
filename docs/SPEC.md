@@ -1529,15 +1529,30 @@ of the original game; the faithful 320×200 output (§3) stays the default.
   (CGA has the four interface colours 3/2/1/3 for 15/1/12/11; back on a
   16-colour screen, colour 3 is the text colour inside the text windows
   and white elsewhere), and redraws the view. The game state is
-  untouched. Inside space or Mondain's lair the switch waits until the
-  player is back in OUT; the title and character screens keep their
-  display, and the game starts in the chosen one.
+  untouched. Space and Mondain's lair take it at their own command
+  poll the same way: their pictures are replaced, the screen's colours
+  converted, and the view redrawn as it stands (the top-down sector, or
+  the front view's frame and crosshair with the stars streaming on from
+  where they were; the arena with Mondain, a burning fire and the gem's
+  glow) without touching the flight's or the fight's state; switching
+  there and back leaves the very same screen. (Not during Mondain's
+  palette flash; a display without SPACE/Mondain pictures waits for
+  OUT.) On the title and character screens a new display stops the
+  program when the menu closes and starts it again from its beginning
+  in that display (a character being made is dropped; nothing is written
+  until one is kept); during the "please wait" screen it is the game's.
+* **Box edges.** With the enhanced art on, the screen behind the box is
+  composed with the pack first and only the box's rectangle (31,23)–
+  (287,127) is taken from the menu's copy, so a tile the box only partly
+  covers keeps its art where it shows.
 * **Sound.** Original beeps, Enhanced, Mute (§19.1), switched at once.
 * **Config file.** `$XDG_CONFIG_HOME/ultima1-engine/config.toml`, else
   `~/.config/ultima1-engine/config.toml`: `video = "enhanced|ega|cga|tandy"`
   and `sound = "original|enhanced|mute"` (quotes optional, `#` comments,
   other keys and tables ignored; an unusable line is reported and
-  skipped). The menu rewrites the file whole on every change. Each
+  skipped). On every change the menu rewrites the two keys and keeps
+  everything else the file had: comments, unknown keys (after the two),
+  and every table in its order, so newer or hand-made settings survive. Each
   command-line option (`--video`, `--mode`/`C`, `--sound`/`--mute`)
   overrides only its own part for that run; the defaults are the
   original display the game files suggest (§15), no enhanced art, and

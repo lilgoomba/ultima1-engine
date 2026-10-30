@@ -94,6 +94,13 @@ pub trait Io {
         None
     }
 
+    /// The title or character program stopped (a [`Halt`]) because a
+    /// display was chosen in the options menu on its screen: that display,
+    /// now shown, to start the program again in. `None` for a real halt.
+    fn display_restart(&mut self) -> Option<crate::gamedir::VideoMode> {
+        None
+    }
+
     /// The game now draws in `mode` (the front end changes its palette).
     fn video_shown(&mut self, _mode: crate::gamedir::VideoMode) {}
 

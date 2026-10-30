@@ -5,7 +5,8 @@
 //!
 //! Only two keys are read, as plain `key = "value"` lines; anything else
 //! (comments, unknown keys, other tables) is ignored, so a newer or
-//! hand-edited file never stops the game from starting.
+//! hand-edited file never stops the game from starting, and is written
+//! back unchanged when the menu saves.
 
 use crate::gamedir::VideoMode;
 use crate::soundpack::SoundMode;
@@ -85,26 +86,47 @@ pub struct Config {
     pub sound: Option<SoundMode>,
     /// Lines that could not be used (reported, never fatal).
     pub warnings: Vec<String>,
+    /// The file's other lines, kept as they were for saving: top-level
+    /// ones (comments, unknown keys) and everything from the first table.
+    pub kept: Kept,
 }
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Kept {
+    pub top: Vec<String>,
+    pub tables: Vec<String>,
+}
+
+const HEADER: [&str; 2] = [
+    "# ultima1-engine options, written by the in-game options menu (F1).",
+    "# Command-line options override these for one run.",
+];
 
 impl Config {
     pub fn parse(text: &str) -> Config {
         let mut c = Config::default();
         let mut table = String::new();
+        let mut in_tables = false;
         for (n, line) in text.lines().enumerate() {
             let l = strip_comment(line).trim();
-            if l.is_empty() {
-                continue;
-            }
             if l.starts_with('[') {
+                in_tables = true;
                 table = l.trim_matches(|ch| ch == '[' || ch == ']').trim().to_string();
+            }
+            if in_tables {
+                c.kept.tables.push(line.to_string());
                 continue;
             }
-            if !table.is_empty() {
+            if HEADER.contains(&line.trim_end()) {
+                continue;
+            }
+            if l.is_empty() || !table.is_empty() {
+                c.kept.top.push(line.to_string());
                 continue;
             }
             let Some((k, v)) = l.split_once('=') else {
                 c.warnings.push(format!("line {}: not `key = value`", n + 1));
+                c.kept.top.push(line.to_string());
                 continue;
             };
             let v = unquote(v.trim());
@@ -117,19 +139,27 @@ impl Config {
                     Some(x) => c.sound = Some(x),
                     None => c.warnings.push(format!("line {}: sound wants original, enhanced or mute", n + 1)),
                 },
-                _ => {}
+                _ => c.kept.top.push(line.to_string()),
             }
         }
         c
     }
 
     pub fn to_toml(&self) -> String {
-        let mut s = String::from("# ultima1-engine options, written by the in-game options menu (F1).\n# Command-line options override these for one run.\n");
+        let mut s = String::new();
+        for h in HEADER {
+            s += h;
+            s.push('\n');
+        }
         if let Some(v) = self.video {
             s += &format!("video = \"{}\"   # enhanced | ega | cga | tandy\n", v.as_str());
         }
         if let Some(v) = self.sound {
             s += &format!("sound = \"{}\"   # original | enhanced | mute\n", v.as_str());
+        }
+        for l in self.kept.top.iter().chain(&self.kept.tables) {
+            s += l;
+            s.push('\n');
         }
         s
     }
@@ -143,7 +173,8 @@ impl Config {
         }
     }
 
-    /// Write the file (and its folder), replacing it whole.
+    /// Write the file (and its folder): the choices, then the lines kept
+    /// from the file they were read from.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         if let Some(d) = path.parent() {
             std::fs::create_dir_all(d)?;
@@ -231,7 +262,7 @@ mod tests {
     fn round_trip() {
         for v in VideoChoice::ALL {
             for s in [SoundMode::Original, SoundMode::Enhanced, SoundMode::Mute] {
-                let c = Config { video: Some(v), sound: Some(s), warnings: vec![] };
+                let c = Config { video: Some(v), sound: Some(s), ..Default::default() };
                 assert_eq!(Config::parse(&c.to_toml()), c);
             }
         }
@@ -257,7 +288,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("u1cfg-{}", std::process::id()));
         let p = dir.join("ultima1-engine").join("config.toml");
         assert_eq!(Config::load(&p), Config::default(), "missing file is the defaults");
-        let c = Config { video: Some(VideoChoice::Enhanced), sound: Some(SoundMode::Mute), warnings: vec![] };
+        let c = Config { video: Some(VideoChoice::Enhanced), sound: Some(SoundMode::Mute), ..Default::default() };
         c.save(&p).unwrap();
         assert_eq!(Config::load(&p), c);
         let c2 = Config { video: Some(VideoChoice::Tandy), ..c.clone() };
@@ -265,6 +296,28 @@ mod tests {
         assert_eq!(Config::load(&p), c2);
         assert!(!p.with_extension("toml.tmp").exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unknown_lines_survive_a_save() {
+        let text = "# mine\nvideo = \"cga\"\nfuture = 3   # later\n\nsound = \"mute\"\n[keys]\nvideo = \"ega\"\nf1 = \"menu\"\n";
+        let mut c = Config::parse(text);
+        assert_eq!(c.video, Some(VideoChoice::Cga));
+        c.video = Some(VideoChoice::Enhanced);
+        c.sound = Some(SoundMode::Original);
+        let out = c.to_toml();
+        for l in ["# mine", "future = 3   # later", "[keys]", "video = \"ega\"", "f1 = \"menu\""] {
+            assert!(out.lines().any(|x| x == l), "{l:?} kept in\n{out}");
+        }
+        // Keys before tables, the table's lines last and in order.
+        let t = out.find("[keys]").unwrap();
+        assert!(out.find("future").unwrap() < t && out.find("video = \"enhanced\"").unwrap() < t);
+        assert!(out[t..].starts_with("[keys]\nvideo = \"ega\"\nf1 = \"menu\"\n"));
+        let back = Config::parse(&out);
+        assert_eq!((back.video, back.sound), (Some(VideoChoice::Enhanced), Some(SoundMode::Original)));
+        // Saving again changes nothing (no duplicated header or keys).
+        assert_eq!(back.to_toml(), out);
+        assert_eq!(out.matches("video =").count(), 2);
     }
 
     #[test]
@@ -281,7 +334,7 @@ mod tests {
         let none = Config::default();
         let s = resolve(Cli::default(), &none, VideoMode::Tandy);
         assert_eq!(s, Settings { enhanced: false, mode: VideoMode::Tandy, sound: SoundMode::Original }, "defaults");
-        let cfg = Config { video: Some(VideoChoice::Enhanced), sound: Some(SoundMode::Enhanced), warnings: vec![] };
+        let cfg = Config { video: Some(VideoChoice::Enhanced), sound: Some(SoundMode::Enhanced), ..Default::default() };
         let s = resolve(Cli::default(), &cfg, VideoMode::Tandy);
         assert_eq!(s, Settings { enhanced: true, mode: VideoMode::Ega, sound: SoundMode::Enhanced }, "file");
         let cli = Cli { enhanced: Some(false), mode: Some(VideoMode::Cga), sound: Some(SoundMode::Mute) };

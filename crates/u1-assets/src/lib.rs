@@ -15,6 +15,7 @@ pub mod enhanced;
 pub mod error;
 pub mod exe;
 pub mod font;
+pub mod front;
 pub mod game;
 pub mod gamedir;
 pub mod gen;

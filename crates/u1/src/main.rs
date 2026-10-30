@@ -37,8 +37,7 @@ use u1_assets::soundpack::{SoundMode, SoundPack};
 use std::sync::Arc;
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::{Term, H, W};
-use u1_assets::gen::{Gen, GenEnd, GenFiles};
-use u1_assets::title::{self, TitleFiles};
+use u1_assets::gen::GenEnd;
 
 /// One keyboard/animation poll of the original main loop, measured in
 /// DOSBox (130 ms at 20000 cycles).
@@ -330,23 +329,22 @@ fn front(a: &Args, mode: VideoMode, io: &mut dyn Io) -> Result<Front, String> {
         return Ok(Front::Skip);
     }
     let g = GameDir::new(&a.game_dir).map_err(|e| e.to_string())?;
+    // A display chosen on these screens starts the program again in it.
+    let mut mode = mode;
     if a.intro {
-        let tf = TitleFiles::load(&g, mode).map_err(|e| e.to_string())?;
-        let mut t = title::blank_term(&tf);
-        if title::run_intro(&tf, &mut t, io).is_err() {
+        if let Some(t) = u1_assets::front::intro(&g, &mut mode, io).map_err(|e| e.to_string())? {
             return Ok(Front::Halted(t));
         }
     }
-    let gf = GenFiles::load(&g, mode).map_err(|e| e.to_string())?;
     let dir = roster_dir(a)?;
     let fixed = a.seed.is_some();
-    let clock: Box<dyn FnMut() -> [u8; 4]> = if fixed { Box::new(|| [0, 0, 0, 0]) } else { Box::new(local_time) };
-    let mut gen = Gen::new(&gf, &dir, clock);
-    let mut t = Term::with_cga(mode == VideoMode::Cga);
-    match gen.run(&mut t, io) {
+    let mut clock = || -> Box<dyn FnMut() -> [u8; 4]> { if fixed { Box::new(|| [0, 0, 0, 0]) } else { Box::new(local_time) } };
+    let (t, r) = u1_assets::front::character(&g, &dir, &mut mode, &mut clock, io).map_err(|e| e.to_string())?;
+    match r {
         Ok(GenEnd::Play { path, .. }) => {
-            // The "please wait" screen stays up while the game loads.
-            if io.pause(&t, 9).is_err() {
+            // The "please wait" screen stays up while the game loads (a
+            // display chosen now is the game's).
+            if io.pause(&t, 9).is_err() && io.display_restart().is_none() {
                 return Ok(Front::Halted(t));
             }
             Ok(Front::Play(path))
@@ -455,9 +453,19 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
     let _ = g.run(&mut io);
     if a.options_shot {
         let avail = available(a);
-        OptionsMenu::new(VideoChoice::from_parts(a.enhanced, mode), a.sound, avail).draw(&mut g.term);
+        let mut c = g.term.clone();
+        OptionsMenu::new(VideoChoice::from_parts(a.enhanced, mode), a.sound, avail).draw(&mut c);
+        // As in the window: the art stays on what the box leaves uncovered.
+        match &pack {
+            Some(p) => {
+                let rgb = enhanced::compose_boxed(&g.term, &c, palette, p, 0, OptionsMenu::BOX);
+                write_png(out, (W * p.scale()) as u32, (H * p.scale()) as u32, &rgb)?;
+            }
+            None => shot(&c, palette)?,
+        }
+    } else {
+        shot(&g.term, palette)?;
     }
-    shot(&g.term, palette)?;
     println!("{}: mode={} loc={} at ({},{}) town ({},{})", out.display(), g.mode, g.loc, g.ow.x, g.ow.y, g.px, g.py);
     for l in g.term.messages() {
         println!("| {l}");
@@ -505,13 +513,29 @@ struct SdlIo {
     in_menu: bool,
     menu_keys: std::collections::VecDeque<u8>,
     cfg_path: Option<PathBuf>,
+    /// On the title or character screens (until the game starts).
+    front: bool,
+    /// A display was chosen there: they stop and start again in it.
+    restart: bool,
 }
 
 impl SdlIo {
     fn present(&mut self, t: &Term) -> IoResult<()> {
+        self.present_boxed(t, None)
+    }
+
+    /// The screen, or (with `menu`) the screen with the options menu's box
+    /// over it; the enhanced art stays on what the box leaves uncovered.
+    fn present_boxed(&mut self, t: &Term, menu: Option<&Term>) -> IoResult<()> {
         let ms = self.start.elapsed().as_millis() as u64;
         let pack = if self.enhanced { self.pack.as_ref() } else { None };
-        let (w, _, rgb) = frame_rgb(t, &self.palette, pack, 1, ms);
+        let (w, rgb) = match (pack, menu) {
+            (Some(p), Some(m)) => (W * p.scale(), enhanced::compose_boxed(t, m, &self.palette, p, ms, OptionsMenu::BOX)),
+            (_, m) => {
+                let (w, _, rgb) = frame_rgb(m.unwrap_or(t), &self.palette, pack, 1, ms);
+                (w, rgb)
+            }
+        };
         self.tex.update(None, &rgb, w * 3).map_err(|_| Halt)?;
         self.canvas.copy(&self.tex, None, None).map_err(|_| Halt)?;
         self.canvas.present();
@@ -576,6 +600,7 @@ impl Io for SdlIo {
         loop {
             self.pump()?;
             self.menu(t)?;
+            self.restarting()?;
             if let Some(k) = self.pending.pop_front() {
                 self.next = Instant::now() + POLL;
                 return Ok(Some(k));
@@ -595,6 +620,7 @@ impl Io for SdlIo {
         while Instant::now() < end {
             self.pump()?;
             end += self.menu(t)?;
+            self.restarting()?;
             std::thread::sleep(Duration::from_millis(5));
         }
         Ok(())
@@ -604,6 +630,7 @@ impl Io for SdlIo {
         self.present(t)?;
         self.pump()?;
         self.menu(t)?;
+        self.restarting()?;
         Ok(self.pending.pop_front())
     }
 
@@ -613,6 +640,7 @@ impl Io for SdlIo {
         while Instant::now() < end {
             self.pump()?;
             end += self.menu(t)?;
+            self.restarting()?;
             std::thread::sleep(Duration::from_millis(2));
         }
         Ok(())
@@ -681,6 +709,16 @@ impl Io for SdlIo {
         }
     }
 
+    fn display_restart(&mut self) -> Option<VideoMode> {
+        if !std::mem::take(&mut self.restart) {
+            return None;
+        }
+        self.pending.clear();
+        let m = self.wanted;
+        self.video_shown(m);
+        Some(m)
+    }
+
     fn video_shown(&mut self, mode: VideoMode) {
         self.shown = mode;
         self.palette = palette_for(mode);
@@ -711,7 +749,7 @@ impl SdlIo {
         let r = loop {
             let mut c = t.clone();
             m.draw(&mut c);
-            if let Err(e) = self.present(&c) {
+            if let Err(e) = self.present_boxed(t, Some(&c)) {
                 break Err(e);
             }
             if let Err(e) = self.pump() {
@@ -739,16 +777,33 @@ impl SdlIo {
         Ok(paused)
     }
 
+    /// The title or character program stops here for a display chosen on
+    /// its screen ([`Io::display_restart`]).
+    fn restarting(&self) -> IoResult<()> {
+        if self.restart { Err(Halt) } else { Ok(()) }
+    }
+
     /// Apply the menu's choice now (the display's pictures at the game's
-    /// next key poll) and save it.
+    /// next key poll; the title and character programs start again in it
+    /// when the menu closes) and save it.
     fn choose(&mut self, video: VideoChoice, sound: SoundMode) {
         self.sound = sound;
         self.wanted = video.mode();
+        self.restart = self.front && self.wanted != self.shown;
         if video.enhanced() != self.enhanced {
             self.set_enhanced(video.enhanced());
         }
         if let Some(p) = &self.cfg_path {
-            let c = Config { video: Some(video), sound: Some(sound), warnings: Vec::new() };
+            // The file's other lines are kept; one that cannot be read is
+            // left alone.
+            let mut c = Config::load(p);
+            if p.exists() && std::fs::read_to_string(p).is_err() {
+                eprintln!("{}: not saved (the file cannot be read)", p.display());
+                return;
+            }
+            c.video = Some(video);
+            c.sound = Some(sound);
+            c.warnings.clear();
             if let Err(e) = c.save(p) {
                 eprintln!("{}: {e}", p.display());
             }
@@ -950,6 +1005,8 @@ fn play(a: &Args) -> Result<(), String> {
         in_menu: false,
         menu_keys: Default::default(),
         cfg_path,
+        front: true,
+        restart: false,
     };
     let chosen = match front(a, mode, &mut io)? {
         Front::Halted(_) => return Ok(()),
@@ -958,6 +1015,8 @@ fn play(a: &Args) -> Result<(), String> {
     };
     // A display chosen during the title or the character menu starts the
     // game.
+    io.front = false;
+    io.restart = false;
     let mode = io.wanted;
     io.video_shown(mode);
     let (mut g, _) = load(a, mode, chosen.as_deref())?;

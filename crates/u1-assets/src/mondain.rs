@@ -195,7 +195,9 @@ type R<T> = Result<T, Stop>;
 struct Lair<'a> {
     g: &'a mut Game,
     io: &'a mut dyn Io,
-    f: &'a MondainFiles,
+    f: MondainFiles,
+    /// The display chosen in the options menu has no lair pictures.
+    keep_video: bool,
     rng: U1Rng,
     grid: [[u8; ROWS]; COLS],
     px: i16,
@@ -231,7 +233,8 @@ pub fn run_mondain(g: &mut Game, io: &mut dyn Io) -> IoResult<MondainEnd> {
     let mut l = Lair {
         g,
         io,
-        f: &files,
+        f: files,
+        keep_video: false,
         rng: U1Rng::new(0),
         grid,
         px: 3,
@@ -253,7 +256,7 @@ pub fn run_mondain(g: &mut Game, io: &mut dyn Io) -> IoResult<MondainEnd> {
         redraw: false,
     };
     let r = l.main();
-    drop(l);
+    let Lair { f: files, .. } = l;
     g.mondain = Some(files);
     match r {
         Err(Stop::Halt) => Err(Halt),
@@ -364,6 +367,35 @@ impl Lair<'_> {
         }
     }
 
+    /// A display chosen in the options menu: its pictures, the screen's
+    /// colours converted, and the arena redrawn as it stands.
+    fn switch_video(&mut self) {
+        if self.keep_video || self.g.term.inverted {
+            return;
+        }
+        let Some(mut v) = self.io.video_switch() else { return };
+        let Some(f) = v.mondain.take() else {
+            self.keep_video = true;
+            return;
+        };
+        self.f = f;
+        let mode = v.mode;
+        self.g.take_video(v);
+        self.io.video_shown(mode);
+        for x in 0..COLS as i16 {
+            for y in 0..ROWS as i16 {
+                self.draw_cell(x, y);
+            }
+        }
+        self.draw_mondain();
+        if self.burst > 0 {
+            self.draw_tile(i16::from(FIRE) + self.burst - 1, self.bx, self.by);
+        }
+        if self.glow != 0 {
+            self.draw_tile(self.glow + 5, GEM_X as i16, GEM_Y as i16);
+        }
+    }
+
     /// `1477`: one animation step (fire burst, gem glow, Mondain).
     fn tick(&mut self) {
         if self.burst >= 0 {
@@ -396,6 +428,7 @@ impl Lair<'_> {
     /// `1b46`: one keyboard poll with its delays.
     fn poll(&mut self) -> R<Option<u8>> {
         let k = self.io.poll_now(&self.g.term)?;
+        self.switch_video();
         self.delay(1)?;
         if k.is_none() {
             self.delay(1)?;

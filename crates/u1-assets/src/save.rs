@@ -48,8 +48,9 @@ pub mod off {
     /// Outdoor move counter, 32-bit: low word here, high word at STEPS_HIGH.
     pub const STEPS: usize = 0xAC;
     pub const STEPS_HIGH: usize = 0xAE;
-    /// Both set to 1000 when a shuttle is bought (probably fuel/shield values
-    /// for the space section; meaning not confirmed).
+    /// The shuttle's fuel and shield, carried between space trips: both set
+    /// to 1000 when a shuttle is sold, read at launch, written back on a
+    /// safe landing and zeroed when the shuttle is lost (SPEC §15).
     pub const SHUTTLE_0: usize = 0xB0;
     pub const SHUTTLE_1: usize = 0xB2;
 }

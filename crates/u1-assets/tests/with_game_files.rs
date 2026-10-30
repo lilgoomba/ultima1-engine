@@ -10,7 +10,8 @@ use u1_assets::gamedir::GameDir;
 use u1_assets::io::ScriptIo;
 use u1_assets::locations::LocationTable;
 use u1_assets::rules::ExeTables;
-use u1_assets::save::{off, PlayerRecord};
+use u1_assets::save::{off, MapObject, PlayerRecord};
+use u1_assets::space::SpaceFiles;
 use u1_assets::tcd::TownCastleMaps;
 
 fn game_dir() -> Option<GameDir> {
@@ -56,6 +57,7 @@ fn play_with(
     rec.set_u16(off::COIN, 35);
     adjust(&mut rec);
     let mut game = Game::new(assets, rec, seed);
+    game.space = SpaceFiles::load(&g).ok();
     game.fixed_times = times.iter().copied().collect();
     let _ = game.run(&mut ScriptIo::from_text(keys));
     Some(game)
@@ -198,4 +200,41 @@ fn dungeon_run_replays_dosbox_session() {
     assert_eq!(g.dungeon.as_ref().unwrap().depth, 3);
     assert!(said(&g, "Attacked by Cyclops!"));
     assert_eq!(g.rec.u16_at(off::HITS), 36);
+}
+
+/// PLAYER2.U1 standing on a shuttle at (40,40).
+fn on_shuttle(r: &mut PlayerRecord) {
+    r.set_object(1, &MapObject { kind: 0x11, unknown_02: 1, x: 40, y: 40, hits: 0 });
+    r.set_u16(off::LAST_OBJECT, 1);
+    // As the transport shop leaves them when it sells a shuttle.
+    r.set_u16(off::SHUTTLE_0, 1000);
+    r.set_u16(off::SHUTTLE_1, 1000);
+    r.set_u16(off::HITS, 225);
+}
+
+#[test]
+fn an_unfuelled_shuttle_kills_its_pilot() {
+    let Some(g) = play_with(40, 40, "B{w12}", 1, &[], |r| {
+        on_shuttle(r);
+        r.set_u16(off::SHUTTLE_1, 0);
+    }) else {
+        return;
+    };
+    assert!(said(&g, "Thou hast lifted off!"));
+    assert!(said(&g, "thou art dead"));
+}
+
+#[test]
+fn shuttle_launch_flight_and_landing() {
+    let Some(g) = play_with(40, 40, "B{w12}", 1, &[], on_shuttle) else { return };
+    assert!(said(&g, "10..9..8..7..6..5..4..3..2..1"));
+    assert!(said(&g, "Thou hast lifted off!"));
+    // Thrust out of the station dock: a crunch, then a drift onto the
+    // home planet lands the shuttle back where it left.
+    let Some(g) = play_with(40, 40, "B{w12}{up}{w300}", 1, &[], on_shuttle) else { return };
+    assert!(said(&g, "Crunch!"));
+    assert!(said(&g, "Thou hast landed safely!"));
+    assert_eq!(g.transport(), 6);
+    assert!(g.rec.u16_at(off::SHUTTLE_1) < 1000);
+    assert!(g.term.row_text(21).contains("Hits:"));
 }

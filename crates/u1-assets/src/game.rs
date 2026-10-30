@@ -743,6 +743,7 @@ impl Game {
     /// Shuttle launch: OUT hands over to SPACE.EXE, which hands back by
     /// restarting OUT from the record (`ebd`, SPEC §15).
     fn launch(&mut self, io: &mut dyn Io) -> IoResult<()> {
+        self.ow.transport = self.transport();
         self.sync_record();
         crate::space::run_space(self, io)?;
         self.restart_out();

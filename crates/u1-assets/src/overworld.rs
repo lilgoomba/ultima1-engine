@@ -221,14 +221,20 @@ impl Overworld {
         }
     }
 
+    /// Spawn attempt (verified from original executable): an unused
+    /// R(1,8) roll, the kind, then random offsets until the cell has the
+    /// wanted terrain *or* lies inside the monster band; the monster is
+    /// placed only when both hold (so many attempts place nothing). The
+    /// original does not check for an occupied cell.
     fn try_spawn(&mut self, map: &WorldMap, t: &ExeTables) {
         if !rules::spawn_roll(t, self.exp, &mut self.rng) {
             return;
         }
+        let _ = self.rng.range(1, 8);
         let kind = (self.rng.range(0, 149) / 10) as usize;
         let want = rules::spawn_terrain(kind);
-        // The original retries until it finds a cell; we give up after a while.
-        for _ in 0..32 {
+        // Safety cap only; the original loops until one condition holds.
+        for _ in 0..1000 {
             let mut dx = i32::from(self.rng.range(10, 15));
             let mut dy = i32::from(self.rng.range(5, 15));
             if self.rng.range(1, 16) & 1 == 1 {
@@ -238,10 +244,14 @@ impl Overworld {
                 dy = -dy;
             }
             let (x, y) = rules::wrap(self.x + dx, self.y + dy);
-            if Self::terrain(map, x, y) == want && rules::in_monster_band(x, y) && self.entity_at(x, y).is_none() {
-                let tile = rules::FIRST_MONSTER_TILE + 2 * kind as u8;
-                let hp = rules::monster_hp(t, kind, self.exp);
-                self.entities.push(Entity::new(tile, x, y, hp));
+            let terrain_ok = Self::terrain(map, x, y) == want;
+            let band_ok = rules::in_monster_band(x, y);
+            if terrain_ok || band_ok {
+                if terrain_ok && band_ok {
+                    let tile = rules::FIRST_MONSTER_TILE + 2 * kind as u8;
+                    let hp = rules::monster_hp(t, kind, self.exp);
+                    self.entities.push(Entity::new(tile, x, y, hp));
+                }
                 return;
             }
         }

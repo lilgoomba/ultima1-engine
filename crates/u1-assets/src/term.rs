@@ -234,9 +234,10 @@ impl Term {
 
     /// One stat value at column 36: clamped to 0..=9999, warning colour
     /// below 100, cursor left at (1,24).
-    pub fn stat(&mut self, row: usize, v: i32) {
+    /// A status number; hits and food (`warn`) turn red below 100.
+    pub fn stat(&mut self, row: usize, v: i32, warn: bool) {
         let v = v.clamp(0, 9999) as u16;
-        let attr = if v < 100 { WARN } else { TEXT };
+        let attr = if warn && v < 100 { WARN } else { TEXT };
         self.cursor(36, row);
         self.num(v, 4, ' ', attr, false);
         self.cursor(1, 24);
@@ -330,7 +331,7 @@ mod tests {
         t.boxed(BLUE);
         assert_eq!(t.at(34, 26), BLUE);
         assert_eq!(t.at(40, 40), BLACK);
-        t.stat(21, 50);
+        t.stat(21, 50, true);
         assert_eq!(&t.row_text(21)[31..40], "Hits:  50");
         assert!((168..176).any(|y| (36 * 8..40 * 8).any(|x| t.at(x, y) == WARN)));
     }

@@ -328,19 +328,19 @@ impl Game {
 
     pub fn show_hits(&mut self) {
         let v = self.hits();
-        self.term.stat(21, i32::from(v));
+        self.term.stat(21, i32::from(v), true);
     }
     pub fn show_food(&mut self) {
         let v = self.food();
-        self.term.stat(22, i32::from(v));
+        self.term.stat(22, i32::from(v), true);
     }
     pub fn show_exp(&mut self) {
         let v = self.exp();
-        self.term.stat(23, i32::from(v));
+        self.term.stat(23, i32::from(v), false);
     }
     pub fn show_coin(&mut self) {
         let v = self.coin();
-        self.term.stat(24, i32::from(v));
+        self.term.stat(24, i32::from(v), false);
     }
     pub fn show_stats(&mut self) {
         let (c, r) = (self.term.col, self.term.row);

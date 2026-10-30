@@ -903,7 +903,9 @@ impl Lair<'_> {
             self.hp += 25;
             return;
         }
-        let (mut dx, mut dy) = (self.px - self.mx, self.py - self.my);
+        // The step direction is Mondain minus player: whenever he neither
+        // strikes nor casts, he backs away from the player.
+        let (mut dx, mut dy) = (self.mx - self.px, self.my - self.py);
         let dist = dx.abs() + dy.abs();
         if dist == 1 && self.phase == P_WIZARD {
             self.melee();

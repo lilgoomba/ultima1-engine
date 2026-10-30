@@ -1139,8 +1139,11 @@ side. Strings, the galaxy layout tables and the ship and fighter sprites
 * His turn: next to the player he strikes (chance from Agility and
   armour; damage hits/32 + 1..20); within 7 cells, half the time he
   casts one of three spells (a missile, a blast that lowers all six
-  stats, or a shock with a palette flash); otherwise he steps toward the
-  player.
+  stats, or a shock with a palette flash); otherwise he steps *away*
+  from the player (the step is the sign of his position minus the
+  player's, one axis tried first at random, then the other). As a demon
+  a zero axis is replaced by a random sign, so a cornered demon stays
+  put and regains 5 [DOSBox: he retreats to the arena corners].
 * **The gem.** `G` next to it takes it for three quarters of the current
   hits. Fire bursts then start appearing on random empty cells. Below 501
   hit points he becomes a demon that wanders and regains 5 when stuck.
@@ -1268,8 +1271,9 @@ code; nothing else is known to differ.
    and the prompt cursor advance once per keyboard poll, and the number
    of polls depends on how long the player waits. Side-by-sides differ
    only in these phases.
-3. **Sound.** The PC-speaker effects are replaced by silent pauses of the
-   same length.
+3. **Sound.** The ten effects are played (§19), but their pitch and
+   length in the original depend on the CPU; the engine fixes them to a
+   4.77 MHz 8088 model.
 4. **Poll speed.** One poll is taken as 130 ms outdoors (DOSBox
    cycles=20000); the original's speed depends on the CPU. Space waits 2
    timer ticks per poll, so its automatic Pass after 1500 polls is
@@ -1288,6 +1292,48 @@ code; nothing else is known to differ.
    town/castle one is not.
 9. **Font.** Without a user-supplied ROM font, text uses the unscii-8
    lookalike (§16).
+
+## 19. PC-speaker sound: Phase 8
+
+VERIFIED (original executables, reference reading).
+
+* There is no sound data. `OUT.EXE`, `SPACE.EXE`, `MONDAIN.EXE` and
+  `GEN.EXE` each carry the same ten effect routines (byte-identical, same
+  numbering through a ten-entry table); `ULTIMA.EXE` has none. A wrapper
+  plays effect *n* only while the save's sound flag (offset 0x38, the
+  Noise command) is on; `GEN.EXE` calls the routine directly.
+* The routines do not program the timer. They clear the timer-gate and
+  speaker bits of port 0x61 and then flip the speaker bit by hand,
+  waiting between flips in counted busy loops. Pitch and length therefore
+  scale with CPU speed; the game is frozen while an effect plays. Every
+  effect ends by writing back the port value it found.
+* A *pass* below is one turn of a two-instruction "decrement, jump if not
+  zero" loop. A wait of 0 on an 8-bit counter means 256 passes. Each
+  half-wave is the wait plus a few instructions of overhead.
+
+| # | Shape | Used for (examples) |
+|---|---|---|
+| 0 | 16 half-waves, each a 1000-pass wait (16-bit counter): a short low buzz | bumping a wall, "Crunch!", stepping into fire |
+| 1 | 48 half-waves, each 355 passes: a higher buzz | errors, "Huh?", can't afford |
+| 2 | 200 half-waves; the 8-bit wait starts at 0x83 and grows by 5 each half-wave, wrapping past 255, so the pitch falls, jumps back up and falls again | a hit, damage taken |
+| 3 | as 2 with 255 half-waves | a monster attacks |
+| 4 | as 2 with 8 half-waves: a click | a step in towns and the lair |
+| 5 | 26 steps; each step is 60 pulses of "high for A passes, low for B passes", A starting at 0xC0 and dropping by one per step, B going 1, 2, … 26 (8-bit waits): a long buzzing warble | spells and magic that work, quests, resurrection |
+| 6 | 160 half-waves whose 16-bit wait falls from 160 to 1 passes: a rising whistle | a spell that fails |
+| 7 | as 5 but A starts at 5 (so it wraps through 0 = 256 to 255, 254, …) and 15 pulses per step | attacking (weapons and spells) |
+| 8 | 251 half-waves whose 8-bit wait rises from 5 to 255 passes (counted up to wrap): a falling whistle | space lasers |
+| 9 | 4 half-waves of 5, 10, 15, 20 passes: a tick | each star-field frame in space |
+
+* **Timing model used by the engine.** The loops are costed with 8088
+  instruction timings (decrement 2 or 3 cycles, taken jump 16, not taken
+  4, port write 10, …) at the IBM PC's 4.77 MHz. That gives effect 0
+  about 132 Hz for 60 ms, effect 1 about 372 Hz for 65 ms, effect 2 104 ms,
+  3 132 ms, 4 5 ms, 5 1.2 s, 6 50 ms, 7 0.33 s, 8 131 ms and 9 0.2 ms.
+  The engine renders the exact sequence of speaker levels at those times
+  as a square wave (box-filtered to the output rate) through SDL audio,
+  and waits until it ends, as the original does. `--mute` keeps the
+  waits but plays nothing; script and screenshot runs only record which
+  effects were asked for.
 
 ## Sources
 

@@ -7,7 +7,8 @@
 use u1_assets::exe::Exe;
 use u1_assets::game::{Assets, Game};
 use u1_assets::gamedir::GameDir;
-use u1_assets::io::ScriptIo;
+use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
+use u1_assets::term::Term;
 use u1_assets::locations::LocationTable;
 use u1_assets::rules::ExeTables;
 use u1_assets::save::{off, MapObject, PlayerRecord};
@@ -30,6 +31,18 @@ fn play_with(
     x: u16,
     y: u16,
     keys: &str,
+    seed: u16,
+    times: &[u16],
+    adjust: impl FnOnce(&mut PlayerRecord),
+) -> Option<Game> {
+    play_io(x, y, &mut ScriptIo::from_text(keys), seed, times, adjust)
+}
+
+/// As `play_with`, driven by any `Io`.
+fn play_io(
+    x: u16,
+    y: u16,
+    io: &mut dyn Io,
     seed: u16,
     times: &[u16],
     adjust: impl FnOnce(&mut PlayerRecord),
@@ -61,7 +74,7 @@ fn play_with(
     game.space = SpaceFiles::load(&g, game.a.video).ok();
     game.mondain = u1_assets::mondain::MondainFiles::load(&g, game.a.video).ok();
     game.fixed_times = times.iter().copied().collect();
-    let _ = game.run(&mut ScriptIo::from_text(keys));
+    let _ = game.run(io);
     Some(game)
 }
 
@@ -291,23 +304,148 @@ fn taking_the_gem_and_dying_returns_to_out() {
     let Some(g) = play_with(40, 40, &format!("{TO_GEM}G{{w1}}"), 1, &[], at_time_machine) else { return };
     assert!(said(&g, "The Gem is DESTROYED!"));
     assert_eq!(g.hits(), 225);
-    let spaces = " ".repeat(4);
-    let g = play_with(40, 40, &format!("{TO_GEM}G{{w1}}{spaces}"), 1, &[], |r| {
+    // Mondain keeps away, so chase him until his spells finish the player.
+    let mut bot = LairBot::new(&format!("{TO_GEM}G"), 600);
+    play_io(40, 40, &mut bot, 1, &[], |r| {
         at_time_machine(r);
         r.set_u16(off::HITS, 20);
     })
     .unwrap();
-    assert!(said(&g, "thou art dead"));
-    assert!(said(&g, "Attempting resurrection!"));
+    assert!(bot.saw("thou art dead"), "{:?}", bot.seen);
+    assert!(bot.saw("Attempting resurrection!"));
+}
+
+/// Plays the lair by looking at the screen, as a player would: Mondain
+/// backs away from the player, so he has to be hunted down. Cells are
+/// 16x16 from (8,8); Mondain is told by his colours (the wizard has
+/// magenta, the demon only light grey, the corpse only white), the player
+/// by brown.
+struct LairBot {
+    queue: std::collections::VecDeque<u8>,
+    left: u32,
+    /// Every message line shown during the run.
+    seen: Vec<String>,
+}
+
+impl LairBot {
+    fn new(prefix: &str, polls: u32) -> Self {
+        LairBot { queue: ScriptIo::from_text(prefix).keys, left: polls, seen: Vec::new() }
+    }
+
+    fn saw(&self, s: &str) -> bool {
+        self.seen.iter().any(|l| l.contains(s))
+    }
+
+    fn cell(t: &Term, x: i32, y: i32) -> Vec<u8> {
+        let mut c = Vec::new();
+        for py in 0..16 {
+            for px in 0..16 {
+                let v = t.at(8 + 16 * x as usize + px, 8 + 16 * y as usize + py);
+                if v != 0 && !c.contains(&v) {
+                    c.push(v);
+                }
+            }
+        }
+        c
+    }
+
+    fn decide(&mut self, t: &Term) -> u8 {
+        let (mut pl, mut mo) = (None, None);
+        for x in 0..19 {
+            for y in 0..9 {
+                let c = Self::cell(t, x, y);
+                if c.contains(&6) && (x, y) != (2, 4) {
+                    pl = Some((x, y));
+                } else if c.contains(&13) || (!c.is_empty() && c.iter().all(|&v| v == 7 || v == 15)) {
+                    mo = Some((x, y));
+                }
+            }
+        }
+        let (Some(pl), Some(mo)) = (pl, mo) else { return b' ' };
+        // A shot only flies on while it is inside the border (SPEC §13).
+        let can_hit = |p: (i32, i32)| {
+            let (dx, dy) = (mo.0 - p.0, mo.1 - p.1);
+            if !((dy == 0 && (1..=3).contains(&dx.abs())) || (dx == 0 && (1..=3).contains(&dy.abs()))) {
+                return None;
+            }
+            let (sx, sy) = (dx.signum(), dy.signum());
+            let mut q = p;
+            for _ in 1..dx.abs() + dy.abs() {
+                q = (q.0 + sx, q.1 + sy);
+                if q.0 <= 0 || q.1 <= 0 {
+                    return None;
+                }
+            }
+            Some(match (sx, sy) {
+                (-1, _) => keys::LEFT,
+                (1, _) => keys::RIGHT,
+                (_, -1) => keys::UP,
+                _ => keys::DOWN,
+            })
+        };
+        if let Some(k) = can_hit(pl) {
+            self.queue.push_back(k);
+            return b'A';
+        }
+        // Step towards the nearest empty cell to shoot from.
+        let empty = |c: (i32, i32)| (0..19).contains(&c.0) && (0..9).contains(&c.1) && c != mo && Self::cell(t, c.0, c.1).is_empty();
+        let mut prev = std::collections::HashMap::new();
+        let mut q = std::collections::VecDeque::from([pl]);
+        prev.insert(pl, pl);
+        while let Some(c) = q.pop_front() {
+            if c != pl && can_hit(c).is_some() {
+                let mut s = c;
+                while prev[&s] != pl {
+                    s = prev[&s];
+                }
+                return match (s.0 - pl.0, s.1 - pl.1) {
+                    (-1, _) => keys::LEFT,
+                    (1, _) => keys::RIGHT,
+                    (_, -1) => keys::UP,
+                    _ => keys::DOWN,
+                };
+            }
+            for d in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let n = (c.0 + d.0, c.1 + d.1);
+                if !prev.contains_key(&n) && empty(n) {
+                    prev.insert(n, c);
+                    q.push_back(n);
+                }
+            }
+        }
+        b' '
+    }
+}
+
+impl Io for LairBot {
+    fn poll(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        if self.left == 0 {
+            return Err(Halt);
+        }
+        self.left -= 1;
+        for l in t.messages() {
+            if !l.trim().is_empty() && self.seen.last() != Some(&l) {
+                self.seen.push(l);
+            }
+        }
+        if let Some(k) = self.queue.pop_front() {
+            return Ok(Some(k));
+        }
+        Ok(Some(self.decide(t)))
+    }
+    fn pause(&mut self, _t: &Term, _ticks: u32) -> IoResult<()> {
+        Ok(())
+    }
+    fn wait_or_key(&mut self, _t: &Term) -> IoResult<()> {
+        Ok(())
+    }
 }
 
 #[test]
 fn defeating_mondain_shows_the_ending() {
-    let swings = "A{left}A{right}A{up}A{down}".repeat(30);
-    let Some(g) = play_with(40, 40, &format!("{TO_GEM}G{swings}{{w5}}"), 1, &[], |r| {
+    let mut bot = LairBot::new(&format!("{TO_GEM}G"), 3000);
+    let Some(g) = play_io(40, 40, &mut bot, 1, &[], |r| {
         at_time_machine(r);
-        // 9999 hits: three quarters of that overflows the original's
-        // 16-bit sum, so taking the gem *adds* hits, as in MONDAIN.EXE.
         r.set_u16(off::HITS, 9999);
         r.set_u16(off::STATS, 99);
         r.set_u16(off::STATS + 2, 99);
@@ -316,7 +454,8 @@ fn defeating_mondain_shows_the_ending() {
     }) else {
         return;
     };
-    assert!(g.term.row_text(24).contains("Press CONTROL-ALT-DEL to Restart"));
+    assert!(bot.saw("Hit Mondain!"));
+    assert!(g.term.row_text(24).contains("Press CONTROL-ALT-DEL to Restart"), "{:?}", g.term.messages());
     assert!(g.stopped.unwrap().contains("Mondain"));
 }
 

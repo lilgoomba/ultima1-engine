@@ -22,6 +22,7 @@ use u1_assets::locations::LocationTable;
 use u1_assets::palette::{cga_as_16, Rgb, CGA_PALETTE_1_LOW, EGA_PALETTE};
 use u1_assets::rules::ExeTables;
 use u1_assets::save::PlayerRecord;
+use u1_assets::sound;
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::{Term, H, W};
 use u1_assets::gen::{Gen, GenEnd, GenFiles};
@@ -36,7 +37,7 @@ const TICK: Duration = Duration::from_micros(54_925);
 const DEFAULT_POS: (u16, u16) = (49, 40);
 
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
-          [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
+          [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE] [--mute]
           [--screenshot out.png [--keys TEXT] [--counter N]]
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
@@ -63,6 +64,7 @@ struct Args {
     intro: bool,
     gen: bool,
     roster: Option<PathBuf>,
+    mute: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -83,6 +85,7 @@ fn parse_args() -> Result<Args, String> {
         intro: false,
         gen: false,
         roster: None,
+        mute: false,
     };
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
@@ -118,6 +121,8 @@ fn parse_args() -> Result<Args, String> {
             "--intro" => a.intro = true,
             "--gen" => a.gen = true,
             "--roster" => a.roster = Some(v()?.into()),
+            // No speaker output; effects still take their original time.
+            "--mute" => a.mute = true,
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
             // The original's only video choice: a first argument starting
@@ -325,6 +330,8 @@ struct SdlIo {
     palette: [Rgb; 16],
     next: Instant,
     pending: std::collections::VecDeque<u8>,
+    /// The PC speaker (none with `--mute` or without an audio device).
+    audio: Option<(sdl2::audio::AudioQueue<i16>, u32)>,
 }
 
 impl SdlIo {
@@ -421,6 +428,23 @@ impl Io for SdlIo {
         self.pending.clear();
     }
 
+    fn sound(&mut self, n: u8) {
+        // The original plays an effect with the CPU busy, so the game waits
+        // for it to end; so does the engine, sound or not.
+        let e = sound::effect(n);
+        let len = Duration::from_secs_f64(e.millis() / 1000.0);
+        if let Some((q, rate)) = &self.audio {
+            let s = sound::render(&e, *rate, sound::CPU_HZ, 6000);
+            let _ = q.queue_audio(&s);
+            q.resume();
+        }
+        let end = Instant::now() + len;
+        while Instant::now() < end {
+            let _ = self.pump();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
         // About 1.5 s, or until a key (which is swallowed).
         for _ in 0..12 {
@@ -430,6 +454,18 @@ impl Io for SdlIo {
         }
         Ok(())
     }
+}
+
+/// A mono 16-bit output for the speaker effects; `None` (silent play) if
+/// there is no audio device.
+fn open_speaker(sdl: &sdl2::Sdl) -> Option<(sdl2::audio::AudioQueue<i16>, u32)> {
+    let sub = sdl.audio().map_err(|e| eprintln!("no audio: {e}")).ok()?;
+    let want = sdl2::audio::AudioSpecDesired { freq: Some(44_100), channels: Some(1), samples: Some(512) };
+    let q = sub.open_queue::<i16, _>(None, &want).map_err(|e| eprintln!("no audio: {e}")).ok()?;
+    let rate = q.spec().freq as u32;
+    // The subsystem must outlive the queue.
+    std::mem::forget(sub);
+    Some((q, rate))
 }
 
 fn play(a: &Args) -> Result<(), String> {
@@ -448,7 +484,8 @@ fn play(a: &Args) -> Result<(), String> {
     let tc: &'static _ = Box::leak(Box::new(canvas.texture_creator()));
     let tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, W as u32, H as u32).map_err(|e| e.to_string())?;
     let events = sdl.event_pump()?;
-    let mut io = SdlIo { canvas, tex, events, palette, next: Instant::now(), pending: Default::default() };
+    let audio = if a.mute { None } else { open_speaker(&sdl) };
+    let mut io = SdlIo { canvas, tex, events, palette, next: Instant::now(), pending: Default::default(), audio };
     let chosen = match front(a, mode, &mut io)? {
         Front::Halted(_) => return Ok(()),
         Front::Play(p) => Some(p),

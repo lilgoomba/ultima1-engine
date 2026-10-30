@@ -318,3 +318,23 @@ fn starving_shows_the_death_picture_then_resurrects() {
     assert_eq!(g.rec.coin(), 0);
     assert!(!said(&g, "thou art dead"));
 }
+
+#[test]
+fn leading_the_princess_out_pays_500_of_each() {
+    use u1_assets::rules::Dir;
+    // Inside Lord British's castle at the entrance (0,9).
+    let Some(mut g) = play(40, 39, "{up}E{w1}") else { return };
+    assert_eq!((g.px, g.py), (0, 9));
+    let (hits, coin, exp) = (g.hits(), g.rec.coin(), g.exp());
+    // Put the princess next to the player, as after opening her cell.
+    let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
+    g.npcs[i].x = 1;
+    g.npcs[i].y = 9;
+    // Stop at the reward's pause, while the box is still shown.
+    let _ = g.town_move(&mut ScriptIo::from_text("{p}"), Dir::West);
+    assert!(g.term.row_text(7).contains("Thou hast saved the princess"));
+    assert!(g.term.row_text(9).contains("500 hit points, pence and"));
+    assert_eq!(g.hits(), hits + 500);
+    assert_eq!(g.rec.coin(), coin + 500);
+    assert_eq!(g.exp(), exp + 500);
+}

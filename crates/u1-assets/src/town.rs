@@ -369,8 +369,10 @@ impl Game {
             self.npcs[i].x = 0x7F;
             self.draw_town();
             if tile == NPC_GUARD {
+                // The original adds the guard bonus without redrawing the
+                // stats, so the shown experience lags by 14 until the next
+                // redraw (seen in DOSBox).
                 self.add(off::EXPERIENCE, 14);
-                self.show_exp();
             }
             if tile == NPC_BARD && self.mode == CASTLE {
                 self.sayln(m::FOUND_KEY);

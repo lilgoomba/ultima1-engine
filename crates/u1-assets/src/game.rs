@@ -417,28 +417,69 @@ impl Game {
         }
     }
 
-    /// One viewport cell: the object there, else the terrain.
-    pub(crate) fn draw_world_cell(&mut self, col: i32, row: i32) {
-        let c = self.counter;
-        let tw = self.a.world_tiles.width.max(1);
-        let th = self.a.world_tiles.height.max(1);
+    /// What the view buffer holds for a viewport cell: the player's
+    /// transport, an object, else `None` (terrain).
+    fn world_object(&self, col: i32, row: i32) -> Option<u8> {
         let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
-        let (sx, sy) = (8 + col as usize * tw, 8 + row as usize * th);
-        let obj = if col == rules::PLAYER_COL && row == rules::PLAYER_ROW {
+        if col == rules::PLAYER_COL && row == rules::PLAYER_ROW {
             Some(tile_for_transport(self.transport()))
         } else {
             self.ow.entity_at(mx, my).map(|i| self.ow.entities[i].tile)
-        };
-        match obj {
-            Some(t) => {
-                let f = animate_object(t, c, (mx * 31 + my * 17) as u32);
-                self.tile(false, f as usize, sx, sy, 0);
-            }
+        }
+    }
+
+    /// `c380` for one cell: the object there, else the terrain, in its base
+    /// frame (water at the current scroll phase).
+    pub(crate) fn draw_world_cell(&mut self, col: i32, row: i32) {
+        let tw = self.a.world_tiles.width.max(1);
+        let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
+        match self.world_object(col, row) {
+            Some(t) => self.put_world(col, row, t as usize, 0),
             None => {
                 let terr = self.a.map.cell(mx as usize, my as usize);
-                let f = Terrain::from_cell(terr).tile_for_frame(c as usize);
-                let s = if terr == 0 { water_scroll(c as usize, tw) } else { 0 };
-                self.tile(false, f, sx, sy, s);
+                let f = Terrain::from_cell(terr).tile().0;
+                let s = if terr == 0 { water_scroll(self.counter as usize, tw) } else { 0 };
+                self.put_world(col, row, f, s);
+            }
+        }
+    }
+
+    fn put_world(&mut self, col: i32, row: i32, t: usize, shift: usize) {
+        let tw = self.a.world_tiles.width.max(1);
+        let th = self.a.world_tiles.height.max(1);
+        let (sx, sy) = (8 + col as usize * tw, 8 + row as usize * th);
+        self.tile(false, t, sx, sy, shift);
+    }
+
+    /// `af57(p)`: the per-poll outdoor animation, `p` counting the polls
+    /// of the current prompt from 1. The water scrolls one step; castles
+    /// show tile 4 when `p % 6 == 0`, tile 5 when `p % 3 == 0` and are
+    /// left alone otherwise; towns show 7 when `p % 4 == 0`, else 8; the
+    /// frigate and tile 0x19 alternate with `p`; every other monster
+    /// (0x13..=0x2F) draws its base tile plus `R(1,100) % 2`, so each
+    /// visible monster costs one roll of the game's generator per poll,
+    /// column by column, top to bottom.
+    pub(crate) fn world_tick(&mut self, p: u32) {
+        self.counter = self.counter.wrapping_add(1);
+        let tw = self.a.world_tiles.width.max(1);
+        for col in 0..VIEW_COLS {
+            for row in 0..VIEW_ROWS {
+                let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
+                match self.world_object(col, row) {
+                    Some(t @ (0x0E | 0x19)) => self.put_world(col, row, (t as u32 + (p & 1)) as usize, 0),
+                    Some(t) if rules::is_monster_tile(t) => {
+                        let f = t as i32 + self.r(1, 100) % 2;
+                        self.put_world(col, row, f as usize, 0);
+                    }
+                    Some(_) => {}
+                    None => match self.a.map.cell(mx as usize, my as usize) {
+                        0 => self.put_world(col, row, 0, water_scroll(self.counter as usize, tw)),
+                        4 if p % 6 == 0 => self.put_world(col, row, 4, 0),
+                        4 if p % 3 == 0 => self.put_world(col, row, 5, 0),
+                        6 => self.put_world(col, row, if p % 4 == 0 { 7 } else { 8 }, 0),
+                        _ => {}
+                    },
+                }
             }
         }
     }
@@ -588,23 +629,25 @@ impl Game {
         }
         self.term.ornament_left(0, 24);
         self.term.cursor(1, 24);
-        let mut idle = 0;
+        if self.mode == OUTDOORS {
+            self.draw_world();
+        }
+        // `8eb9`: poll, count, animate the outdoors after every poll (the
+        // one that brings the key too); 1500 polls without a key pass.
+        let mut polls = 0u32;
         let key = loop {
+            let k = self.poll_key(io)?;
+            polls += 1;
             if self.mode == OUTDOORS {
-                self.draw_world();
+                self.world_tick(polls);
             }
-            match self.poll_key(io)? {
-                Some(k) => break k,
-                None => {
-                    self.counter = self.counter.wrapping_add(1);
-                    idle += 1;
-                    if idle >= 1500 {
-                        break b' ';
-                    }
-                }
+            if let Some(k) = k {
+                break k;
+            }
+            if polls >= 1500 {
+                break b' ';
             }
         };
-        self.counter = self.counter.wrapping_add(1);
         self.command(io, key.to_ascii_uppercase())?;
         if self.stopped.is_some() {
             return Ok(());
@@ -1529,17 +1572,3 @@ impl Game {
     }
 }
 
-/// Animation frame of an object tile outdoors: the frigate and one sea
-/// monster alternate with the counter; other monsters pick a frame "at
-/// random" (here a hash of the counter and position, so screenshots are
-/// reproducible).
-pub fn animate_object(tile: u8, counter: u32, salt: u32) -> u8 {
-    match tile {
-        0x0E | 0x19 => tile + (counter & 1) as u8,
-        t if rules::is_monster_tile(t) => {
-            let h = counter.wrapping_mul(2_654_435_761).wrapping_add(salt.wrapping_mul(40_503));
-            t + ((h >> 16) & 1) as u8
-        }
-        t => t,
-    }
-}

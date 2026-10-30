@@ -181,8 +181,9 @@ engine's CGA render of the overworld matches DOSBox for every terrain cell.
 **Tandy (T1K) linear** — 2 pixels/byte, high nibble = left pixel [S3].
 **VERIFIED (original data, by decoding):** T1KTILES, T1KTOWN and T1KMOND
 decode to exactly the same pixel values as the EGA sets. The Tandy palette
-is assumed to be the standard IRGB one; it has not been compared in a
-DOSBox machine=tandy run (UNKNOWN).
+is the standard IRGB one: overworld, town, dungeon, castle, space and
+Mondain screens rendered by the engine match DOSBox `machine=tandy` apart
+from the blinking cursor's phase (Phase 7).
 
 **Monochrome linear** — 8 pixels/byte, MSB = leftmost, set bits drawn white
 [S3]. Colour used in-game: UNKNOWN.
@@ -265,13 +266,25 @@ captured screen over time (cycles=20000):
   (period about 1 s).
 * **Town** shows tile 7 for one tick out of every four (the tick where the
   water phase is 0) and tile 8 for the other three.
-* Monster tiles: the frigate (0x0E/0x0F) and the first sea monster
-  alternate frames with the poll counter. Other monsters pick one of
-  their two frames pseudo-randomly each redraw (VERIFIED (original
-  executable)). The engine uses its own hash for this choice.
+* Monster tiles: the frigate (0x0E/0x0F) and tile 0x19 alternate frames
+  with the poll counter. Every other monster tile (0x13..=0x2F) draws its
+  base tile plus `R(1,100) mod 2`, taken from the game's own random
+  generator, so each visible monster costs one roll per poll (VERIFIED
+  (original executable)).
 
-The engine implements water, castle and town exactly as described
-(`map::water_scroll`, `Terrain::tile_for_frame`).
+**Who animates, and when (VERIFIED (original executable)).** The prompt
+loop polls the keyboard, adds one to a per-prompt counter *p* (1 on the
+first poll), and outdoors calls the view animation with *p* after every
+poll, including the poll that returns the key. The animation scrolls the
+water one step (the water phase is global and never reset), then walks the
+view column by column, top to bottom: water is redrawn; a castle shows
+tile 4 when `p mod 6 = 0`, tile 5 when `p mod 3 = 0`, and is left as it is
+otherwise; a town shows 7 when `p mod 4 = 0`, else 8; objects as above.
+A full view redraw (after a move or a turn) draws every cell in its base
+tile, with no random rolls. Because the number of polls per prompt
+depends on how long the player waits, these frames and the random
+numbers that follow them are, in the original, effectively real-time
+dependent. The engine does exactly the same per poll (`Game::world_tick`).
 
 ## 4. Overworld map — `MAP.BIN`
 
@@ -885,7 +898,7 @@ the dungeon's accumulated bonus, capped so Hits stays ≤ 9999.
 * The last row holds the `>` prompt with a blinking cursor.
 * The stats box shows `Hits:`, `Food:`, `Exp.:` and `Coin:` with
   4-character right-aligned values.
-* The engine draws this with its own 8×8 font (not the BIOS font).
+* The engine draws this with an 8×8 font loaded at run time (§16).
 
 ### 9.2 Towns, castles, shops, kings and saving: Phase 4
 
@@ -971,8 +984,8 @@ generator from the clock.
 **Status line colours:** Hits and Food show in the warning colour below
 100. Experience and Coin always show in the text colour [DOSBox].
 
-**UNKNOWN / approximate:** the exact NPC frame choice; the duration of
-some waits.
+**UNKNOWN / approximate:** the town NPC frame choice; the duration of
+some waits (see §18).
 
 ## 10. What the engine implements today
 
@@ -1151,6 +1164,39 @@ VERIFIED (original executable) [DOSBox].
   armour are cleared before the player is placed back on land. The
   picture matched DOSBox pixel for pixel.
 
+## 15. Video modes: Phase 7
+
+The original picks one display when it starts and only ever reads that
+mode's tile files. The engine does the same: it uses the first of EGA,
+Tandy, CGA whose `???TILES.BIN` is present in the game directory, or
+`--mode ega|t1k|cga` (`gamedir::VideoMode`).
+
+* **EGA** (320x200, 16 colours, shown doubled): tile files are decoded as
+  in §3.1. Pixel-identical to DOSBox `machine=ega` in all screens checked.
+* **CGA** (palette 1, low intensity): the 16 text and frame colours of the
+  EGA screens are mapped to the four CGA colours with the same table the
+  original uses (read from OUT.EXE at run time); the frame corners and the
+  blinking prompt cursor are drawn from OUT.EXE's own CGA bitmaps. Space
+  fighters and ships use the two-tiles-per-sprite CGA layouts (§3).
+  Compared with DOSBox `machine=cga`: castle, credits and town 0 px
+  different, overworld and dungeon differ only by the cursor phase.
+* **Tandy 1000** (16 colours, IRGB): values decode exactly like EGA, so
+  every screen equals the EGA one; compared with DOSBox `machine=tandy`
+  for overworld, town, dungeon and castle (cursor phase only).
+
+Shots: `/workspace/u1-shots/phase7/sbs_*` and `/workspace/u1-shots/phase7/play/sbs_*`.
+
+## 16. Text font: Phase 7
+
+The original prints text through the PC BIOS, so its glyphs are the
+machine's ROM font. Neither the game files nor this repository contain
+it. The engine loads an 8x8 font at run time from `--font FILE` or the
+`U1_FONT` variable: a raw dump of 8-byte glyphs (128 to 256 of them), a
+PSF1/PSF2 font with 8x8 glyphs, or a Unifont-style `.hex` file. Without
+one it uses a subset of the public-domain unscii-8 font shipped in
+`crates/u1-assets/fonts/`, which looks close but not identical. With the
+machine's own ROM font supplied, text rows match DOSBox pixel for pixel.
+
 ## 17. Start-up programs: title sequence (`ULTIMA.EXE`) and character program (`GEN.EXE`): Phase 7
 
 Run with `--intro` (title sequence, then the character program) or `--gen`
@@ -1207,6 +1253,41 @@ original's byte for byte apart from the clock-dependent seed. Shots:
 Approximations: the "please wait" screen is held for 9 ticks (the original
 shows it for as long as DOS takes to load OUT.EXE, too short to capture in
 DOSBox); the cursor's phase depends on real time, as in the original.
+
+## 18. Remaining differences from the original (end of Phase 7)
+
+Each item has been compared with the original in DOSBox or read from its
+code; nothing else is known to differ.
+
+1. **Random numbers.** The original seeds its generator from the clock;
+   the engine takes a seed (`--seed`, default from the clock). Monster
+   moves, hits, spawns, prayer results and monster frames therefore match
+   only in kind, not roll for roll. Same seed and same keys give
+   byte-equal saves (§9).
+2. **Real-time phases.** Water scroll, castle/town flags, monster frames
+   and the prompt cursor advance once per keyboard poll, and the number
+   of polls depends on how long the player waits. Side-by-sides differ
+   only in these phases.
+3. **Sound.** The PC-speaker effects are replaced by silent pauses of the
+   same length.
+4. **Poll speed.** One poll is taken as 130 ms outdoors (DOSBox
+   cycles=20000); the original's speed depends on the CPU. Space waits 2
+   timer ticks per poll, so its automatic Pass after 1500 polls is
+   ~165 s in both. The very first Pass in one DOSBox run came after
+   ~231 s; this was not reproduced and is unexplained.
+5. **Mondain ending.** After the victory text the original polls the
+   keyboard up to 10,000 times with no delay, so how long it waits
+   depends on the CPU. The engine waits ~5.5 s. The DOSBox victory screen
+   itself was not reached in automated play (the fight is slow to script);
+   the engine's ending follows the code and NIF.BIN.
+6. **Load-time waits.** The title text (12 ticks) and the "please wait"
+   screen (9 ticks) stand in for DOS loading the next program.
+7. **Town NPC frames.** Which of an NPC's two frames is shown follows the
+   engine's own rule; not yet traced in the original.
+8. **Prayer flash in towns.** The outdoor prayer flash is drawn; the
+   town/castle one is not.
+9. **Font.** Without a user-supplied ROM font, text uses the unscii-8
+   lookalike (§16).
 
 ## Sources
 

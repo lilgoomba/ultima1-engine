@@ -432,7 +432,7 @@ fn outdoor_magic_missile_flies_and_hits() {
 
 #[test]
 fn outdoor_prayer_can_remove_an_adjacent_monster() {
-    let Some(g) = play_with(40, 39, "C", 137, &[], |r| {
+    let Some(g) = play_with(40, 39, "{w1}C", 3, &[], |r| {
         r.set_u16(off::READY_SPELL, 0);
         knight_at(r, 41, 39);
     }) else {

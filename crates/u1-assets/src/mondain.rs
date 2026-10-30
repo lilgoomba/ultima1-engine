@@ -1062,7 +1062,8 @@ impl Lair<'_> {
         }
         self.delay(10)?;
         self.io.flush();
-        // Up to 10000 polls for a key (timing approximate).
+        // Up to 10000 polls for a key. The original polls with no delay,
+        // so its wait depends on the CPU; this takes about 5.5 s (SPEC §18).
         for i in 0..10000u32 {
             if self.io.poll_now(&self.g.term)?.is_some() {
                 break;

@@ -12,8 +12,8 @@ use crate::gamedir::GameDir;
 use crate::io::{keys, Halt, Io, IoResult};
 use crate::rng::U1Rng;
 use crate::save::off;
-use crate::term::{BLACK, BLUE, TEXT, WHITE};
-use crate::tiles::{TileSet, EGA_MOND, EGA_TILES};
+use crate::term::{BLACK, BLUE, RAW, TEXT, WHITE};
+use crate::tiles::{TileSet, CGA_MOND, EGA_MOND, T1K_MOND};
 
 /// Size of the supported MONDAIN.EXE.
 pub const MONDAIN_EXE_SIZE: usize = 31650;
@@ -137,14 +137,20 @@ pub struct MondainFiles {
 }
 
 impl MondainFiles {
-    pub fn load(g: &GameDir) -> crate::Result<Self> {
+    pub fn load(g: &GameDir, video: crate::gamedir::VideoMode) -> crate::Result<Self> {
         let data = g.read("MONDAIN.EXE")?;
         if data.len() != MONDAIN_EXE_SIZE {
             return Err(crate::AssetError::BadSize { what: "MONDAIN.EXE".into(), expected: MONDAIN_EXE_SIZE.to_string(), got: data.len() });
         }
         let base = Exe::mz_data_base(&data, DS_PARA);
-        let world = TileSet::decode_spec(&g.read("EGATILES.BIN")?, &EGA_TILES)?;
-        let mond = TileSet::decode_spec(&g.read("EGAMOND.BIN")?, &EGA_MOND)?;
+        let wspec = video.world_tiles();
+        let mspec = match video {
+            crate::gamedir::VideoMode::Ega => EGA_MOND,
+            crate::gamedir::VideoMode::Tandy => T1K_MOND,
+            crate::gamedir::VideoMode::Cga => CGA_MOND,
+        };
+        let world = TileSet::decode_spec(&g.read(wspec.file_name)?, &wspec)?;
+        let mond = TileSet::decode_spec(&g.read(mspec.file_name)?, &mspec)?;
         // Slot 0 is blank; the first eleven world tiles go to slots 10..=20,
         // then the nineteen lair tiles overwrite slots 1..=19.
         let mut tiles = vec![vec![0u8; 256]; 21];
@@ -302,7 +308,8 @@ impl Lair<'_> {
         let h = self.g.hits();
         self.g.set(off::HITS, h.wrapping_sub(n));
     }
-    /// `4031`/`3ff9`: the EGA palette swap used as a flash.
+    /// `4031`/`3ff9`: the EGA palette swap used as a flash (on CGA a white
+    /// background and the other palette).
     fn flash(&mut self, on: bool) {
         self.g.term.inverted = on;
     }
@@ -469,7 +476,8 @@ impl Lair<'_> {
                 self.g.term.print_at(col, row, &t);
             }
             if i == 0 {
-                for (k, c) in [12u8, 10, 9, 15].into_iter().enumerate() {
+                let gems = if self.g.term.cga { [2 | RAW, 1 | RAW, 1 | RAW, 3 | RAW] } else { [12u8, 10, 9, 15] };
+                for (k, c) in gems.into_iter().enumerate() {
                     self.g.term.put_char(12 + 5 * k, 7, '\u{4}', c);
                 }
             }

@@ -40,6 +40,15 @@ pub const CGA_PALETTE_1_LOW: [Rgb; 4] = [
 
 /// Expand a 4-entry CGA palette into a 16-entry table so CGA tile sets
 /// (pixel values 0..=3) can share the same renderer.
+/// MONDAIN.EXE's CGA flash (`4031`): background white, palette 0
+/// (green, red, brown).
+pub const CGA_FLASH: [Rgb; 4] = [
+    [0xFF, 0xFF, 0xFF],
+    [0x00, 0xAA, 0x00],
+    [0xAA, 0x00, 0x00],
+    [0xAA, 0x55, 0x00],
+];
+
 pub fn cga_as_16(p: &[Rgb; 4]) -> [Rgb; 16] {
     let mut out = [[0u8; 3]; 16];
     out[..4].copy_from_slice(p);

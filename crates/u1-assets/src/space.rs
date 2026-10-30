@@ -10,7 +10,7 @@ use crate::gamedir::GameDir;
 use crate::io::{Halt, Io, IoResult};
 use crate::rng::U1Rng;
 use crate::save::off;
-use crate::term::{BLACK, TEXT};
+use crate::term::{BLACK, RAW, TEXT, W};
 
 /// Size of the supported SPACE.EXE.
 pub const SPACE_EXE_SIZE: usize = 39824;
@@ -113,26 +113,35 @@ mod d {
 /// SPACE.EXE and its two sprite files.
 pub struct SpaceFiles {
     pub exe: Exe,
+    /// The original's video index `112c`: 0 CGA, 1 EGA, 2 Tandy; it picks
+    /// the sprite files and their layout (tables `12fe`.. in SPACE.EXE).
+    pub mode: usize,
     pub ships: Vec<u8>,
     pub fighter: Vec<u8>,
 }
 
 impl SpaceFiles {
-    pub fn load(g: &GameDir) -> crate::Result<Self> {
+    pub fn load(g: &GameDir, video: crate::gamedir::VideoMode) -> crate::Result<Self> {
+        use crate::gamedir::VideoMode;
+        let (mode, pre) = match video {
+            VideoMode::Cga => (0, "CGA"),
+            VideoMode::Ega => (1, "EGA"),
+            VideoMode::Tandy => (2, "T1K"),
+        };
         let data = g.read("SPACE.EXE")?;
         if data.len() != SPACE_EXE_SIZE {
             return Err(crate::AssetError::BadSize { what: "SPACE.EXE".into(), expected: SPACE_EXE_SIZE.to_string(), got: data.len() });
         }
         let base = Exe::mz_data_base(&data, DS_PARA);
-        let ships = g.read("EGASPACE.BIN")?;
-        let fighter = g.read("EGAFIGHT.BIN")?;
+        let ships = g.read(&format!("{pre}SPACE.BIN"))?;
+        let fighter = g.read(&format!("{pre}FIGHT.BIN"))?;
         if ships.len() < 3 * 4 * 0x260 {
             return Err(crate::AssetError::BadSize { what: "EGASPACE.BIN".into(), expected: "7296".into(), got: ships.len() });
         }
         if fighter.len() < 7 * 0x1c8 {
             return Err(crate::AssetError::BadSize { what: "EGAFIGHT.BIN".into(), expected: "3192".into(), got: fighter.len() });
         }
-        Ok(SpaceFiles { exe: Exe::with_base(data, base), ships, fighter })
+        Ok(SpaceFiles { exe: Exe::with_base(data, base), mode, ships, fighter })
     }
 }
 
@@ -647,11 +656,13 @@ impl<'a> Space<'a> {
 
     /// `23f3`: the dotted frame.
     fn frame(&mut self) {
+        // 7, or the white colour variable `5ad4` on CGA.
+        let fc = if self.f.mode == 0 { C_WHITE } else { C_FRAME };
         let t = &mut self.g.term;
-        t.fill(8, 8, 311, 15, C_FRAME);
-        t.fill(8, 144, 311, 151, C_FRAME);
-        t.fill(8, 16, 15, 144, C_FRAME);
-        t.fill(304, 16, 311, 144, C_FRAME);
+        t.fill(8, 8, 311, 15, fc);
+        t.fill(8, 144, 311, 151, fc);
+        t.fill(8, 16, 15, 144, fc);
+        t.fill(304, 16, 311, 144, fc);
         for i in 1..=19 {
             let x = 15 * i + 10;
             for y in [10, 13, 146, 149] {
@@ -688,18 +699,22 @@ impl<'a> Space<'a> {
             return;
         }
         if (self.gx, self.gy) == (3, 3) {
+            // `528`: 1, 10, 7, or the CGA colour variables 1, 2, 3.
+            let [c1, c2, c3] = if self.f.mode == 0 { [1 | RAW, 2 | RAW, 3 | RAW] } else { [1, 10, 7] };
             self.bitmap(d::EARTH, 21, 18, 60, 75, |v| match v {
-                1 | 2 => Some(1),
-                3 => Some(10),
-                4 => Some(7),
+                1 | 2 => Some(c1),
+                3 => Some(c2),
+                4 => Some(c3),
                 _ => None,
             });
         }
         let s = *self.sec();
         if s.sx != 0 {
+            // `426`: 14 and 12, or the CGA colour variables 3 and 2.
+            let [c1, c2] = if self.f.mode == 0 { [3 | RAW, 2 | RAW] } else { [14, 12] };
             self.bitmap(d::STAR, 19, 18, s.sx, s.sy, |v| match v {
-                1 => Some(14),
-                2 => Some(12),
+                1 => Some(c1),
+                2 => Some(c2),
                 _ => None,
             });
         }
@@ -713,29 +728,55 @@ impl<'a> Space<'a> {
         }
     }
 
+    /// Sprite layout for the current video mode: (bytes per row, shift
+    /// mask, bytes per shift, bits per pixel) from SPACE.EXE tables.
+    fn layout(&self, row_tab: usize, mask_tab: usize, step_tab: usize) -> (usize, i16, usize, usize) {
+        let m = self.f.mode;
+        let e = &self.f.exe;
+        let bpp = [2, 1, 4][m.min(2)];
+        (e.w(row_tab + 2 * m) as usize, e.w(mask_tab + 2 * m) as i16, e.w(step_tab + 2 * m) as usize, bpp)
+    }
+
+    /// Pixels of one sprite row: (x offset, device value) of each set pixel.
+    fn sprite_row(data: &[u8], at: usize, n: usize, bpp: usize) -> Vec<(i32, u8)> {
+        let per = 8 / bpp;
+        let mut out = Vec::new();
+        for b in 0..n {
+            let byte = data.get(at + b).copied().unwrap_or(0);
+            for k in 0..per {
+                let v = (byte >> (8 - bpp * (k + 1))) & ((1u8 << bpp) - 1);
+                if v != 0 {
+                    out.push(((b * per + k) as i32, v));
+                }
+            }
+        }
+        out
+    }
+
     /// `603e`: XOR a ship sprite; true when it touched something.
     fn ship(&mut self, ty: i16, hd: i16, x: i16, y: i16) -> bool {
-        let base = ((ty * 4 + hd) as usize) * 0x260 + ((x & 7) as usize) * 76;
-        let bx = i32::from(x >> 3) * 8;
+        let (row, mask, step, bpp) = self.layout(0x12fe, 0x130a, 0x1310);
+        let base = ((ty * 4 + hd) as usize) * 0x260 + ((x & mask) as usize) * step;
+        let bx = i32::from(x & !mask);
+        let ega = self.f.mode == 1;
         let mut hit = false;
         for r in 0..19 {
             let py = i32::from(y) + r;
             if !(18..=141).contains(&py) {
                 continue;
             }
-            for b in 0..4 {
-                let byte = self.f.ships.get(base + r as usize * 4 + b).copied().unwrap_or(0);
-                for bit in 0..8 {
-                    if byte & (0x80 >> bit) != 0 {
-                        let px = bx + b as i32 * 8 + bit;
-                        if (0..320).contains(&px) {
-                            let old = self.g.term.at(px as usize, py as usize);
-                            if old & 1 != 0 {
-                                hit = true;
-                            }
-                            self.g.term.plot(px, py, old ^ 15);
-                        }
+            for (dx, v) in Self::sprite_row(&self.f.ships, base + r as usize * row, row, bpp) {
+                let px = bx + dx;
+                if (0..320).contains(&px) {
+                    let i = py as usize * W + px as usize;
+                    let old = self.g.term.px[i];
+                    // EGA tests plane 0 and XORs all four planes; CGA and
+                    // Tandy test and XOR the sprite's own bits.
+                    let (m, x) = if ega { (1, 15) } else { (v, v) };
+                    if old & m != 0 {
+                        hit = true;
                     }
+                    self.g.term.px[i] = old ^ x;
                 }
             }
         }
@@ -744,15 +785,22 @@ impl<'a> Space<'a> {
 
     /// `614e`: the fighter seen ahead, drawn or erased.
     fn fighter(&mut self, x: i16, y: i16, size: i16, on: bool) {
-        let base = (size.clamp(0, 6) as usize) * 0x1c8 + ((x & 7) as usize) * 57;
-        let bx = i32::from(x >> 3) * 8;
+        let (row, mask, step, bpp) = self.layout(0x1318, 0x1324, 0x132a);
+        let base = (size.clamp(0, 6) as usize) * 0x1c8 + ((x & mask) as usize) * step;
+        let bx = i32::from(x & !mask);
+        let ega = self.f.mode == 1;
         for r in 0..19 {
-            for b in 0..3 {
-                let byte = self.f.fighter.get(base + r * 3 + b).copied().unwrap_or(0);
-                for bit in 0..8 {
-                    if byte & (0x80 >> bit) != 0 {
-                        self.g.term.plot(bx + b as i32 * 8 + bit, i32::from(y) + r as i32, if on { C_WHITE } else { BLACK });
-                    }
+            let py = i32::from(y) + r as i32;
+            for (dx, v) in Self::sprite_row(&self.f.fighter, base + r * row, row, bpp) {
+                let px = bx + dx;
+                if (0..320).contains(&px) && (0..200).contains(&py) {
+                    let i = py as usize * W + px as usize;
+                    let old = self.g.term.px[i];
+                    self.g.term.px[i] = match (ega, on) {
+                        (true, true) => C_WHITE,
+                        (_, false) => if ega { BLACK } else { old & !v },
+                        (false, true) => old | v,
+                    };
                 }
             }
         }
@@ -1559,7 +1607,7 @@ mod real_game {
             video: mode,
         };
         let rec = PlayerRecord::parse(&g.read("PLAYER2.U1").ok()?).unwrap();
-        Some((Game::new(assets, rec, 1), SpaceFiles::load(&g).ok()?))
+        Some((Game::new(assets, rec, 1), SpaceFiles::load(&g, crate::gamedir::VideoMode::Ega).ok()?))
     }
 
     /// Put a size-1 fighter where the laser box of `2252` catches it.

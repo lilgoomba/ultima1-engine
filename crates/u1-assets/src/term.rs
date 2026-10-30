@@ -13,6 +13,8 @@ pub const BLUE: u8 = 1;
 pub const WARN: u8 = 12;
 pub const TEXT: u8 = 11;
 pub const WHITE: u8 = 15;
+/// Flag on a colour: a device value used as is (no CGA mapping).
+pub const RAW: u8 = 0x10;
 
 /// Viewport rectangle (inclusive), cleared to black by the original.
 pub const VIEW: (usize, usize, usize, usize) = (8, 8, 311, 151);
@@ -77,6 +79,9 @@ impl Term {
     /// written with only its low two bits on CGA (the plot routine `aa3c`
     /// masks with 3).
     pub fn dc(&self, c: u8) -> u8 {
+        if c & RAW != 0 {
+            return c & 15;
+        }
         if !self.cga {
             return c;
         }
@@ -440,6 +445,12 @@ impl Term {
         for y in 0..H * scale {
             for x in 0..W * scale {
                 let mut i = (self.px[(y / scale) * W + x / scale] & 15) as usize;
+                if self.inverted && self.cga {
+                    let c = crate::palette::CGA_FLASH[i & 3];
+                    let o = (y * W * scale + x) * 3;
+                    out[o..o + 3].copy_from_slice(&c);
+                    continue;
+                }
                 if self.inverted {
                     i = 15 - i;
                 }

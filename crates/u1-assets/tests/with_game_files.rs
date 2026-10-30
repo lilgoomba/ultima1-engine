@@ -58,8 +58,8 @@ fn play_with(
     rec.set_u16(off::COIN, 35);
     adjust(&mut rec);
     let mut game = Game::new(assets, rec, seed);
-    game.space = SpaceFiles::load(&g).ok();
-    game.mondain = u1_assets::mondain::MondainFiles::load(&g).ok();
+    game.space = SpaceFiles::load(&g, game.a.video).ok();
+    game.mondain = u1_assets::mondain::MondainFiles::load(&g, game.a.video).ok();
     game.fixed_times = times.iter().copied().collect();
     let _ = game.run(&mut ScriptIo::from_text(keys));
     Some(game)

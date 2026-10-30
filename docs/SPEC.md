@@ -1354,6 +1354,30 @@ VERIFIED (original executables, reference reading).
   cycles=530. Effect 4 (the step click) is too short to resolve at
   44.1 kHz in the capture.
 
+### 19.1 Enhanced sound mode (engine feature, not original behaviour)
+
+* Off by default; `--sound enhanced` turns it on (`--sound original` is
+  the default, `--sound mute` or `--mute` plays nothing).
+* Each place the game plays an effect also names the event (`Sfx`):
+  bump, crash (space "Crunch!"), burn (fire), error, hit, kill, hurt,
+  death, alarm (townsfolk turn hostile), explosion (enemy ship, gem),
+  monster attack, step, townsperson step, magic, quest, resurrect,
+  victory, Mondain's spell, spell failure, attack, laser, enemy laser
+  and star field. The original effect number is unchanged and is what
+  the default mode plays. Five events are silent in the original and are
+  only heard in the enhanced mode: miss, dodge, launch, dock and
+  hyperspace jump.
+* The pack's `sounds/<event>.wav` is played instead of the effect; a
+  missing or unreadable file falls back to the effect. Sounds are mixed,
+  so a long one may overlap what follows; the same sound requested
+  again within 150 ms is not restarted (the original repeats effects,
+  e.g. three times at death).
+* The game still waits for the original effect's length, so play speed
+  is identical in every mode. The save's Noise flag (offset 0x38) still
+  silences everything.
+* The engine's sounds are made by script and licensed CC-BY-SA 4.0
+  (`assets/enhanced/sounds/CREDITS`). No music.
+
 ## 20. Enhanced video mode (engine feature, not original behaviour)
 
 This section describes an optional feature of this engine. It is not part

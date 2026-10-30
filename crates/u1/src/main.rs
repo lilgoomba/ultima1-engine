@@ -5,6 +5,8 @@
 //!      [--scale N] [--save-to FILE]
 //!   u1 --game-dir <path> ... --screenshot out.png [--keys TEXT] [--counter N]
 //!   u1 --game-dir <path> ... --video enhanced [--pack DIR]
+//!   u1 --game-dir <path> ... --sound original|enhanced|mute
+//!   u1 --sound-demo out.wav [--pack DIR]
 //!
 //! Game files are only read. Quit (Q, outdoors) writes the 820-byte player
 //! record to `--save-to` (default `./PLAYER1.U1` in the current directory,
@@ -24,7 +26,9 @@ use u1_assets::locations::LocationTable;
 use u1_assets::palette::{cga_as_16, Rgb, CGA_PALETTE_1_LOW, EGA_PALETTE};
 use u1_assets::rules::ExeTables;
 use u1_assets::save::PlayerRecord;
-use u1_assets::sound;
+use u1_assets::sound::{self, Sfx};
+use u1_assets::soundpack::{SoundMode, SoundPack};
+use std::sync::Arc;
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::{Term, H, W};
 use u1_assets::gen::{Gen, GenEnd, GenFiles};
@@ -39,8 +43,8 @@ const TICK: Duration = Duration::from_micros(54_925);
 const DEFAULT_POS: (u16, u16) = (49, 40);
 
 const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
-          [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE] [--mute]
-          [--video original|enhanced [--pack DIR]]
+          [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
+          [--video original|enhanced] [--sound original|enhanced|mute] [--pack DIR]
           [--screenshot out.png [--keys TEXT] [--counter N]]
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
@@ -51,7 +55,12 @@ the menu; characters are kept in --roster DIR (default: the --save-to
 directory, never the game directory) and the chosen one is saved back there.
 --video enhanced draws the art of an asset pack (default: assets/enhanced in
 the source tree) over the original tiles at a higher resolution; tiles the
-pack lacks are the original scaled up. The game itself is unchanged.";
+pack lacks are the original scaled up. The game itself is unchanged.
+--sound enhanced plays the pack's sounds (sounds/*.wav) instead of the
+PC-speaker effects, the original effect for any it lacks; the default is the
+original beeps (--mute, or --sound mute, plays nothing). Timing is the
+original's either way. --sound-demo FILE writes every enhanced sound, each
+after its original effect, to a WAV file.";
 
 struct Args {
     game_dir: PathBuf,
@@ -70,7 +79,8 @@ struct Args {
     intro: bool,
     gen: bool,
     roster: Option<PathBuf>,
-    mute: bool,
+    sound: SoundMode,
+    sound_demo: Option<PathBuf>,
     enhanced: bool,
     pack: Option<PathBuf>,
 }
@@ -93,7 +103,8 @@ fn parse_args() -> Result<Args, String> {
         intro: false,
         gen: false,
         roster: None,
-        mute: false,
+        sound: SoundMode::Original,
+        sound_demo: None,
         enhanced: false,
         pack: None,
     };
@@ -132,7 +143,12 @@ fn parse_args() -> Result<Args, String> {
             "--gen" => a.gen = true,
             "--roster" => a.roster = Some(v()?.into()),
             // No speaker output; effects still take their original time.
-            "--mute" => a.mute = true,
+            "--mute" => a.sound = SoundMode::Mute,
+            "--sound" => a.sound = SoundMode::parse(&v()?).ok_or("--sound wants original, enhanced or mute")?,
+            "--sound-demo" => {
+                a.sound_demo = Some(v()?.into());
+                have_dir = true;
+            }
             "--video" => {
                 a.enhanced = match v()?.as_str() {
                     "original" => false,
@@ -153,8 +169,8 @@ fn parse_args() -> Result<Args, String> {
         return Err(USAGE.into());
     }
     a.scale = a.scale.clamp(1, 6);
-    if a.pack.is_some() && !a.enhanced {
-        return Err("--pack needs --video enhanced".into());
+    if a.pack.is_some() && !a.enhanced && a.sound != SoundMode::Enhanced && a.sound_demo.is_none() {
+        return Err("--pack needs --video enhanced or --sound enhanced".into());
     }
     Ok(a)
 }
@@ -162,17 +178,47 @@ fn parse_args() -> Result<Args, String> {
 /// The enhanced mode's pack: `--pack`, else `assets/enhanced` in the
 /// current directory or the source tree; with none, no art (everything
 /// is the original, scaled up).
-fn load_pack(a: &Args) -> Result<Option<Pack>, String> {
-    if !a.enhanced {
-        return Ok(None);
-    }
-    let dir = match &a.pack {
+fn pack_dir(a: &Args) -> Option<PathBuf> {
+    match &a.pack {
         Some(d) => Some(d.clone()),
         None => [PathBuf::from("assets/enhanced"), Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/enhanced")]
             .into_iter()
             .find(|d| d.join("manifest.toml").is_file()),
+    }
+}
+
+/// The enhanced sound mode's sounds (`sounds/` in the pack folder), at
+/// the output rate.
+fn load_sounds(a: &Args, rate: u32) -> SoundPack {
+    let p = match pack_dir(a) {
+        Some(d) => SoundPack::load(&d.join("sounds"), rate),
+        None => SoundPack { rate, ..Default::default() },
     };
-    let pack = match dir {
+    for w in &p.warnings {
+        eprintln!("sounds: {w}");
+    }
+    if p.clips.is_empty() {
+        eprintln!("no enhanced sounds found; playing the original effects");
+    }
+    p
+}
+
+/// `--sound-demo`: each event's original effect, then its enhanced sound.
+fn sound_demo(a: &Args, out: &Path) -> Result<(), String> {
+    let p = load_sounds(a, 44_100);
+    let (wav, order) = u1_assets::soundpack::demo_reel(&p);
+    std::fs::write(out, u1_assets::soundpack::encode_wav(p.rate, &wav)).map_err(|e| e.to_string())?;
+    for l in order {
+        println!("{l}");
+    }
+    Ok(())
+}
+
+fn load_pack(a: &Args) -> Result<Option<Pack>, String> {
+    if !a.enhanced {
+        return Ok(None);
+    }
+    let pack = match pack_dir(a) {
         Some(d) => Pack::load(&d)?,
         None => {
             eprintln!("no asset pack found (assets/enhanced); showing the original art scaled up");
@@ -391,8 +437,12 @@ struct SdlIo {
     palette: [Rgb; 16],
     next: Instant,
     pending: std::collections::VecDeque<u8>,
-    /// The PC speaker (none with `--mute` or without an audio device).
-    audio: Option<(sdl2::audio::AudioQueue<i16>, u32)>,
+    /// The sound output (none without an audio device).
+    audio: Option<(sdl2::audio::AudioDevice<Mixer>, u32)>,
+    sound: SoundMode,
+    /// The enhanced sounds, loaded on first use.
+    sounds: Option<SoundPack>,
+    sound_src: Option<PathBuf>,
     /// The enhanced mode's art.
     pack: Option<Pack>,
     start: Instant,
@@ -494,19 +544,33 @@ impl Io for SdlIo {
     }
 
     fn sound(&mut self, n: u8) {
+        self.sound_ev(n, Sfx::default_for(n));
+    }
+
+    fn sound_ev(&mut self, n: u8, ev: Sfx) {
         // The original plays an effect with the CPU busy, so the game waits
-        // for it to end; so does the engine, sound or not.
+        // for it to end; so does the engine, whatever is heard. An
+        // enhanced sound plays on (mixed) past that wait.
         let e = sound::effect(n);
         let len = Duration::from_secs_f64(e.millis() / 1000.0);
-        if let Some((q, rate)) = &self.audio {
-            let s = sound::render(&e, *rate, sound::CPU_HZ, 6000);
-            let _ = q.queue_audio(&s);
-            q.resume();
+        let clip = self.clip(ev);
+        if let Some((dev, rate)) = &mut self.audio {
+            match (self.sound, clip) {
+                (SoundMode::Mute, _) => {}
+                (SoundMode::Enhanced, Some(c)) => dev.lock().play(c),
+                _ => dev.lock().play(Arc::new(sound::render(&e, *rate, sound::CPU_HZ, 6000))),
+            }
         }
         let end = Instant::now() + len;
         while Instant::now() < end {
             let _ = self.pump();
             std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn cue(&mut self, ev: Sfx) {
+        if let (Some(c), Some((dev, _))) = (self.clip(ev), &mut self.audio) {
+            dev.lock().play(c);
         }
     }
 
@@ -521,12 +585,73 @@ impl Io for SdlIo {
     }
 }
 
-/// A mono 16-bit output for the speaker effects; `None` (silent play) if
-/// there is no audio device.
-fn open_speaker(sdl: &sdl2::Sdl) -> Option<(sdl2::audio::AudioQueue<i16>, u32)> {
+impl SdlIo {
+    /// The enhanced sound for `ev`, if that mode is on and the pack has one.
+    fn clip(&mut self, ev: Sfx) -> Option<Arc<Vec<i16>>> {
+        if self.sound != SoundMode::Enhanced {
+            return None;
+        }
+        let rate = self.audio.as_ref()?.1;
+        if self.sounds.is_none() {
+            let p = match &self.sound_src {
+                Some(d) => SoundPack::load(d, rate),
+                None => SoundPack { rate, ..Default::default() },
+            };
+            for w in &p.warnings {
+                eprintln!("sounds: {w}");
+            }
+            self.sounds = Some(p);
+        }
+        self.sounds.as_ref()?.get(ev).cloned()
+    }
+}
+
+/// Our own mixer: every sound playing is summed (beeps queue no longer
+/// block enhanced sounds that outlast the original's wait).
+struct Mixer {
+    voices: Vec<(Arc<Vec<i16>>, usize)>,
+    rate: usize,
+}
+
+impl Mixer {
+    fn play(&mut self, s: Arc<Vec<i16>>) {
+        // The same sound asked for again within 150 ms is one sound (the
+        // original repeats some effects, e.g. three times at death); later
+        // it restarts rather than stacking (footsteps, the star field).
+        if self.voices.iter().any(|(v, p)| Arc::ptr_eq(v, &s) && *p < self.rate * 3 / 20) {
+            return;
+        }
+        self.voices.retain(|(v, _)| !Arc::ptr_eq(v, &s));
+        if self.voices.len() < 16 {
+            self.voices.push((s, 0));
+        }
+    }
+}
+
+impl sdl2::audio::AudioCallback for Mixer {
+    type Channel = i16;
+    fn callback(&mut self, out: &mut [i16]) {
+        for o in out.iter_mut() {
+            let mut acc = 0i32;
+            for (v, pos) in self.voices.iter_mut() {
+                if let Some(&x) = v.get(*pos) {
+                    acc += i32::from(x);
+                    *pos += 1;
+                }
+            }
+            *o = acc.clamp(-32768, 32767) as i16;
+        }
+        self.voices.retain(|(v, p)| *p < v.len());
+    }
+}
+
+/// A mono 16-bit mixed output; `None` (silent play) if there is no audio
+/// device.
+fn open_speaker(sdl: &sdl2::Sdl) -> Option<(sdl2::audio::AudioDevice<Mixer>, u32)> {
     let sub = sdl.audio().map_err(|e| eprintln!("no audio: {e}")).ok()?;
     let want = sdl2::audio::AudioSpecDesired { freq: Some(44_100), channels: Some(1), samples: Some(512) };
-    let q = sub.open_queue::<i16, _>(None, &want).map_err(|e| eprintln!("no audio: {e}")).ok()?;
+    let q = sub.open_playback(None, &want, |spec| Mixer { voices: Vec::new(), rate: spec.freq.max(1) as usize }).map_err(|e| eprintln!("no audio: {e}")).ok()?;
+    q.resume();
     let rate = q.spec().freq as u32;
     // The subsystem must outlive the queue.
     std::mem::forget(sub);
@@ -558,8 +683,23 @@ fn play(a: &Args) -> Result<(), String> {
     let tc: &'static _ = Box::leak(Box::new(canvas.texture_creator()));
     let tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, iw, ih).map_err(|e| e.to_string())?;
     let events = sdl.event_pump()?;
-    let audio = if a.mute { None } else { open_speaker(&sdl) };
-    let mut io = SdlIo { canvas, tex, events, palette, next: Instant::now(), pending: Default::default(), audio, pack, start: Instant::now() };
+    // Opened even when muted, so the options can turn sound on.
+    let audio = open_speaker(&sdl);
+    let sound_src = pack_dir(a).map(|d| d.join("sounds"));
+    let mut io = SdlIo {
+        canvas,
+        tex,
+        events,
+        palette,
+        next: Instant::now(),
+        pending: Default::default(),
+        audio,
+        sound: a.sound,
+        sounds: None,
+        sound_src,
+        pack,
+        start: Instant::now(),
+    };
     let chosen = match front(a, mode, &mut io)? {
         Front::Halted(_) => return Ok(()),
         Front::Play(p) => Some(p),
@@ -575,6 +715,9 @@ fn play(a: &Args) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let res = parse_args().and_then(|a| {
+        if let Some(out) = &a.sound_demo {
+            return sound_demo(&a, out);
+        }
         install_font(&a)?;
         match &a.screenshot {
             Some(out) => screenshot(&a, out),

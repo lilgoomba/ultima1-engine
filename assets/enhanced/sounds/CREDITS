@@ -1,0 +1,46 @@
+Enhanced sounds - sources and licence
+=====================================
+
+Every file in this folder was synthesized from scratch for this project by a
+script (oscillators - square, pulse, triangle and sine waves - plus seeded
+white noise, with filters, envelopes and echo), written in the style of a
+16-bit console sound chip. No recordings, samples, sound libraries or
+original game audio were used.
+
+Author: the ultima1-engine contributors, 2026.
+Licence: CC-BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/),
+like the rest of the enhanced pack. Format: 22050 Hz mono 16-bit PCM WAV.
+
+File                 Length  Played for (original PC-speaker effect)
+-------------------  ------  ---------------------------------------
+alarm.wav             0.44s  a town guard or townsperson turns hostile (2)
+attack.wav            0.16s  swinging a weapon or casting an attack (7)
+bump.wav              0.12s  walking into a wall or water, a blocked door (original effect 0)
+burn.wav              0.35s  stepping into fire in Mondain's castle (0)
+crash.wav             0.66s  "Crunch!" - flying into something in space (0)
+death.wav             1.98s  you die (2, three times)
+dock.wav              0.83s  docking at a space station (silent in the original)
+dodge.wav             0.12s  a monster's attack misses you (silent in the original)
+enemy_laser.wav       0.18s  an enemy ship fires (8)
+enemy_spell.wav       0.81s  Mondain casts a spell (5)
+error.wav             0.20s  "Huh?", errors, can't afford (1)
+explosion.wav         1.10s  an enemy ship is destroyed; the gem shatters (2)
+hit.wav               0.14s  your blow or spell lands (2)
+hurt.wav              0.22s  you take damage, traps (2)
+hyperjump.wav         1.08s  the jump to hyperspace (silent in the original)
+kill.wav              0.58s  a monster is killed (2)
+laser.wav             0.18s  your space lasers (8)
+launch.wav            1.00s  the shuttle launches (silent in the original)
+magic.wav             1.23s  a spell or magic that works (5)
+miss.wav              0.12s  your attack misses (silent in the original)
+monster_attack.wav    0.30s  a monster attacks (3)
+npc_step.wav          0.04s  a townsperson moves (4)
+quest.wav             1.10s  a quest completed (5)
+resurrect.wav         1.62s  resurrection (5)
+spell_fail.wav        0.77s  a spell fails or has no effect (6)
+starfield.wav         0.03s  each star-field frame in space (9)
+step.wav              0.05s  your step in towns, castles and Mondain's castle (4)
+victory.wav           2.21s  Mondain defeated (5, three times)
+
+Any event without a file here plays the original effect instead.
+Music: none (the original has none; no music is added).

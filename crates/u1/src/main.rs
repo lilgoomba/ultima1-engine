@@ -63,7 +63,7 @@ const DEFAULT_POS: (u16, u16) = (49, 40);
 const USAGE: &str = "usage: u1 [--game-dir <path>] [--player N | --save FILE | --pos X,Y]
           [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
           [--video original|enhanced] [--sound original|enhanced|mute] [--pack DIR]
-          [--fullscreen] [--crt]
+          [--fullscreen] [--crt] [--smoothing off|linear|pixel-art]
           [--screenshot out.png [--keys TEXT] [--counter N] [--options | --slots | --log] [--crt]]
 
 Without --game-dir the game files are looked for in $U1_GAME_DIR, the
@@ -251,6 +251,7 @@ fn parse_args() -> Result<Args, String> {
             "--slots" => a.slots_shot = true,
             "--log" => a.log_shot = true,
             "--crt" => a.crt = true,
+            "--smoothing" => a.features.smoothing = qol::Smoothing::parse(&v()?).ok_or("--smoothing wants off, linear or pixel-art")?,
             "--fullscreen" => a.fullscreen = true,
             "--features" => features(&mut a.features, &v()?)?,
             "--rebind" => a.rebind_shot = true,
@@ -627,6 +628,7 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
     let pack = load_pack(a)?;
     // --crt: the filter on the frame at its own size (as in the window).
     let finish = |w: usize, h: usize, rgb: Vec<u8>| -> Result<(), String> {
+        let (w, h, rgb) = if a.features.smoothing == qol::Smoothing::PixelArt { qol::pixel_art(&rgb, w, h) } else { (w, h, rgb) };
         if a.crt {
             let k = qol::crt_factor(w);
             write_png(out, (w * k) as u32, (h * k) as u32, &qol::crt(&rgb, w, h, k))
@@ -635,7 +637,8 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
         }
     };
     let shot = |t: &Term, pal: &[Rgb; 16]| -> Result<(), String> {
-        let (w, h, rgb) = frame_rgb(t, pal, pack.as_ref(), if a.crt { 1 } else { scale }, 0);
+        let pixel_art = a.features.smoothing == qol::Smoothing::PixelArt;
+        let (w, h, rgb) = frame_rgb(t, pal, pack.as_ref(), if a.crt || pixel_art { 1 } else { scale }, 0);
         finish(w, h, rgb)
     };
     let chosen = match front(a, mode, &mut io)? {
@@ -863,22 +866,36 @@ impl SdlIo {
             (Some(p), Some((m, r))) => (W * p.scale(), H * p.scale(), enhanced::compose_boxed(t, m, &self.palette, p, ms, r)),
             (_, o) => frame_rgb(o.map_or(t, |o| o.0), &self.palette, pack, 1, ms),
         };
-        if self.qol.crt {
-            let k = qol::crt_factor(w);
-            let (cw, ch) = (w * k, h * k);
+        // Pixel-art smoothing enlarges the frame first, then the CRT
+        // filter works on the result; either goes through its own texture.
+        // The window fits the original's size (whole multiples of it).
+        let pixel_art = self.qol.smoothing == qol::Smoothing::PixelArt;
+        let post = self.qol.crt || pixel_art;
+        if post {
+            let (sw, sh, srgb) = if pixel_art { qol::pixel_art(&rgb, w, h) } else { (w, h, rgb) };
+            let k = if self.qol.crt { qol::crt_factor(sw) } else { 1 };
+            let (cw, ch) = (sw * k, sh * k);
             if self.crt_tex.as_ref().map_or(true, |(x, y, _)| (*x, *y) != (cw, ch)) {
+                self.scale_hint();
                 let tex = self.tc.create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGB24, cw as u32, ch as u32).map_err(|_| Halt)?;
                 self.crt_tex = Some((cw, ch, tex));
             }
-            let out = qol::crt(&rgb, w, h, k);
+            let out = if self.qol.crt { qol::crt(&srgb, sw, sh, k) } else { srgb };
             let (_, _, tex) = self.crt_tex.as_mut().ok_or(Halt)?;
             tex.update(None, &out, cw * 3).map_err(|_| Halt)?;
         } else {
             self.tex.update(None, &rgb, w * 3).map_err(|_| Halt)?;
         }
-        self.last_frame = Some((w as u32, h as u32, self.qol.crt));
+        self.last_frame = Some((w as u32, h as u32, post));
         self.redraw();
         Ok(())
+    }
+
+    /// How SDL stretches the textures made after this: smoothly with any
+    /// smoothing (the pixel-art scaler's remaining stretch is small),
+    /// square pixels without.
+    fn scale_hint(&self) {
+        sdl2::hint::set("SDL_RENDER_SCALE_QUALITY", if self.qol.smoothing == qol::Smoothing::Off { "0" } else { "1" });
     }
 
     /// Show the last frame again: the whole window cleared to black, the
@@ -1517,6 +1534,10 @@ impl SdlIo {
         if !q.crt {
             self.crt_tex = None;
         }
+        if old.smoothing != q.smoothing {
+            // New textures with the new filtering.
+            self.set_enhanced(self.enhanced);
+        }
         if !q.slots {
             self.save_req = None;
         }
@@ -1579,6 +1600,7 @@ impl SdlIo {
         self.enhanced = on;
         let k = if on { self.pack.as_ref().map_or(1, |p| p.scale()) as u32 } else { 1 };
         let (iw, ih) = (W as u32 * k, H as u32 * k);
+        self.scale_hint();
         let tex = match self.tc.create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGB24, iw, ih) {
             Ok(t) => t,
             Err(e) => {
@@ -1787,6 +1809,9 @@ fn play(a: &Args) -> Result<(), String> {
     q.hints |= f.hints;
     q.repeat |= f.repeat;
     q.gamepad |= f.gamepad;
+    if f.smoothing != qol::Smoothing::Off {
+        q.smoothing = f.smoothing;
+    }
     if f.confirm > 0 {
         q.confirm = f.confirm;
     }

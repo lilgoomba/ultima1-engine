@@ -273,6 +273,49 @@ pub fn crt_factor(w: usize) -> usize {
     }
 }
 
+/// One pass of the EPX / Scale2x edge rule (our own implementation of
+/// the published algorithm): every pixel becomes four, and a corner takes
+/// its two neighbours' colour where they agree and the edge they make
+/// runs diagonally through it. Flat areas and straight edges stay as they
+/// are; staircases on diagonals become smooth steps half the size.
+pub fn scale2x(rgb: &[u8], w: usize, h: usize) -> Vec<u8> {
+    let px = |x: usize, y: usize| -> [u8; 3] {
+        let i = (y * w + x) * 3;
+        [rgb[i], rgb[i + 1], rgb[i + 2]]
+    };
+    let mut out = vec![0u8; w * h * 12];
+    let ow = w * 2;
+    for y in 0..h {
+        for x in 0..w {
+            let e = px(x, y);
+            let b = px(x, y.saturating_sub(1));
+            let hh = px(x, (y + 1).min(h - 1));
+            let d = px(x.saturating_sub(1), y);
+            let f = px((x + 1).min(w - 1), y);
+            let q = if b != hh && d != f { [if d == b { d } else { e }, if b == f { f } else { e }, if d == hh { d } else { e }, if hh == f { f } else { e }] } else { [e; 4] };
+            for (k, c) in q.iter().enumerate() {
+                let (ox, oy) = (x * 2 + (k & 1), y * 2 + (k >> 1));
+                let i = (oy * ow + ox) * 3;
+                out[i..i + 3].copy_from_slice(c);
+            }
+        }
+    }
+    out
+}
+
+/// The pixel-art smoothing: [`scale2x`] until the picture is at least
+/// 1280 wide (twice for the 320-wide original screens, once for the
+/// 640-wide enhanced ones). Returns the new size and pixels.
+pub fn pixel_art(rgb: &[u8], w: usize, h: usize) -> (usize, usize, Vec<u8>) {
+    let (mut w, mut h, mut v) = (w, h, rgb.to_vec());
+    while w < 1280 && w > 0 && h > 0 {
+        v = scale2x(&v, w, h);
+        w *= 2;
+        h *= 2;
+    }
+    (w, h, v)
+}
+
 /// The CRT filter: `rgb` (`w` x `h`) enlarged `k` times with dark gaps
 /// between the scanlines and a slight horizontal glow. A pure picture
 /// effect; the frame it is given is not changed.
@@ -329,6 +372,28 @@ pub fn fit(ww: u32, wh: u32, pw: u32, ph: u32, s: Scaling) -> (i32, i32, u32, u3
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn scale2x_rounds_diagonals_and_keeps_flat_areas() {
+        use super::{pixel_art, scale2x};
+        // A 3x3 picture: black with a white staircase in the corner.
+        let (k, w) = ([0u8; 3], [255u8; 3]);
+        let img = [w, w, k, w, k, k, k, k, k];
+        let rgb: Vec<u8> = img.iter().flatten().copied().collect();
+        let out = scale2x(&rgb, 3, 3);
+        let at = |x: usize, y: usize| [out[(y * 6 + x) * 3], out[(y * 6 + x) * 3 + 1], out[(y * 6 + x) * 3 + 2]];
+        // The black centre's top-left quarter turns white (its left and
+        // upper neighbours are both white): the step is smoothed.
+        assert_eq!(at(2, 2), w);
+        assert_eq!(at(3, 3), k);
+        assert_eq!(at(5, 5), k, "flat corner unchanged");
+        assert_eq!(at(0, 0), w);
+        let flat = vec![7u8; 4 * 4 * 3];
+        assert!(scale2x(&flat, 4, 4).iter().all(|&b| b == 7));
+        let (w2, h2, v) = pixel_art(&vec![1u8; 320 * 200 * 3], 320, 200);
+        assert_eq!((w2, h2, v.len()), (1280, 800, 1280 * 800 * 3));
+        assert_eq!(pixel_art(&vec![1u8; 640 * 400 * 3], 640, 400).0, 1280);
+    }
+
     #[test]
     fn fit_centres_and_letterboxes() {
         // Whole multiples, centred, at odd sizes.

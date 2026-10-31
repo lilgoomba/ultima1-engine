@@ -152,7 +152,7 @@ struct Args {
     menu_row: usize,
 }
 
-fn parse_args() -> Result<Args, String> {
+fn parse_args(args: Vec<String>) -> Result<Args, String> {
     let mut a = Args {
         game_dir: PathBuf::new(),
         player: None,
@@ -186,7 +186,7 @@ fn parse_args() -> Result<Args, String> {
         menu_row: 0,
     };
     let mut have_dir = false;
-    let mut it = std::env::args().skip(1);
+    let mut it = args.into_iter().skip(1);
     while let Some(k) = it.next() {
         let mut v = || it.next().ok_or(format!("{k} needs a value"));
         match k.as_str() {
@@ -1855,7 +1855,14 @@ fn play(a: &Args) -> Result<(), String> {
 }
 
 fn main() -> ExitCode {
-    let res = parse_args().and_then(|a| {
+    run(std::env::args().collect())
+}
+
+/// The program for these arguments (the first is the program's name).
+/// Android's entry point (crates/u1-android) calls this too.
+pub fn run(args: Vec<String>) -> ExitCode {
+    let batch = args.iter().any(|a| a == "--screenshot" || a == "--sound-demo");
+    let res = parse_args(args).and_then(|a| {
         if let Some(out) = &a.sound_demo {
             return sound_demo(&a, out);
         }
@@ -1875,7 +1882,6 @@ fn main() -> ExitCode {
             // Started from a file manager there is no terminal to read the
             // message in: show it in a window too.
             use std::io::IsTerminal;
-            let batch = std::env::args().any(|a| a == "--screenshot" || a == "--sound-demo");
             if !std::io::stderr().is_terminal() && !batch && !e.starts_with("usage:") {
                 let _ = sdl2::messagebox::show_simple_message_box(sdl2::messagebox::MessageBoxFlag::ERROR, "Ultima I engine", &wrap_text(&e, 80), None);
             }

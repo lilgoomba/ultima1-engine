@@ -1,0 +1,36 @@
+apply plugin: 'com.android.application'
+
+// Release signing: a key outside the repository, named by environment
+// variables (see build.sh). Without one the release APK gets the debug key.
+def ks = System.getenv('U1_KEYSTORE')
+
+android {
+    namespace 'org.u1engine'
+    compileSdkVersion 34
+    defaultConfig {
+        applicationId 'org.u1engine.ultima1'
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode 1
+        versionName '0.1.0-alpha1'
+    }
+    signingConfigs {
+        if (ks) {
+            own {
+                storeFile file(ks)
+                storePassword System.getenv('U1_KEYSTORE_PASS')
+                keyAlias System.getenv('U1_KEY_ALIAS')
+                keyPassword System.getenv('U1_KEY_PASS') ?: System.getenv('U1_KEYSTORE_PASS')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig ks ? signingConfigs.own : signingConfigs.debug
+        }
+    }
+    // The native libraries come from build.sh (jniLibs), not from Gradle.
+    packagingOptions { jniLibs { useLegacyPackaging true } }
+    lint { abortOnError false }
+}

@@ -131,7 +131,7 @@ pub struct Qol {
     pub automap: bool,
     /// The overworld mini-map (Tab outdoors and in towns).
     pub minimap: bool,
-    /// The character screen (F6).
+    /// The character screen (Z, Ztats).
     pub charsheet: bool,
     /// The command reference (F3).
     pub help: bool,

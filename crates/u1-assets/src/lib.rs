@@ -46,6 +46,7 @@ pub mod tcd;
 pub mod term;
 pub mod tiles;
 pub mod title;
+pub mod touch;
 pub mod town;
 pub mod views;
 

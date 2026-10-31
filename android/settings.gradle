@@ -1,0 +1,2 @@
+rootProject.name = 'ultima1-engine'
+include ':app'

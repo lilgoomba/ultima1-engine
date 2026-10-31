@@ -677,11 +677,14 @@ impl Game {
         Ok(())
     }
 
-    /// `b0b5`: up to four digits typed at (col,row).
+    /// `b0b5`: up to four digits typed at (col,row). The text cursor is
+    /// put at the next digit's place before each key, as the original, so
+    /// the blinking cursor never sits on (and blanks) a typed digit.
     pub fn number(&mut self, io: &mut dyn Io, col: usize, row: usize) -> IoResult<i16> {
         let mut digits: Vec<u8> = Vec::new();
         let mut n = 0usize;
         while n < 4 {
+            self.term.cursor(col + n, row);
             let k = self.key(io)?;
             if k == keys::BACKSPACE || k == keys::LEFT {
                 n = n.saturating_sub(1);

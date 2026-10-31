@@ -1421,3 +1421,13 @@ fn area_music_follows_the_game() {
     let m = run(40, 40, "B{w12}", &at_time_machine).unwrap();
     assert_eq!(&m[..2], &[Overworld, Lair]);
 }
+
+/// The king's "How much?" shows every digit typed (the blinking cursor
+/// moves on past each one, as in the original), and pence buy hit points.
+#[test]
+fn king_pence_shows_all_digits_typed() {
+    let keys = format!("e{}{{up}}{{up}}{{up}}tp123", rep("{right}", 25));
+    let Some(g) = play_with(32, 27, &keys, 2, &[], |r| r.set_u16(off::COIN, 2000)) else { return };
+    let all: String = (0..25).map(|r| g.term.row_text(r)).collect::<Vec<_>>().join("\n");
+    assert!(all.contains("How much? 123"), "{all}");
+}

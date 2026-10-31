@@ -1,4 +1,4 @@
-//! Extra keys for the commands, and the gamepad's buttons (SPEC §23.4).
+//! Extra keys for the commands, and the gamepad's buttons (SPEC §23.3).
 //!
 //! The original's own keys always work and cannot be taken away: a
 //! binding only adds a second key, and only keys the original does not

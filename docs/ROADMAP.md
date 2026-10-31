@@ -82,3 +82,13 @@ the tests keep the original behaviour.
 * **Confirm before selling or dropping valuable items** (weapons, armour,
   vehicles, gems and similar above a value threshold), as a yes/no prompt
   in the message window.
+
+## Future ideas (not built)
+
+* **Area music, toggle on/off.** Music for the different areas (towns,
+  castles, overworld, dungeons, space), off by default; never in
+  original-beeps mode.
+* **Smoothing filter.** An optional anti-aliasing / smoothing filter for
+  the scaled picture (plain linear filtering, or xBR/HQx-style pixel-art
+  scalers), off by default; the sharp whole-pixel picture stays the
+  default.

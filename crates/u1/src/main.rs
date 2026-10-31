@@ -39,7 +39,7 @@ use u1_assets::locations::LocationTable;
 use u1_assets::msglog::{self, LogView};
 use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
 use u1_assets::palette::{cga_as_16, Rgb, CGA_PALETTE_1_LOW, EGA_PALETTE};
-use u1_assets::qol::{self, Qol, Scaling, Wait};
+use u1_assets::qol::{self, Qol, Wait};
 use u1_assets::rules::ExeTables;
 use u1_assets::save::PlayerRecord;
 use u1_assets::slots::{SaveReq, Slot, SlotKey, SlotScreen};
@@ -701,6 +701,8 @@ struct SdlIo {
     pending: std::collections::VecDeque<(Option<u8>, Option<u8>)>,
     /// The game is at its command prompt (`Io::command_prompt`).
     at_prompt: bool,
+    /// The key of the engine screen that is up, which closes it.
+    view_key: Option<u8>,
     /// The extra keys and the gamepad's buttons.
     keymap: KeyMap,
     pad: PadInput,
@@ -723,8 +725,6 @@ struct SdlIo {
     start: Instant,
     /// The texture creator, for a new texture when the resolution changes.
     tc: &'static sdl2::render::TextureCreator<sdl2::video::WindowContext>,
-    /// `--scale`: the window is this multiple of 320x200.
-    scale: u32,
     game_dir: PathBuf,
     /// The display the game draws in, and the one the menu asked for (the
     /// game switches at its next key poll, `video_switch`).
@@ -750,6 +750,9 @@ struct SdlIo {
     in_space: bool,
     /// The CRT filter's larger texture (its size, and the texture).
     crt_tex: Option<(usize, usize, sdl2::render::Texture<'static>)>,
+    /// The last frame's internal size and whether it went through the CRT
+    /// texture, for [`SdlIo::redraw`].
+    last_frame: Option<(u32, u32, bool)>,
     /// The character's save file (slot 1), once the game runs.
     save_base: Option<PathBuf>,
     /// A slot action for the game to take at its next key poll, and how
@@ -808,13 +811,30 @@ impl SdlIo {
             let out = qol::crt(&rgb, w, h, k);
             let (_, _, tex) = self.crt_tex.as_mut().ok_or(Halt)?;
             tex.update(None, &out, cw * 3).map_err(|_| Halt)?;
-            self.canvas.copy(tex, None, None).map_err(|_| Halt)?;
         } else {
             self.tex.update(None, &rgb, w * 3).map_err(|_| Halt)?;
-            self.canvas.copy(&self.tex, None, None).map_err(|_| Halt)?;
         }
-        self.canvas.present();
+        self.last_frame = Some((w as u32, h as u32, self.qol.crt));
+        self.redraw();
         Ok(())
+    }
+
+    /// Show the last frame again: the whole window cleared to black, the
+    /// picture centred in it (whole multiples, or filled, as the Scaling
+    /// option says). Also called when the window is resized or uncovered.
+    fn redraw(&mut self) {
+        let Some((w, h, crt)) = self.last_frame else { return };
+        let (ww, wh) = self.canvas.output_size().unwrap_or((w, h));
+        let (x, y, dw, dh) = qol::fit(ww, wh, w, h, self.qol.scaling);
+        let dst = sdl2::rect::Rect::new(x, y, dw, dh);
+        self.canvas.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
+        self.canvas.clear();
+        let tex = match (&self.crt_tex, crt) {
+            (Some((_, _, t)), true) => t,
+            _ => &self.tex,
+        };
+        let _ = self.canvas.copy(tex, None, dst);
+        self.canvas.present();
     }
 
     /// `d` under the speed settings.
@@ -865,6 +885,12 @@ impl SdlIo {
         for ev in evs {
             match ev {
                 Event::Quit { .. } => return Err(Halt),
+                Event::Window { win_event, .. } => {
+                    use sdl2::event::WindowEvent as We;
+                    if matches!(win_event, We::SizeChanged(..) | We::Resized(..) | We::Exposed | We::Maximized | We::Restored | We::Shown) {
+                        self.redraw();
+                    }
+                }
                 Event::KeyDown { keycode: Some(k), keymod, repeat, .. } => {
                     let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::CAPSMOD);
                     let alt = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
@@ -1026,7 +1052,7 @@ impl SdlIo {
     /// the command prompt, and nothing elsewhere.
     fn next_key(&mut self) -> Option<u8> {
         while let Some((plain, cmd)) = self.pending.pop_front() {
-            let k = if self.at_prompt { cmd.or(plain) } else { plain };
+            let k = pick_key(self.at_prompt, self.view_key, plain, cmd);
             if k.is_some() {
                 return k;
             }
@@ -1221,6 +1247,23 @@ impl Io for SdlIo {
     fn command_prompt(&mut self, on: bool) {
         self.at_prompt = on;
     }
+
+    fn view_open(&mut self, key: Option<u8>) {
+        self.view_key = key;
+    }
+}
+
+/// Which key the game gets from a press: an extra key's command at the
+/// command prompt, or the open screen's own key (Tab, F3, F6) so it closes
+/// that screen; elsewhere only the plain key.
+fn pick_key(at_prompt: bool, view: Option<u8>, plain: Option<u8>, cmd: Option<u8>) -> Option<u8> {
+    if at_prompt {
+        cmd.or(plain)
+    } else if view.is_some() && cmd == view {
+        cmd
+    } else {
+        plain
+    }
 }
 
 /// An SDL controller event as the mapping layer's plain value.
@@ -1413,7 +1456,6 @@ impl SdlIo {
 
     fn apply_window(&mut self) {
         use sdl2::video::FullscreenType;
-        let _ = self.canvas.set_integer_scale(self.qol.scaling == Scaling::Whole);
         let want = if self.qol.fullscreen { FullscreenType::Desktop } else { FullscreenType::Off };
         if self.canvas.window().fullscreen_state() != want {
             if let Err(e) = self.canvas.window_mut().set_fullscreen(want) {
@@ -1469,13 +1511,10 @@ impl SdlIo {
             }
         };
         self.tex = tex;
-        let _ = self.canvas.set_logical_size(iw, ih);
-        let n = (self.scale.max(k) / k).max(1);
-        let w = self.canvas.window_mut();
-        let full = !matches!(w.fullscreen_state(), sdl2::video::FullscreenType::Off);
-        if !full && !w.is_maximized() {
-            let _ = w.set_size(iw * n, ih * n);
-        }
+        // The window keeps the size the player gave it; the new picture
+        // is only scaled into it.
+        self.crt_tex = None;
+        self.last_frame = None;
     }
 
     /// The enhanced sound for `ev`, if that mode is on and the pack has one.
@@ -1601,9 +1640,7 @@ fn play(a: &Args) -> Result<(), String> {
     let (iw, ih) = (W as u32 * k, H as u32 * k);
     let n = (a.scale / k).max(1);
     let window = video.window("u1 - Ultima I", iw * n, ih * n).position_centered().resizable().build().map_err(|e| e.to_string())?;
-    let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
-    canvas.set_logical_size(iw, ih).map_err(|e| e.to_string())?;
-    canvas.set_integer_scale(true).map_err(|e| e.to_string())?;
+    let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
     // The texture creator lives for the whole program.
     let tc: &'static _ = Box::leak(Box::new(canvas.texture_creator()));
     let tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, iw, ih).map_err(|e| e.to_string())?;
@@ -1619,6 +1656,7 @@ fn play(a: &Args) -> Result<(), String> {
         next: Instant::now(),
         pending: Default::default(),
         at_prompt: false,
+        view_key: None,
         keymap: cfg.keys.clone(),
         pad: PadInput::new(cfg.pad.clone()),
         held: Repeater::default(),
@@ -1635,7 +1673,6 @@ fn play(a: &Args) -> Result<(), String> {
         pack_src,
         start: Instant::now(),
         tc,
-        scale: a.scale,
         game_dir: a.game_dir.clone(),
         shown: mode,
         wanted: mode,
@@ -1649,6 +1686,7 @@ fn play(a: &Args) -> Result<(), String> {
         qol: Qol::default(),
         in_space: false,
         crt_tex: None,
+        last_frame: None,
         save_base: None,
         save_req: None,
         toast: None,
@@ -1785,6 +1823,22 @@ fn local_time() -> [u8; 4] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn screen_key_closes_its_screen() {
+        use super::pick_key;
+        use u1_assets::io::keys;
+        // Tab on the automap / mini-map, F3 on help, F6 on the character
+        // screen: the key that opened it reaches it and closes it.
+        for k in [keys::MAP, keys::HELP, keys::CHARSHEET] {
+            assert_eq!(pick_key(false, Some(k), None, Some(k)), Some(k));
+        }
+        // Other screens' keys and other prompts are unchanged.
+        assert_eq!(pick_key(false, Some(keys::MAP), None, Some(keys::HELP)), None);
+        assert_eq!(pick_key(false, None, None, Some(keys::MAP)), None);
+        assert_eq!(pick_key(false, Some(keys::MAP), Some(b'a'), None), Some(b'a'));
+        assert_eq!(pick_key(true, None, None, Some(keys::MAP)), Some(keys::MAP));
+    }
+
     #[test]
     fn wrap_text_keeps_short_lines_and_indents() {
         assert_eq!(super::wrap_text("a b\n\n  c", 80), "a b\n\n  c");

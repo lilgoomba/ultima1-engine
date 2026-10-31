@@ -225,8 +225,39 @@ pub fn crt(rgb: &[u8], w: usize, h: usize, k: usize) -> Vec<u8> {
     out
 }
 
+/// Where a `pw`x`ph` picture goes in a `ww`x`wh` window: centred, black
+/// around it. `Whole` uses the largest whole multiple that fits (or, in a
+/// window smaller than the picture, the largest size at the right shape);
+/// `Fill` the largest size at the right shape. Returns (x, y, w, h).
+pub fn fit(ww: u32, wh: u32, pw: u32, ph: u32, s: Scaling) -> (i32, i32, u32, u32) {
+    let (ww, wh, pw, ph) = (ww.max(1), wh.max(1), pw.max(1), ph.max(1));
+    let n = (ww / pw).min(wh / ph);
+    let (w, h) = if s == Scaling::Whole && n >= 1 {
+        (pw * n, ph * n)
+    } else if ww as u64 * ph as u64 <= wh as u64 * pw as u64 {
+        // Width-limited.
+        (ww, ((ww as u64 * ph as u64) / pw as u64).max(1) as u32)
+    } else {
+        (((wh as u64 * pw as u64) / ph as u64).max(1) as u32, wh)
+    };
+    (((ww - w) / 2) as i32, ((wh - h) / 2) as i32, w, h)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fit_centres_and_letterboxes() {
+        // Whole multiples, centred, at odd sizes.
+        assert_eq!(fit(1024, 557, 320, 200, Scaling::Whole), (192, 78, 640, 400));
+        assert_eq!(fit(960, 600, 320, 200, Scaling::Whole), (0, 0, 960, 600));
+        assert_eq!(fit(1001, 999, 640, 400, Scaling::Whole), (180, 299, 640, 400));
+        // Smaller than the picture: shrunk at the right shape.
+        assert_eq!(fit(500, 600, 640, 400, Scaling::Whole), (0, 144, 500, 312));
+        // Fill: as large as fits.
+        assert_eq!(fit(1024, 557, 320, 200, Scaling::Fill), (66, 0, 891, 557));
+        assert_eq!(fit(800, 900, 320, 200, Scaling::Fill), (0, 200, 800, 500));
+    }
+
     use super::*;
 
     #[test]

@@ -394,6 +394,8 @@ fn voice(out: &mut [f32], rate: f32, start: usize, n: &Note, secs: f32, noise: &
         let Some(o) = out.get_mut(start + i) else { break };
         let t = i as f32 / rate;
         let rel = if t > secs { (1.0 - (t - secs) / 0.08).max(0.0) } else { 1.0 };
+        // A 3 ms rise, so no note starts with a click.
+        let rise = (t / 0.003).min(1.0);
         let x = match n.inst {
             Inst::Lead(duty) => {
                 let vib = if t > 0.18 { 1.0 + 0.004 * (TAU * 5.5 * t).sin() } else { 1.0 };
@@ -405,17 +407,21 @@ fn voice(out: &mut [f32], rate: f32, start: usize, n: &Note, secs: f32, noise: &
             Inst::Pluck => {
                 phase = (phase + f / rate).fract();
                 let s = if phase < 0.25 { 1.0 } else { -1.0 };
-                s * (-t * 7.0).exp() * rel.min(1.0) * 0.36
+                s * rise * (-t * 7.0).exp() * rel.min(1.0) * 0.36
             }
             Inst::Arp => {
                 phase = (phase + f / rate).fract();
                 let s = if phase < 0.125 { 1.0 } else { -1.0 };
-                s * (-t * 10.0).exp() * rel * 0.3
+                s * rise * (-t * 10.0).exp() * rel * 0.3
             }
             Inst::Bass => {
+                // From the triangle's zero crossing.
+                if i == 0 {
+                    phase = 0.25;
+                }
                 phase = (phase + f / rate).fract();
                 let tri = 4.0 * (phase - 0.5).abs() - 1.0;
-                ((tri * 8.0).round() / 8.0) * rel * (0.85 + 0.15 * (-t * 4.0).exp()) * 0.5
+                ((tri * 8.0).round() / 8.0) * rise * rel * (0.85 + 0.15 * (-t * 4.0).exp()) * 0.5
             }
             Inst::Pad => {
                 phase = (phase + f * 1.003 / rate).fract();
@@ -427,7 +433,7 @@ fn voice(out: &mut [f32], rate: f32, start: usize, n: &Note, secs: f32, noise: &
                 lp * env * rel * 0.25
             }
             Inst::Kick => {
-                if t > 0.18 {
+                if t > 0.25 {
                     break;
                 }
                 let fk = 120.0 * (-t * 25.0).exp() + 45.0;
@@ -494,13 +500,25 @@ pub fn render(t: Track, rate: u32) -> Vec<i16> {
             body[i % len] += *x;
         }
         mix.truncate(len);
-    } else {
-        while mix.last().is_some_and(|x| x.abs() < 1e-4) {
+    }
+    // Every track at the same loudness (RMS 0.09 of full scale, about
+    // 12 dB under the effects at the default 50% volume), its peaks kept
+    // under 0.6.
+    let peak = mix.iter().fold(0f32, |m, x| m.max(x.abs())).max(1e-6);
+    let rms = (mix.iter().map(|x| x * x).sum::<f32>() / mix.len().max(1) as f32).sqrt().max(1e-6);
+    let g = (0.09 / rms).min(0.6 / peak) * 32767.0;
+    if !t.loops() {
+        // A sting ends where its echo falls under -50 dBFS, with a short fade.
+        let floor = 0.003 * 32767.0 / g;
+        while mix.last().is_some_and(|x| x.abs() < floor) {
             mix.pop();
         }
+        let fade = ((0.05 * r) as usize).min(mix.len());
+        let n = mix.len();
+        for (i, x) in mix[n - fade..].iter_mut().enumerate() {
+            *x *= 1.0 - i as f32 / fade as f32;
+        }
     }
-    let peak = mix.iter().fold(0f32, |m, x| m.max(x.abs())).max(1e-6);
-    let g = 0.45 * 32767.0 / peak;
     mix.iter().map(|x| (x * g).round().clamp(-32768.0, 32767.0) as i16).collect()
 }
 
@@ -600,7 +618,51 @@ mod tests {
                 assert!((2.0..10.0).contains(&secs), "{t:?} {secs}");
             }
             let peak = s.iter().map(|x| i32::from(*x).abs()).max().unwrap();
-            assert!(peak > 10000 && peak < 16000, "{t:?} level {peak}");
+            assert!(peak > 8000 && peak < 20000, "{t:?} level {peak}");
+        }
+    }
+
+    /// Clipping, gaps of silence inside a loop, a click where a loop
+    /// wraps round, and loudness (RMS) kept to a narrow band.
+    #[test]
+    fn tracks_are_clean_level_and_loop_smoothly() {
+        let rate = 22_050;
+        for t in Track::ALL {
+            let s = render(t, rate);
+            let f: Vec<f32> = s.iter().map(|&x| f32::from(x) / 32768.0).collect();
+            let clipped = s.iter().filter(|x| x.unsigned_abs() >= 32767).count();
+            let rms = (f.iter().map(|x| x * x).sum::<f32>() / f.len() as f32).sqrt();
+            // The longest run under -50 dBFS.
+            let (mut run, mut gap) = (0usize, 0usize);
+            for x in &f {
+                run = if x.abs() < 0.003 { run + 1 } else { 0 };
+                gap = gap.max(run);
+            }
+            let gap_s = gap as f32 / rate as f32;
+            // The jump across the wrap against the track's usual step.
+            let steps: Vec<f32> = f.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
+            let mut sorted = steps.clone();
+            sorted.sort_by(|a, b| a.total_cmp(b));
+            let p99 = sorted[sorted.len() * 99 / 100];
+            let wrap = (f[0] - f[f.len() - 1]).abs();
+            let max_step = steps.iter().fold(0f32, |m, x| m.max(*x));
+            let mut gap_at = 0;
+            let mut r2 = 0;
+            for (i, x) in f.iter().enumerate() {
+                r2 = if x.abs() < 0.003 { r2 + 1 } else { 0 };
+                if r2 == gap {
+                    gap_at = i + 1 - gap;
+                }
+            }
+            eprintln!("   max step {max_step:.4} gap at {:.2}s of {:.2}s", gap_at as f32 / rate as f32, f.len() as f32 / rate as f32);
+            eprintln!("{:10} rms {:.3} ({:.1} dBFS) clipped {clipped} gap {gap_s:.2}s wrap {wrap:.4} p99 step {p99:.4}", t.name(), rms, 20.0 * rms.log10());
+            assert_eq!(clipped, 0, "{t:?} clips");
+            assert!((0.08..0.11).contains(&rms), "{t:?} loudness {rms}");
+            assert!(gap_s < 0.5, "{t:?} goes silent for {gap_s} s");
+            if t.loops() {
+                assert!(gap_s < 1.0, "{t:?} goes silent for {gap_s} s");
+                assert!(wrap <= p99 * 1.5, "{t:?} clicks at the loop: {wrap} vs {p99}");
+            }
         }
     }
 

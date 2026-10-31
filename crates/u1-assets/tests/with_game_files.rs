@@ -1257,6 +1257,75 @@ fn sidecar_is_written_beside_the_save_and_the_record_is_the_original_s() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A script that notes, at each command prompt, what the map sidecar on
+/// disk holds then (so writes during a run can be told from the one at
+/// its end).
+struct Watch<'a> {
+    inner: ScriptIo,
+    side: &'a std::path::Path,
+    seen: Vec<Option<String>>,
+}
+
+impl Io for Watch<'_> {
+    fn poll(&mut self, t: &Term) -> IoResult<Option<u8>> {
+        self.inner.poll(t)
+    }
+    fn key_timeout(&mut self, t: &Term) -> IoResult<u8> {
+        self.inner.key_timeout(t)
+    }
+    fn timeout_polls(&self) -> u32 {
+        self.inner.timeout_polls()
+    }
+    fn pause(&mut self, t: &Term, n: u32) -> IoResult<()> {
+        self.inner.pause(t, n)
+    }
+    fn wait_or_key(&mut self, t: &Term) -> IoResult<()> {
+        self.inner.wait_or_key(t)
+    }
+    fn features(&self) -> u1_assets::qol::Qol {
+        self.inner.features()
+    }
+    fn command_prompt(&mut self, on: bool) {
+        if on {
+            self.seen.push(std::fs::read_to_string(self.side).ok());
+        }
+    }
+}
+
+#[test]
+fn sidecar_is_written_when_the_run_ends_and_on_entering_a_dungeon_never_the_record() {
+    let dir = std::env::temp_dir().join(format!("u1-qol2-sidecar2-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::create_dir_all(&dir);
+    let save = dir.join("P.U1");
+    let side = u1_assets::explore::sidecar_path(&save);
+    // Into Mt. Drash and a few steps, then the keys run out (as the
+    // window closing: no Quit).
+    let mut inner = ScriptIo::from_text(DUNGEON_WALK);
+    inner.qol = second_group();
+    let mut io = Watch { inner, side: &side, seen: vec![] };
+    SAVE_TO.with(|s| *s.borrow_mut() = Some(save.clone()));
+    let Some(g) = play_io(59, 29, &mut io, 2, &[], |_| {}) else {
+        SAVE_TO.with(|s| s.borrow_mut().take());
+        return;
+    };
+    assert_eq!(g.mode, u1_assets::dgame::DUNGEON);
+    assert!(!save.exists(), "no Quit: the record is never written");
+    assert_eq!(io.seen[0], None, "nothing written before the first move");
+    let mid = io.seen.iter().flatten().find(|t| t.contains("\nlevel ")).expect("written on entering the dungeon, before the run ended");
+    assert!(mid.contains("\nworld "));
+    let end = std::fs::read_to_string(&side).expect("written when the run ended");
+    let count = |t: &str| t.lines().filter_map(|l| l.strip_prefix("level ")).map(|l| l.rsplit(' ').next().unwrap().chars().filter(|c| !"?/".contains(*c)).count()).sum::<usize>();
+    assert!(count(&end) > count(mid), "the end has the steps taken after: {} {}", count(mid), count(&end));
+    assert!(!dir.join("P.U1.map.tmp").exists());
+    // The maps off: nothing at all.
+    let off = dir.join("Q.U1");
+    SAVE_TO.with(|s| *s.borrow_mut() = Some(off.clone()));
+    play(59, 29, DUNGEON_WALK).unwrap();
+    assert!(!u1_assets::explore::sidecar_path(&off).exists() && !off.exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 fn weapon_shop(tail: &str) -> String {
     format!("{{left}}{{left}}e{}{}{{down}}tsb{tail}", rep("{up}", 6), rep("{left}", 4))
 }

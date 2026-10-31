@@ -161,6 +161,9 @@ pub struct Game {
     pub explore: crate::explore::Explore,
     /// A save slot was loaded: its explored map, for the next run.
     pub reload_explore: Option<crate::explore::Explore>,
+    /// The mode the explored map was last written in (it is written again
+    /// on entering or leaving a town, castle or dungeon).
+    pub explore_mode: Option<u8>,
 }
 
 impl Game {
@@ -215,6 +218,7 @@ impl Game {
             restarted: false,
             explore: Default::default(),
             reload_explore: None,
+            explore_mode: None,
         };
         g.redraw();
         g
@@ -703,12 +707,34 @@ impl Game {
     // ------------------------------------------------------------ main loop
 
     /// Run until the key source halts (scripted runs) or the window closes.
+    /// However the run ends (the window closed, a script ran out, a slot
+    /// loaded, the game stopped) the explored map is written.
     pub fn run(&mut self, io: &mut dyn Io) -> IoResult<()> {
-        loop {
-            self.turn(io)?;
-            if self.stopped.is_some() {
-                return Ok(());
+        let r = loop {
+            if let Err(e) = self.turn(io) {
+                break Err(e);
             }
+            if self.stopped.is_some() {
+                break Ok(());
+            }
+        };
+        self.save_explore(io);
+        r
+    }
+
+    /// Write the explored map beside the save (SPEC §23.2) when a map is
+    /// on. Only ever the sidecar: the player record is written by Quit and
+    /// the save slots alone.
+    pub fn save_explore(&self, io: &dyn Io) {
+        let qol = io.features();
+        if !(qol.automap || qol.minimap) {
+            return;
+        }
+        if let Some(p) = &self.save_to {
+            if let Some(d) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
+                let _ = std::fs::create_dir_all(d);
+            }
+            let _ = self.explore.save(p);
         }
     }
 
@@ -725,6 +751,11 @@ impl Game {
         let qol = io.features();
         if qol.automap || qol.minimap {
             self.note_explored();
+            // Into or out of a town, castle or dungeon: write it now.
+            if self.explore_mode.is_some_and(|m| m != self.mode) {
+                self.save_explore(io);
+            }
+            self.explore_mode = Some(self.mode);
         }
         // `8eb9`: poll, count, animate the outdoors after every poll (the
         // one that brings the key too); 1500 polls without a key pass.

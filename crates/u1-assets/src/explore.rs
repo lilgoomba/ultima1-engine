@@ -218,8 +218,14 @@ impl Explore {
     }
 
     /// Write the sidecar of `save` (only ever that file).
+    /// Written to a temporary file first and renamed, so a write cut
+    /// short never leaves half a map.
     pub fn save(&self, save: &Path) -> std::io::Result<()> {
-        std::fs::write(sidecar_path(save), self.to_text())
+        let p = sidecar_path(save);
+        let mut tmp = p.clone().into_os_string();
+        tmp.push(".tmp");
+        std::fs::write(&tmp, self.to_text())?;
+        std::fs::rename(&tmp, &p)
     }
 }
 

@@ -10,6 +10,9 @@ use crate::qol::{self, Qol, Scaling};
 use crate::soundpack::SoundMode;
 use crate::term::{Term, BLACK, BLUE, TEXT, WARN};
 
+/// Dark grey: a row that has no effect with the current sound.
+const GREY: u8 = 8;
+
 pub const SOUNDS: [SoundMode; 3] = [SoundMode::Original, SoundMode::Enhanced, SoundMode::Mute];
 
 pub fn sound_label(s: SoundMode) -> &'static str {
@@ -216,6 +219,7 @@ impl OptionsMenu {
             .into(),
             Row::Footsteps if self.sound != SoundMode::Enhanced => if q.footsteps { "On (enh. sound)" } else { "Off" }.into(),
             Row::Footsteps => on(q.footsteps),
+            Row::Music if self.sound != SoundMode::Enhanced => if q.music { "On (enh. sound)" } else { "Off" }.into(),
             Row::Music => on(q.music),
             Row::MusicVolume => format!("{}%", q.music_volume),
             Row::Smoothing => match q.smoothing {
@@ -226,6 +230,12 @@ impl OptionsMenu {
             .into(),
             Row::Keys => "Enter: change".into(),
         }
+    }
+
+    /// A row that does nothing with the current sound (music and footsteps
+    /// are heard only with Enhanced sound): drawn grey, its setting kept.
+    pub fn dimmed(&self, r: Row) -> bool {
+        matches!(r, Row::Music | Row::MusicVolume | Row::Footsteps) && self.sound != SoundMode::Enhanced
     }
 
     pub fn key(&mut self, k: u8) -> MenuKey {
@@ -318,8 +328,9 @@ impl OptionsMenu {
             let row = 4 + i - top;
             let sel = i == self.row;
             t.print_at_attr(2, row, if sel { "\u{10}" } else { " " }, WARN);
-            t.print_at_attr(3, row, &format!("{}:", r.label()), TEXT);
-            t.print_at_attr(VALUE_COL, row, &format!("<{}>", self.value(r)), if sel { WARN } else { TEXT });
+            let ink = if self.dimmed(r) { GREY } else { TEXT };
+            t.print_at_attr(3, row, &format!("{}:", r.label()), ink);
+            t.print_at_attr(VALUE_COL, row, &format!("<{}>", self.value(r)), if sel { WARN } else { ink });
         }
         center(t, 16, "Up/Down: choose  Left/Right: change", TEXT);
         center(t, 17, "F1 or Enter: resume", TEXT);
@@ -330,6 +341,24 @@ impl OptionsMenu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn music_rows_grey_but_keep_their_setting_without_enhanced_sound() {
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        m.qol.music = true;
+        for s in SOUNDS {
+            m.sound = s;
+            let enh = s == SoundMode::Enhanced;
+            assert_eq!(m.dimmed(Row::Music), !enh);
+            assert_eq!(m.dimmed(Row::MusicVolume), !enh);
+            assert!(!m.dimmed(Row::Sound));
+            assert_eq!(m.value(Row::Music), if enh { "On" } else { "On (enh. sound)" });
+            assert!(m.qol.music, "the saved setting is kept");
+            assert_eq!(crate::qol::music_plays(&m.qol, s), enh);
+        }
+        m.qol.music = false;
+        assert!(!crate::qol::music_plays(&m.qol, SoundMode::Enhanced));
+    }
 
     #[test]
     fn labels_and_values_never_touch() {

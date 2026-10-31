@@ -88,8 +88,8 @@ the tests keep the original behaviour.
 * **Enhanced art for vehicles.** Pack pictures for overworld tiles
   0x0B-0x12 (CC-BY-SA); the original tiles stay the fallback.
 * **Area music** (F1, off by default; SPEC §24). Nine original chiptune
-  scores rendered at run time; plays with Original or Enhanced sound,
-  never with Mute.
+  scores rendered at run time; heard only with Enhanced sound (greyed in
+  F1 otherwise, setting kept).
 * **Smoothing** (F1, off by default; SPEC §24): linear, or our own
   Scale2x pixel-art scaler.
 

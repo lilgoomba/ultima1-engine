@@ -104,6 +104,12 @@ impl Scaling {
 /// The message-delay choices, in per cent of the original's.
 pub const MESSAGE_DELAYS: [u8; 4] = [100, 50, 25, 0];
 
+/// Music is heard only with Enhanced sound (never with the original's
+/// beeps or Mute); the `music` setting itself is kept either way.
+pub fn music_plays(q: &Qol, sound: crate::soundpack::SoundMode) -> bool {
+    q.music && sound == crate::soundpack::SoundMode::Enhanced
+}
+
 /// The settings. `Qol::default()` is the faithful engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Qol {

@@ -436,6 +436,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // "/x/cfg" is not an absolute path on Windows.
     fn paths() {
         let p = path_from(Some("/x/cfg".into()), Some("/home/u".into())).unwrap();
         assert_eq!(p, PathBuf::from("/x/cfg/ultima1-engine/config.toml"));

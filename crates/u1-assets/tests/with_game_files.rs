@@ -74,8 +74,16 @@ fn play_io(
     game.space = SpaceFiles::load(&g, game.a.video).ok();
     game.mondain = u1_assets::mondain::MondainFiles::load(&g, game.a.video).ok();
     game.fixed_times = times.iter().copied().collect();
+    if let Some(p) = SAVE_TO.with(|s| s.borrow_mut().take()) {
+        game.save_to = Some(p);
+    }
     let _ = game.run(io);
     Some(game)
+}
+
+thread_local! {
+    /// A save path for the next `play_io` (Quit writes there).
+    static SAVE_TO: std::cell::RefCell<Option<std::path::PathBuf>> = const { std::cell::RefCell::new(None) };
 }
 
 fn said(g: &Game, s: &str) -> bool {
@@ -1167,4 +1175,107 @@ fn qol_off_leaves_the_screen_and_record_as_they_were() {
     assert_eq!(plain.term.px, logged.term.px);
     assert_eq!(plain.rec.as_bytes(), logged.rec.as_bytes());
     assert!(plain.term.log.is_none() && logged.term.log.is_some());
+}
+
+// ------------------------------------------------------------ SPEC §23
+
+fn rep(t: &str, n: usize) -> String {
+    t.repeat(n)
+}
+
+fn second_group() -> u1_assets::qol::Qol {
+    u1_assets::qol::Qol { automap: true, minimap: true, charsheet: true, help: true, ..Default::default() }
+}
+
+const DUNGEON_WALK: &str = "e{up}{up}{left}{up}{up}{right}{up}";
+// Each screen waits for a key and drops it, so each is typed twice (open,
+// close); with the screens off all of them are ignored.
+const DUNGEON_WALK_VIEWS: &str = "e{map}{map}{up}{help}{help}{up}{left}{char}{char}{up}{up}{map}{map}{right}{up}";
+
+#[test]
+fn second_group_off_ignores_the_view_keys() {
+    // With everything off the engine's keys do nothing at all: the same
+    // run with them typed draws and records the same.
+    let Some(plain) = play(59, 29, DUNGEON_WALK) else { return };
+    let typed = play(59, 29, DUNGEON_WALK_VIEWS).unwrap();
+    assert_eq!(plain.term.px, typed.term.px);
+    assert_eq!(plain.rec.as_bytes(), typed.rec.as_bytes());
+    assert!(typed.explore.is_empty(), "nothing is noted while the maps are off");
+}
+
+#[test]
+fn second_group_on_changes_no_record_and_puts_the_screen_back() {
+    let Some(plain) = play(59, 29, DUNGEON_WALK) else { return };
+    let mut io = ScriptIo::from_text(DUNGEON_WALK_VIEWS);
+    io.qol = second_group();
+    let on = play_io(59, 29, &mut io, 2, &[], |_| {}).unwrap();
+    assert_eq!(plain.rec.as_bytes(), on.rec.as_bytes());
+    assert_eq!(plain.term.px, on.term.px, "every view closes back to the game");
+    // The automap knows only part of the level, and only as seen.
+    let d = on.dungeon.as_ref().expect("still in the dungeon");
+    let key = (on.ow.x as u8, on.ow.y as u8, d.depth);
+    let grid = on.explore.level(key).expect("level noted");
+    let seen = grid.iter().flatten().filter(|c| **c != u1_assets::explore::Seen::Unseen).count();
+    assert!(seen > 5 && seen < 121, "seen {seen}");
+    for a in 0..grid.len() {
+        for b in 0..grid.len() {
+            if d.level.cell(a as i32, b as i32) == u1_assets::dungeon::Cell::SecretDoor {
+                assert!(matches!(grid[a][b], u1_assets::explore::Seen::Wall | u1_assets::explore::Seen::Unseen));
+            }
+        }
+    }
+}
+
+#[test]
+fn automap_screen_shows_the_seen_count() {
+    let mut io = ScriptIo::from_text(&format!("{DUNGEON_WALK}{{map}}"));
+    io.qol = second_group();
+    let Some(g) = play_io(59, 29, &mut io, 2, &[], |_| {}) else { return };
+    let all: String = (0..25).map(|r| g.term.row_text(r)).collect::<Vec<_>>().join("\n");
+    assert!(all.contains("Automap"), "{all}");
+    assert!(all.contains("Seen ") && all.contains(" of 121"), "{all}");
+}
+
+#[test]
+fn sidecar_is_written_beside_the_save_and_the_record_is_the_original_s() {
+    let dir = std::env::temp_dir().join(format!("u1-qol2-sidecar-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let walk = format!("{}{}q", rep("{right}", 6), rep("{down}", 3));
+    let (a, b) = (dir.join("A.U1"), dir.join("B.U1"));
+    SAVE_TO.with(|s| *s.borrow_mut() = Some(a.clone()));
+    let Some(_) = play(45, 38, &walk) else { SAVE_TO.with(|s| s.borrow_mut().take()); return };
+    SAVE_TO.with(|s| *s.borrow_mut() = Some(b.clone()));
+    let mut io = ScriptIo::from_text(&walk);
+    io.qol = second_group();
+    play_io(45, 38, &mut io, 2, &[], |_| {}).unwrap();
+    let (ra, rb) = (std::fs::read(&a).unwrap(), std::fs::read(&b).unwrap());
+    assert_eq!(ra.len(), 820);
+    assert_eq!(ra, rb, "the map sidecar never touches the record");
+    assert!(!u1_assets::explore::sidecar_path(&a).exists(), "no sidecar with the maps off");
+    let side = u1_assets::explore::Explore::load(&b);
+    assert!(side.world_count() > 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn weapon_shop(tail: &str) -> String {
+    format!("{{left}}{{left}}e{}{}{{down}}tsb{tail}", rep("{up}", 6), rep("{left}", 4))
+}
+
+#[test]
+fn selling_asks_first_when_set_and_no_keeps_the_item() {
+    let Some(plain) = play(41, 39, &weapon_shop("")) else { return };
+    let daggers = |g: &Game| g.rec.u16_at(0x62);
+    let mut io = ScriptIo::from_text(&weapon_shop("n"));
+    io.qol.confirm = 1;
+    let no = play_io(41, 39, &mut io, 2, &[], |_| {}).unwrap();
+    let mut io = ScriptIo::from_text(&weapon_shop("y"));
+    io.qol.confirm = 1;
+    let yes = play_io(41, 39, &mut io, 2, &[], |_| {}).unwrap();
+    let start = PlayerRecord::parse(&game_dir().unwrap().read("PLAYER2.U1").unwrap()).unwrap();
+    let before = start.u16_at(0x62);
+    assert!(before > 0);
+    assert_eq!(daggers(&plain), before - 1, "off: sold at once, as the original");
+    assert_eq!(daggers(&yes), before - 1);
+    assert_eq!(daggers(&no), before);
+    assert_eq!(yes.rec.as_bytes(), plain.rec.as_bytes());
 }

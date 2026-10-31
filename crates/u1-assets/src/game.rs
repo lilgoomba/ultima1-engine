@@ -1168,7 +1168,10 @@ impl Game {
             return Ok(());
         }
         self.sayln(m::ING);
-        self.explore.visit(p);
+        let qol = io.features();
+        if qol.automap || qol.minimap {
+            self.explore.visit(p);
+        }
         self.water = 0;
         self.grass = 0;
         self.forest = 0;

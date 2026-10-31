@@ -12,5 +12,10 @@ sdl2 = "0.37"
 png = "0.17"
 libc = "0.2"
 
+[features]
+# Build SDL2 from source (needs cmake and a C compiler) and link it in, for
+# platforms without a system SDL2 (the Windows CI job).
+bundled = ["sdl2/bundled", "sdl2/static-link"]
+
 [lints]
 workspace = true

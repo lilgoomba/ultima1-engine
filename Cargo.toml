@@ -24,3 +24,11 @@ collapsible_match = "allow"
 identity_op = "allow"
 # The game's command handlers take the state they need explicitly.
 too_many_arguments = "allow"
+
+# Release builds (the AppImage): fully optimised, one codegen unit, LTO,
+# symbols stripped.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

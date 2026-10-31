@@ -30,7 +30,7 @@ use u1_assets::enhanced::{self, Pack};
 use u1_assets::exe::Exe;
 use u1_assets::explore::Explore;
 use u1_assets::game::{Assets, Game, VideoSet};
-use u1_assets::gamedir::{GameDir, VideoMode};
+use u1_assets::gamedir::{self, GameDir, VideoMode};
 use u1_assets::gen::GenEnd;
 use u1_assets::input::{PadAction, PadEvent, PadInput, Repeater};
 use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
@@ -59,11 +59,19 @@ const TICK: Duration = Duration::from_micros(54_925);
 /// Start of a new character (verified from GEN.EXE).
 const DEFAULT_POS: (u16, u16) = (49, 40);
 
-const USAGE: &str = "usage: u1 --game-dir <path> [--player N | --save FILE | --pos X,Y]
+const USAGE: &str = "usage: u1 [--game-dir <path>] [--player N | --save FILE | --pos X,Y]
           [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
           [--video original|enhanced] [--sound original|enhanced|mute] [--pack DIR]
           [--fullscreen] [--crt]
           [--screenshot out.png [--keys TEXT] [--counter N] [--options | --slots | --log] [--crt]]
+
+Without --game-dir the game files are looked for in $U1_GAME_DIR, the
+folder holding the AppImage (or this program), the current folder (each
+also in an ULTIMA1 folder inside it) and ~/.local/share/ultima1-engine/game
+($XDG_DATA_HOME if set). With no start option (--player, --save, --pos,
+--intro, --gen) the game starts with the title sequence, as the original.
+Without --save-to and --roster, characters and saves are kept in
+~/.local/share/ultima1-engine/saves, never in the game folder.
 
 Keys are the original's (arrows move; A B C D E F G H I K N O Q R S T U V X Z;
 Space passes). --keys is typed text; {up} {down} {left} {right} {enter}
@@ -252,14 +260,50 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other}\n{USAGE}")),
         }
     }
-    if !have_dir {
-        return Err(USAGE.into());
+    let interactive = a.screenshot.is_none() && a.sound_demo.is_none();
+    let start_given = a.player.is_some() || a.save.is_some() || a.pos.is_some() || a.intro || a.gen;
+    if interactive && !start_given {
+        a.intro = true;
+    }
+    if a.sound_demo.is_none() {
+        let front = a.intro || a.gen;
+        a.game_dir = if have_dir { gamedir::locate(std::slice::from_ref(&a.game_dir), front)? } else { gamedir::locate(&game_dir_candidates(), front)? };
+    }
+    if interactive && a.save_to.is_none() && a.roster.is_none() {
+        if let Some(d) = gamedir::data_dir().map(|d| d.join("saves")) {
+            std::fs::create_dir_all(&d).map_err(|e| format!("{}: {e}", d.display()))?;
+            a.save_to = Some(d.join("PLAYER1.U1"));
+        }
     }
     a.scale = a.scale.clamp(1, 6);
     if a.pack.is_some() && !a.enhanced && a.sound != SoundMode::Enhanced && a.sound_demo.is_none() {
         return Err("--pack needs --video enhanced or --sound enhanced".into());
     }
     Ok(a)
+}
+
+/// Where to look for the game files without `--game-dir`, in order.
+fn game_dir_candidates() -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    if let Some(d) = std::env::var_os("U1_GAME_DIR").filter(|d| !d.is_empty()) {
+        v.push(PathBuf::from(d));
+    }
+    // The AppImage's own path (the program inside runs from a temporary mount).
+    if let Some(d) = std::env::var_os("APPIMAGE").map(PathBuf::from).and_then(|p| p.parent().map(Path::to_path_buf)) {
+        v.push(d);
+    }
+    if std::env::var_os("APPDIR").is_none() {
+        if let Some(d) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
+            v.push(d);
+        }
+    }
+    if let Ok(d) = std::env::current_dir() {
+        v.push(d);
+    }
+    if let Some(d) = gamedir::data_dir() {
+        v.push(d.join("game"));
+    }
+    v
 }
 
 /// `--features LIST`: turn the named §23 features on in `q`.
@@ -286,12 +330,24 @@ fn features(q: &mut Qol, list: &str) -> Result<(), String> {
 }
 
 /// The enhanced mode's pack: `--pack`, else `assets/enhanced` in the
-/// current directory or the source tree; with none, no art (everything
+/// current directory, the installed pack or the source tree; with none, no art (everything
 /// is the original, scaled up).
 fn pack_dir(a: &Args) -> Option<PathBuf> {
     match &a.pack {
         Some(d) => Some(d.clone()),
-        None => [PathBuf::from("assets/enhanced"), Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/enhanced")].into_iter().find(|d| d.join("manifest.toml").is_file()),
+        None => {
+            let mut c = vec![PathBuf::from("assets/enhanced")];
+            // Installed (the AppImage): <prefix>/share/ultima1-engine/enhanced
+            // beside <prefix>/bin.
+            if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
+                c.push(dir.join("../share/ultima1-engine/enhanced"));
+            }
+            if let Some(d) = std::env::var_os("APPDIR") {
+                c.push(Path::new(&d).join("usr/share/ultima1-engine/enhanced"));
+            }
+            c.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/enhanced"));
+            c.into_iter().find(|d| d.join("manifest.toml").is_file())
+        }
     }
 }
 
@@ -1652,6 +1708,13 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{e}");
+            // Started from a file manager there is no terminal to read the
+            // message in: show it in a window too.
+            use std::io::IsTerminal;
+            let batch = std::env::args().any(|a| a == "--screenshot" || a == "--sound-demo");
+            if !std::io::stderr().is_terminal() && !batch && !e.starts_with("usage:") {
+                let _ = sdl2::messagebox::show_simple_message_box(sdl2::messagebox::MessageBoxFlag::ERROR, "Ultima I engine", &e, None);
+            }
             ExitCode::FAILURE
         }
     }
@@ -1661,9 +1724,14 @@ fn main() -> ExitCode {
 fn local_time() -> [u8; 4] {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     let t = now.as_secs() as libc::time_t;
-    // SAFETY: localtime_r writes only into the zeroed `tm` we pass.
+    // SAFETY: localtime_r / localtime_s write only into the zeroed `tm` we pass.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    #[cfg(unix)]
     let ok = unsafe { !libc::localtime_r(&t, &mut tm).is_null() };
+    #[cfg(windows)]
+    let ok = unsafe { libc::localtime_s(&mut tm, &t) == 0 };
+    #[cfg(not(any(unix, windows)))]
+    let ok = false;
     let (h, m, s) = if ok {
         (tm.tm_hour as u8, tm.tm_min as u8, tm.tm_sec as u8)
     } else {

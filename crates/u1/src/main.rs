@@ -103,12 +103,12 @@ flight and steady timing. --fullscreen and --crt turn those on for one run;
 in screenshots --crt applies the filter, --slots and --log draw those
 windows (--keys may hold {saveN} / {loadN}, N 1-5 or q).
 More optional features (SPEC §23), also off by default: a dungeon automap
-and a world mini-map (Tab), a character screen (F6), a command help screen
+and a world mini-map (Tab), a character screen (Ztats, Z, shows it), a command help screen
 (F3), short hints at command prompts, a confirmation before selling or
 dropping things worth a set amount, extra keys for the commands (F1, Keys),
 a gamepad and the engine's own arrow repeat. --features LIST turns some on
 for one run (automap, minimap, character, help, hints, confirm=N, repeat,
-gamepad); in screenshots --keys may hold {map} {help} {char}, and --rebind
+gamepad); in screenshots --keys may hold {map} {help}, and --rebind
 draws the key window.";
 
 struct Args {
@@ -1070,7 +1070,6 @@ impl SdlIo {
         match code {
             keys::MAP => self.qol.automap || self.qol.minimap,
             keys::HELP => self.qol.help,
-            keys::CHARSHEET => self.qol.charsheet,
             _ => true,
         }
     }
@@ -1341,7 +1340,7 @@ impl Io for SdlIo {
 }
 
 /// Which key the game gets from a press: an extra key's command at the
-/// command prompt, or the open screen's own key (Tab, F3, F6) so it closes
+/// command prompt, or the open screen's own key (Tab, F3, Z) so it closes
 /// that screen; elsewhere only the plain key.
 fn pick_key(at_prompt: bool, view: Option<u8>, plain: Option<u8>, cmd: Option<u8>) -> Option<u8> {
     if at_prompt {
@@ -1941,7 +1940,7 @@ mod tests {
         use u1_assets::io::keys;
         // Tab on the automap / mini-map, F3 on help, F6 on the character
         // screen: the key that opened it reaches it and closes it.
-        for k in [keys::MAP, keys::HELP, keys::CHARSHEET] {
+        for k in [keys::MAP, keys::HELP] {
             assert_eq!(pick_key(false, Some(k), None, Some(k)), Some(k));
         }
         // Other screens' keys and other prompts are unchanged.
@@ -1975,7 +1974,7 @@ mod tests {
         assert_eq!(run(down(Button::A)), vec![PadAction::Key(b' ', "space".into())]);
         assert_eq!(run(down(Button::Back)), vec![PadAction::Command(keys::MAP)]);
         assert_eq!(run(down(Button::Guide)), vec![PadAction::Command(keys::HELP)]);
-        assert_eq!(run(down(Button::LeftStick)), vec![PadAction::Command(keys::CHARSHEET)]);
+        assert!(matches!(run(down(Button::LeftStick))[..], [PadAction::Key(b'Z', _)]));
         assert_eq!(run(down(Button::Start)), vec![PadAction::Options]);
         let v = run(down(Button::DPadUp));
         assert!(matches!(v[..], [PadAction::Key(keys::UP, _), PadAction::Hold(keys::UP, _)]), "{v:?}");

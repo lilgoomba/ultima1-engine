@@ -193,7 +193,7 @@ impl Config {
         flag(q.steady, d.steady, "steady_timing", "speaker effects no longer hold the game");
         flag(q.automap, d.automap, "automap", "Tab in a dungeon");
         flag(q.minimap, d.minimap, "minimap", "Tab outdoors");
-        flag(q.charsheet, d.charsheet, "character_screen", "F6");
+        flag(q.charsheet, d.charsheet, "character_screen", "Z shows it");
         flag(q.help, d.help, "help_screen", "F3");
         flag(q.hints, d.hints, "hints", "a line on what a command asks for");
         flag(q.repeat, d.repeat, "arrow_repeat", "our own repeat for held arrows");
@@ -492,11 +492,10 @@ mod tests {
         let mut c = Config { qol: q, ..Default::default() };
         c.keys.bind(5, "j").unwrap();
         c.keys.bind(26, "\\").unwrap();
-        c.keys.unbind(27);
         c.keys.bind(25, "m").unwrap();
         c.pad.config_key("pad_y", "z").unwrap().unwrap();
         let text = c.to_toml();
-        assert!(text.contains("key_attack = \"j\"") && text.contains("key_character = \"none\"") && text.contains("pad_y = \"z\""), "{text}");
+        assert!(text.contains("key_attack = \"j\"") && !text.contains("key_character") && text.contains("pad_y = \"z\""), "{text}");
         let back = Config::parse(&text);
         assert!(back.warnings.is_empty(), "{:?}", back.warnings);
         assert_eq!(back, c);

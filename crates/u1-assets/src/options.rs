@@ -198,7 +198,7 @@ impl OptionsMenu {
             Row::Timing => if q.steady { "Steady" } else { "Original" }.into(),
             Row::Automap => if q.automap { "On (Tab)" } else { "Off" }.into(),
             Row::Minimap => if q.minimap { "On (Tab)" } else { "Off" }.into(),
-            Row::Character => if q.charsheet { "On (F6)" } else { "Off" }.into(),
+            Row::Character => if q.charsheet { "On (Z)" } else { "Off" }.into(),
             Row::Help => if q.help { "On (F3)" } else { "Off" }.into(),
             Row::Hints => on(q.hints),
             Row::Confirm if q.confirm == 0 => "Off".into(),

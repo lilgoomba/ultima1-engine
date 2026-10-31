@@ -1161,7 +1161,7 @@ fn second_group() -> u1_assets::qol::Qol {
 const DUNGEON_WALK: &str = "e{up}{up}{left}{up}{up}{right}{up}";
 // Each screen waits for a key and drops it, so each is typed twice (open,
 // close); with the screens off all of them are ignored.
-const DUNGEON_WALK_VIEWS: &str = "e{map}{map}{up}{help}{help}{up}{left}{char}{char}{up}{up}{map}{map}{right}{up}";
+const DUNGEON_WALK_VIEWS: &str = "e{map}{map}{up}{help}{help}{up}{left}{up}{up}{map}{map}{right}{up}";
 
 #[test]
 fn second_group_off_ignores_the_view_keys() {
@@ -1430,4 +1430,83 @@ fn king_pence_shows_all_digits_typed() {
     let Some(g) = play_with(32, 27, &keys, 2, &[], |r| r.set_u16(off::COIN, 2000)) else { return };
     let all: String = (0..25).map(|r| g.term.row_text(r)).collect::<Vec<_>>().join("\n");
     assert!(all.contains("How much? 123"), "{all}");
+}
+
+// ------------------------------------------------------------ Ztats and the character screen
+
+fn screen_text(g: &Game) -> String {
+    (0..25).map(|r| g.term.row_text(r)).collect::<Vec<_>>().join("\n")
+}
+
+fn quests_given(r: &mut PlayerRecord, done: &[usize], active: &[usize]) {
+    for &k in done {
+        r.set_u16(off::QUESTS + 2 * k, 1);
+    }
+    for &k in active {
+        r.set_u16(off::QUESTS + 2 * k, 0xFFFF);
+    }
+}
+
+#[test]
+fn ztats_with_the_character_option_off_is_the_original() {
+    // Every other engine screen on, the character screen off: Z draws and
+    // records exactly what it does with nothing on (the original Ztats).
+    let Some(plain) = play(66, 41, "z") else { return };
+    for keys in ["z", "z ", "z {up}"] {
+        let plain = play(66, 41, keys).unwrap();
+        let mut io = ScriptIo::from_text(keys);
+        io.qol = u1_assets::qol::Qol { automap: true, minimap: true, help: true, hints: true, charsheet: false, ..Default::default() };
+        let other = play_io(66, 41, &mut io, 2, &[], |_| {}).unwrap();
+        assert_eq!(plain.term.px, other.term.px, "{keys}");
+        assert_eq!(plain.rec.as_bytes(), other.rec.as_bytes(), "{keys}");
+    }
+    let all = screen_text(&plain);
+    assert!(!all.contains("Ztats - character"), "{all}");
+}
+
+#[test]
+fn ztats_with_the_character_option_on_shows_everything_and_the_quests() {
+    let run = |keys: &str| {
+        let mut io = ScriptIo::from_text(keys);
+        io.qol = u1_assets::qol::Qol { charsheet: true, ..Default::default() };
+        play_io(66, 41, &mut io, 2, &[], |r| quests_given(r, &[3], &[2]))
+    };
+    let Some(g) = run("z") else { return };
+    let pages = g.character_pages();
+    // Every page, joined.
+    let all: String = (0..pages).map(|n| screen_text(&run(&format!("z{}", " ".repeat(n))).unwrap())).collect::<Vec<_>>().join("\n");
+    for want in ["Ztats - character", "Hit points", "Coin", "Weapons:", "Armour:", "Spells:", "Transport:", "Gems:", "Quests:"] {
+        assert!(all.contains(want), "{want}\n{all}");
+    }
+    // The stats Ztats lists are all here.
+    for i in 1..=6 {
+        let n = g.ptr(u1_assets::exe::m::STAT_NAMES, i);
+        assert!(all.contains(n.trim()), "{n}\n{all}");
+    }
+    assert!(all.contains("The Lost King:") && all.contains("Slay a Gelatinous Cube") && all.contains("Not done yet."), "{all}");
+    assert!(all.contains("King of Barataria:") && all.contains("Done! Return to the king."), "{all}");
+    // The last key closes it; nothing in the record changed.
+    let closed = run(&format!("z{}", " ".repeat(pages))).unwrap();
+    let plain = play_with(66, 41, "", 2, &[], |r| quests_given(r, &[3], &[2])).unwrap();
+    assert_eq!(plain.rec.as_bytes(), closed.rec.as_bytes());
+    assert!(!screen_text(&closed).contains("Ztats - character"));
+}
+
+#[test]
+fn every_kings_quest_reads_from_the_game_data() {
+    let Some(g) = play(66, 41, "") else { return };
+    let got: Vec<(String, String)> = (1..=8).map(|k| (g.quest_giver(k), g.quest_task(k))).collect();
+    let want = [
+        ("Lord British", "Find the Grave of the Lost Soul"),
+        ("The Lost King", "Slay a Gelatinous Cube"),
+        ("King of Barataria", "Find the Southern Sign Post"),
+        ("King of Rondorin", "Slay a Carrion Creeper"),
+        ("King of Olympus", "Find the Pillar of Ozymandias"),
+        ("King of the Black Dragon", "Slay a Lich"),
+        ("King of the White Dragon", "Find the Tower of Knowledge"),
+        ("King of Shamino", "Slay a Balron"),
+    ];
+    for (k, (w, t)) in want.iter().enumerate() {
+        assert_eq!((got[k].0.as_str(), got[k].1.as_str()), (*w, *t), "castle {}", k + 1);
+    }
 }

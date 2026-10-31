@@ -52,7 +52,12 @@ the tests keep the original behaviour.
   what they do, and an optional one-line hint for the key just pressed
   or the prompt shown.
 * **One character and inventory screen.** The Z-stats pages (attributes,
-  weapons, armour, spells, vehicles, gems) gathered on one screen.
+  weapons, armour, spells, vehicles, gems, enemy vessels) gathered on one
+  screen, paged if needed. Built into Z itself (features-review-1): with the
+  Character setting on, Z shows it; off, Z is the original Ztats. No
+  separate F6 key any more. Quests are listed in plain words, read from
+  the game's tables at run time: who gave each, what it is, and whether
+  it is done (then "return to the king").
 
 ## Speed
 

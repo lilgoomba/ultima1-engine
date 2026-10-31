@@ -40,10 +40,10 @@ pub mod keys {
     pub const SAVE_REQ: u8 = 0xD0;
     pub const LOAD_REQ: u8 = 0xD8;
     /// The engine's screens (SPEC §23), sent only at the command prompt
-    /// (an extra key or a script's `{map}`, `{help}`, `{char}`).
+    /// (an extra key or a script's `{map}`, `{help}`). The character
+    /// screen is Ztats (Z) with that option on.
     pub const MAP: u8 = 0xC1;
     pub const HELP: u8 = 0xC2;
-    pub const CHARSHEET: u8 = 0xC3;
 }
 
 pub trait Io {
@@ -246,7 +246,6 @@ impl ScriptIo {
                         "p" => keys::STOP_AT_PAUSE,
                         "map" => keys::MAP,
                         "help" => keys::HELP,
-                        "char" => keys::CHARSHEET,
                         _ => b'?',
                     });
                 }

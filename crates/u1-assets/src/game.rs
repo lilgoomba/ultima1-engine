@@ -787,7 +787,7 @@ impl Game {
                     crate::views::View::Map if self.mode == crate::dgame::DUNGEON => qol.automap,
                     crate::views::View::Map => qol.minimap,
                     crate::views::View::Help => qol.help,
-                    crate::views::View::Character => qol.charsheet,
+                    crate::views::View::Character => false,
                 };
                 if on {
                     io.command_prompt(false);
@@ -1714,6 +1714,12 @@ impl Game {
     /// Ztats `bfe6`.
     pub(crate) fn cmd_ztats(&mut self, io: &mut dyn Io) -> IoResult<()> {
         self.sayln(m::ZTATS);
+        if io.features().charsheet {
+            // The engine's combined screen (SPEC §23.2): all of Ztats and
+            // more; the screen is put back as it was.
+            let saved = self.term.clone();
+            return self.show_character(io, saved);
+        }
         self.term.clear_view();
         self.term.ornament_left(13, 0);
         self.say(m::INVENTORY);

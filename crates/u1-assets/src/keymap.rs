@@ -29,7 +29,7 @@ const fn act(id: &'static str, label: &'static str, code: u8, own: &'static str)
     Action { id, label, code, own, default: "" }
 }
 
-pub const ACTIONS: [Action; 28] = [
+pub const ACTIONS: [Action; 27] = [
     act("north", "North (dungeon: forward)", keys::UP, "Up"),
     act("south", "South (dungeon: turn round)", keys::DOWN, "Down"),
     act("west", "West (dungeon: turn left)", keys::LEFT, "Left"),
@@ -57,7 +57,6 @@ pub const ACTIONS: [Action; 28] = [
     act("ztats", "Ztats", b'Z', "Z"),
     Action { id: "map", label: "Map", code: keys::MAP, own: "", default: "tab" },
     Action { id: "help", label: "Command help", code: keys::HELP, own: "", default: "f3" },
-    Action { id: "character", label: "Character screen", code: keys::CHARSHEET, own: "", default: "f6" },
 ];
 
 /// Keys the original does nothing with at its command prompt, so they
@@ -127,6 +126,11 @@ impl KeyMap {
 
     /// Read one `key_<id>` config line: `None` if `k` is not one.
     pub fn config_key(&mut self, k: &str, v: &str) -> Option<Result<(), &'static str>> {
+        if k == "key_character" {
+            // The old F6 character screen is now Ztats (Z): an old line is
+            // accepted and ignored.
+            return Some(Ok(()));
+        }
         let i = ACTIONS.iter().position(|a| k.strip_prefix("key_") == Some(a.id))?;
         let v = v.trim().to_ascii_lowercase();
         Some(if v.is_empty() || v == "none" {
@@ -155,7 +159,7 @@ impl KeyMap {
 pub const BUTTONS: [&str; 11] = ["a", "b", "x", "y", "back", "start", "guide", "leftshoulder", "rightshoulder", "leftstick", "rightstick"];
 
 /// What each button does without a config file.
-pub const PAD_DEFAULTS: [&str; 11] = ["space", "esc", "a", "e", "map", "options", "help", "k", "f", "character", "z"];
+pub const PAD_DEFAULTS: [&str; 11] = ["space", "esc", "a", "e", "map", "options", "help", "k", "f", "z", "z"];
 
 /// What a pad button sends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,7 +174,8 @@ pub enum PadOut {
 }
 
 /// The meaning of a pad value: a letter or digit, space, enter, esc, an
-/// arrow, options, map, help, character or none.
+/// arrow, options, map, help or none ("character", the old character
+/// screen, is Ztats now).
 pub fn pad_out(v: &str) -> Option<PadOut> {
     Some(match v {
         "none" | "" => PadOut::None,
@@ -184,7 +189,7 @@ pub fn pad_out(v: &str) -> Option<PadOut> {
         "options" | "f1" => PadOut::Options,
         "map" => PadOut::Command(keys::MAP),
         "help" => PadOut::Command(keys::HELP),
-        "character" => PadOut::Command(keys::CHARSHEET),
+        "character" => PadOut::Key(b'Z'),
         v if v.len() == 1 && v.as_bytes()[0].is_ascii_alphanumeric() => PadOut::Key(v.as_bytes()[0].to_ascii_uppercase()),
         _ => return None,
     })
@@ -346,10 +351,11 @@ mod tests {
 
     #[test]
     fn defaults() {
-        let k = KeyMap::default();
+        let mut k = KeyMap::default();
         assert_eq!(k.code_for("tab"), Some(keys::MAP));
         assert_eq!(k.code_for("f3"), Some(keys::HELP));
-        assert_eq!(k.code_for("f6"), Some(keys::CHARSHEET));
+        assert_eq!(k.code_for("f6"), None, "F6 is free: the character screen is Ztats");
+        assert_eq!(k.config_key("key_character", "f6"), Some(Ok(())), "an old line is ignored");
         assert_eq!(k.code_for("j"), None);
         assert!(k.config_lines().is_empty());
         // Every default extra key is free, and no original key is.
@@ -406,7 +412,7 @@ mod tests {
         r.key(keys::UP, "up");
         assert_eq!(r.row, ACTIONS.len() - 1);
         assert_eq!(r.key(keys::BACKSPACE, "backspace"), RebindKey::Changed);
-        assert_eq!(r.map.code_for("f6"), None);
+        assert_eq!(r.map.code_for("f3"), None);
         r.key(keys::ENTER, "return");
         assert_eq!(r.key(keys::ESC, "escape"), RebindKey::Stay);
         assert!(!r.waiting);
@@ -414,6 +420,6 @@ mod tests {
         let mut t = crate::term::Term::new();
         r.draw(&mut t);
         assert!(t.row_text(2).contains("Keys"));
-        assert!((4..14).any(|y| t.row_text(y).contains("Character screen")));
+        assert!((4..20).any(|y| t.row_text(y).contains("Ztats")));
     }
 }

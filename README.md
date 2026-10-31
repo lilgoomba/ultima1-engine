@@ -437,7 +437,7 @@ scaler for one run. Screenshots take `--crt`, `--slots`, `--log` and
 |---|---|---|
 | Dungeon map | Tab (in a dungeon) | An automap of the squares you have seen on this level (one map per level; unfound secret doors look like walls, traps never show). |
 | World map | Tab (elsewhere) | The overworld you have seen, the places you have entered and where you are. Opens zoomed in round you (4x); Z shows the whole world and back. |
-| Character | F6 | One read-only page: attributes, gear, spells, transport, gems, quests. |
+| Character | Z | Z (Ztats) shows one combined, paged screen: stats, coin, gear, spells, transport, gems, enemy vessels, and each quest given: who gave it, what it is ("King of the Black Dragon: Slay a Lich"), and whether it is done ("Done! Return to the king."). Off: Z is the original Ztats. |
 | Help screen | F3 | The commands and the engine's keys. |
 | Hints | | A one-line hint above a command's prompt ("(B buy, S sell)"). |
 | Confirm | | Ask "Sure? (Y/N)" before selling or dropping anything worth 10/50/100/250/500 or more. |
@@ -461,7 +461,7 @@ closes; changes are saved at once.
 
 **Gamepad.** D-pad and left stick are the arrows. Default buttons: A
 Space, B Esc, X Attack, Y Enter, Back map, Start options (F1), Guide help,
-LB Klimb, RB Fire, left stick press character, right stick press Ztats.
+LB Klimb, RB Fire, left stick press Ztats, right stick press Ztats.
 The mapping is tested with synthetic SDL controller events; testing with
 a real controller is still to do.
 

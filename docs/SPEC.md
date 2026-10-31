@@ -1711,7 +1711,8 @@ skipped. Deleting it forgets the maps and nothing else.
   bound: J L M P W Y, the digits 0 1 3 5 7 9, ; ' , . / [ ] \ - = `, Tab,
   F3 F6 F7 F8 F10 F11 F12. An extra key means its command only at the
   command prompt; inside a question, a shop list or a number every key
-  types what it always did. Defaults: Tab map, F3 help, F6 character.
+  types what it always did. Defaults: Tab map, F3 help. (There is no separate character key: with the
+  setting on, Z itself shows the character screen, see 23.4.)
   Config: `key_<command> = "<key>"` (`key_attack = "j"`, `key_map =
   "none"`), keys named in lower case as SDL names them.
 * **Rebind screen** (F1, Keys): the commands with their own key and their
@@ -1726,8 +1727,9 @@ skipped. Deleting it forgets the maps and nothing else.
   rightstick. (The mapping is tested with synthetic SDL controller
   events; testing with a real controller is pending.) Defaults: a Space, b Esc, x A, y E, back map, start
   options, guide help, leftshoulder K, rightshoulder F, leftstick
-  character, rightstick Z. A value is a letter or digit, space, enter,
-  esc, up/down/left/right, options, map, help, character or none.
+  Z, rightstick Z. A value is a letter or digit, space, enter,
+  esc, up/down/left/right, options, map, help or none (an old
+  "character" value is read as Z).
 * **Arrow auto-repeat**: off, the system's key repeat is used, as before.
   On, the engine's own: a held arrow (or d-pad/stick direction) moves
   again after the delay (250 by default, 400, 600 or 800 ms) and then at
@@ -1745,10 +1747,26 @@ skipped. Deleting it forgets the maps and nothing else.
   its own prompt says what it wants (for example "(W weapon, A armour, S
   spell)" for Ready, "(B buy, S sell)" for Transact in a town). Only for
   commands that prompt; the prompt itself is unchanged.
-* **Character screen (F6)**: read only. Name, level, sex, race and class,
-  hit points, food, experience, coin, the six attributes, weapons and
-  armour owned (the readied ones marked), spells, transport, gems and the
-  quests in plain words. It shows nothing the Z-stats pages do not.
+* **Character screen (Z, with the setting on)**: Ztats itself. With the
+  setting on, Z (or whatever key Z has as its extra key, and the pad's
+  stick press) prints "Ztats" as before and then shows one combined,
+  read-only screen in place of the original's Ztats pages: name, level,
+  sex, race and class, hit points, food, experience, coin, the six
+  attributes, weapons and armour owned (the readied ones marked), spells,
+  transport, gems, enemy vessels destroyed, and the quests. It is paged
+  when it does not fit (a footer says "Page n of N"); as in the
+  original, each key goes to the next page and the key on the last page
+  closes it, the view is put back and no turn passes. The record is not
+  changed. With the setting off, Z is exactly the original Ztats.
+* **Quests** on that screen: each quest given (active or done) names who
+  gave it and what it is, built at run time from the game's own tables:
+  the castle's name (from the location names in OUT.EXE) gives the giver,
+  "Lord British", "The Lost King" or "King of <castle>" (for example "King
+  of the Black Dragon"); even-numbered castles give a kill quest ("Slay a
+  Gelatinous Cube", the monster from the kill-quest table), odd ones a
+  find quest ("Find the Tower of Knowledge", the place from the find-quest
+  table). Under it: "Not done yet." or, when done, "Done! Return to the
+  king." Nothing about a quest not yet given is shown.
 
 ### 23.5 Confirm before selling or dropping
 

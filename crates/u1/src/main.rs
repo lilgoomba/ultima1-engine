@@ -1728,11 +1728,38 @@ fn main() -> ExitCode {
             use std::io::IsTerminal;
             let batch = std::env::args().any(|a| a == "--screenshot" || a == "--sound-demo");
             if !std::io::stderr().is_terminal() && !batch && !e.starts_with("usage:") {
-                let _ = sdl2::messagebox::show_simple_message_box(sdl2::messagebox::MessageBoxFlag::ERROR, "Ultima I engine", &e, None);
+                let _ = sdl2::messagebox::show_simple_message_box(sdl2::messagebox::MessageBoxFlag::ERROR, "Ultima I engine", &wrap_text(&e, 80), None);
             }
             ExitCode::FAILURE
         }
     }
+}
+
+/// Wraps long lines at spaces for the error window, which (on X11) does not
+/// wrap by itself. Leading indentation is kept on the continuation lines.
+fn wrap_text(text: &str, width: usize) -> String {
+    let mut out = String::new();
+    for line in text.lines() {
+        let indent: String = line.chars().take_while(|c| *c == ' ').collect();
+        let mut cur = String::new();
+        for word in line.split_whitespace() {
+            if !cur.is_empty() && cur.chars().count() + 1 + word.chars().count() > width {
+                out.push_str(&cur);
+                out.push('\n');
+                cur.clear();
+            }
+            if cur.is_empty() {
+                cur.push_str(&indent);
+            } else {
+                cur.push(' ');
+            }
+            cur.push_str(word);
+        }
+        out.push_str(&cur);
+        out.push('\n');
+    }
+    out.truncate(out.trim_end().len());
+    out
 }
 
 /// Local wall-clock time as DOS reports it: hour, minute, second, hundredths.
@@ -1758,6 +1785,13 @@ fn local_time() -> [u8; 4] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wrap_text_keeps_short_lines_and_indents() {
+        assert_eq!(super::wrap_text("a b\n\n  c", 80), "a b\n\n  c");
+        assert_eq!(super::wrap_text("aaa bbb ccc", 7), "aaa bbb\nccc");
+        assert_eq!(super::wrap_text("  aa bb cc", 7), "  aa bb\n  cc");
+    }
+
     use super::*;
     use sdl2::controller::{Axis, Button};
     use sdl2::event::Event;

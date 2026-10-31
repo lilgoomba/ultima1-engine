@@ -287,7 +287,9 @@ The overworld monsters (all 15 kinds, two frames each like the
 original) were added the same way: generated from text descriptions
 only, cut out at 30 pixels on a 32×32 transparent tile and drawn over
 the pack's terrain. The hidden archer and the evil trent still look
-like bushes. Vehicles are not drawn yet (original tiles).
+like bushes. The vehicles on the map (horse, cart, raft, frigate with
+its two frames, aircar, shuttle and time machine) were made the same
+way.
 
 Batch 2 covers towns and castles: the castle wall, the
 cobbled floor, water and its six shore shapes, bush, tree, the six

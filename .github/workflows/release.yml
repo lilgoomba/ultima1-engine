@@ -1,0 +1,56 @@
+# The Linux AppImage, built on Ubuntu 22.04 (glibc 2.35, so it runs on that
+# and newer distributions). On a v* tag it is attached to a GitHub release
+# (a pre-release when the tag has a "-", e.g. v0.1.0-alpha.1); started by
+# hand it is only kept as a workflow artifact.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  appimage:
+    name: Linux AppImage
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: SDL2 and AppImage tools
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev file
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the AppImage
+        run: packaging/build-appimage.sh
+      - name: Check it
+        run: |
+          ls -l build/*.AppImage
+          ./build/*.AppImage --appimage-extract >/dev/null
+          if find squashfs-root -type f | grep -iE '\.(exe|bin|u1|16|4|com)$'; then
+            echo "game data in the AppImage"; exit 1
+          fi
+          # No game files: it must say which are missing and fail.
+          mkdir empty && cd empty
+          if HOME=$PWD ../squashfs-root/AppRun --game-dir . --screenshot x.png 2> err.txt; then exit 1; fi
+          cat err.txt && grep -q "OUT.EXE" err.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: build/*.AppImage
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          pre=""
+          case "$tag" in *-*) pre="--prerelease" ;; esac
+          gh release create "$tag" build/*.AppImage --title "ultima1-engine $tag" $pre \
+            --notes "Linux AppImage of ultima1-engine $tag. It contains no game files: you need your own copy of Ultima I (CD-ROM or GOG). See PLAYING.md for setup and keys."

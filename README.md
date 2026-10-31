@@ -164,10 +164,17 @@ SDL_VIDEODRIVER=dummy cargo run -p u1view -- --demo --start 100,104 --screenshot
 cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --player 2
 ```
 
+**Just want to play?** Download the Linux AppImage from the releases and
+see [PLAYING.md](PLAYING.md).
+
 `u1` needs your own game folder. It reads `MAP.BIN`, `TCD.BIN`, the tile
 sets, `OUT.EXE` (for its tables and texts) and a save. The game folder is
-never written. Without `--player`/`--save` it starts a fresh character
-at the default start, (49,40). It covers the overworld, towns and castles
+never written. Without `--game-dir` it looks for the folder in
+`$U1_GAME_DIR`, beside the AppImage (or the program), in the current folder
+and in `~/.local/share/ultima1-engine/game`, and lists the missing files if
+none is complete (see PLAYING.md). With no start option it begins with the
+title sequence and the character menu, as the original; `--pos` alone
+starts a fresh character at the given place (default start (49,40)). It covers the overworld, towns and castles
 (shops, pub, kings, jail and princess) and the ten-level dungeons with
 their first-person view. Space and the time machine stop after their
 entry message.
@@ -202,6 +209,9 @@ passes by itself, as in the original. Options:
 * `--player N` or `--save FILE` to load a save; `--pos X,Y` to override
   the position.
 * `--save-to FILE`: where `Q` writes the 820-byte record. The default is
+  `~/.local/share/ultima1-engine/saves/PLAYER1.U1` (`$XDG_DATA_HOME`), the
+  folder that also holds the character menu's roster; the first time, the
+  game's own `PLAYERn.U1` are copied there. Screenshots default to
   `./PLAYER1.U1`. It must not be inside the game folder.
 * `--mode ega|t1k|cga`, `--scale N` (1–6, default 3).
 * Like the original, the random generator is seeded from the save's seed
@@ -491,7 +501,28 @@ docs/SPEC.md       data-format specification with sources
 docs/ROADMAP.md    optional quality-of-life features (planned)
 assets/enhanced    default asset pack for --video enhanced and --sound enhanced
 docs/demo.png      demo screenshot (synthetic art)
+packaging/         AppImage build script, .desktop file and icon (our own, CC-BY-SA 4.0)
+.github/workflows  CI (ci.yml) and the AppImage release (release.yml)
+PLAYING.md         how to play from the AppImage
 ```
+
+## Continuous integration and releases
+
+`.github/workflows/ci.yml` checks formatting (`cargo fmt --check`), builds,
+runs the tests and runs `cargo clippy -- -D warnings` (lints allowed for
+the workspace are listed with their reasons in `Cargo.toml`). No CI job has
+game files, so the tests that need them skip themselves. To save Actions
+minutes on the private repository, Linux runs on every push and pull
+request, Windows (SDL2 built from source via the `u1/bundled` feature) on
+pull requests and pushes to `main`, and macOS (ten times the minutes) only
+when started by hand (`gh workflow run ci.yml`, or "Run workflow" in the
+Actions tab, which also runs Windows).
+
+`.github/workflows/release.yml` builds the AppImage
+(`packaging/build-appimage.sh`, linuxdeploy on Ubuntu 22.04) on a `v*` tag
+and attaches it to a GitHub release (a pre-release for tags such as
+`v0.1.0-alpha.1`); started by hand it only keeps the AppImage as a run
+artifact.
 
 ## Roadmap
 

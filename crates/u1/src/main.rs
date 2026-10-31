@@ -271,7 +271,22 @@ fn parse_args() -> Result<Args, String> {
     }
     if interactive && a.save_to.is_none() && a.roster.is_none() {
         if let Some(d) = gamedir::data_dir().map(|d| d.join("saves")) {
+            let new = !d.is_dir();
             std::fs::create_dir_all(&d).map_err(|e| format!("{}: {e}", d.display()))?;
+            // The first time, the characters that came with the game join
+            // the roster as copies (the originals are only read).
+            if new {
+                if let Ok(g) = GameDir::new(&a.game_dir) {
+                    for n in 1..=4 {
+                        let f = format!("PLAYER{n}.U1");
+                        if let Some(src) = g.find(&f) {
+                            if let Ok(b) = std::fs::read(src) {
+                                let _ = std::fs::write(d.join(&f), b);
+                            }
+                        }
+                    }
+                }
+            }
             a.save_to = Some(d.join("PLAYER1.U1"));
         }
     }

@@ -1,0 +1,80 @@
+# Build, test, clippy and rustfmt.
+#
+# Actions minutes on this private repository are limited, so:
+# * Linux (1x minutes) runs on every push and pull request.
+# * Windows (2x) runs on pull requests and pushes to main.
+# * macOS (10x) runs only when started by hand (Actions tab, "Run
+#   workflow", or `gh workflow run ci.yml`), since a run costs ten Linux
+#   runs; start it before a release or after platform-specific changes.
+#
+# No job has the original game files: the tests that need them
+# (crates/u1-assets/tests/with_game_files.rs, U1_GAME_DIR) skip themselves.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (build, test, clippy, fmt)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Build
+        run: cargo build --workspace --all-targets --locked
+      - name: Test (game-file tests skip without U1_GAME_DIR)
+        run: cargo test --workspace --locked
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: No game data tracked
+        run: |
+          if git ls-files | grep -iE '\.(exe|bin|u1|16|4|com)$'; then
+            echo "game data is tracked"; exit 1
+          fi
+
+  windows:
+    name: Windows (build, test)
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # SDL2 built from source by the sdl2 crate (cmake is on the runner).
+      - name: Build
+        run: cargo build --workspace --all-targets --locked --features u1/bundled
+      - name: Test
+        run: cargo test --workspace --locked --features u1/bundled
+
+  macos:
+    name: macOS (build, test; manual only)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SDL2
+        run: brew install sdl2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build and test
+        run: |
+          export LIBRARY_PATH="$(brew --prefix)/lib:${LIBRARY_PATH:-}"
+          cargo build --workspace --all-targets --locked
+          cargo test --workspace --locked

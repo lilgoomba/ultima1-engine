@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ultima I (ultima1-engine)
+GenericName=Role-playing game engine
+Comment=Play Ultima I from your own copy of the game files
+Exec=u1
+Icon=ultima1-engine
+Terminal=false
+Categories=Game;RolePlaying;

@@ -1,0 +1,101 @@
+# Playing Ultima I with ultima1-engine (Linux AppImage)
+
+ultima1-engine plays *Ultima I* (the 1986 MS-DOS release) from **your own
+copy** of the game: the CD-ROM *Ultima 1-3* collection or the GOG.com
+edition. The AppImage contains the engine, SDL2 and our own CC-BY-SA
+enhanced art and sounds, but **no game files**.
+
+## 1. Download
+
+Take `ultima1-engine-<version>-x86_64.AppImage` from the
+[Releases page](https://github.com/lilgoomba/ultima1-engine/releases) and
+make it executable:
+
+```sh
+chmod +x ultima1-engine-*-x86_64.AppImage
+./ultima1-engine-*-x86_64.AppImage
+```
+
+It is built on Ubuntu 22.04 and runs on x86-64 distributions with glibc
+2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, and so on). AppImages
+need FUSE 2 (`libfuse2`, called `libfuse2t64` on Ubuntu 24.04). Without it,
+run it as `./ultima1-engine-*.AppImage --appimage-extract-and-run` or set
+`APPIMAGE_EXTRACT_AND_RUN=1`.
+
+## 2. Point it at your game files
+
+The engine needs these files from your copy (any case of the name):
+`OUT.EXE`, `MAP.BIN`, `TCD.BIN`, `ULTIMA.EXE`, `GEN.EXE` and one display's
+tiles (`EGATILES.BIN` + `EGATOWN.BIN`, or the `T1K` or `CGA` pair). The rest
+(`SPACE.EXE`, `MONDAIN.EXE`, `NIF.BIN`, `CASTLE.16`/`CASTLE.4`, the
+`*FIGHT`, `*SPACE` and `*MOND` tiles) are used when present; copy the whole
+folder to be safe. On the CD and in GOG installs they are in a folder
+called `ULTIMA1`.
+
+Any one of these works. Without `--game-dir` the places are tried in this
+order and the first complete one wins:
+
+1. `--game-dir /path/to/ULTIMA1` on the command line.
+2. `$U1_GAME_DIR`.
+3. Put the AppImage **in the game folder, or next to the `ULTIMA1`
+   folder** (each place is also searched for an `ULTIMA1`/`U1` folder
+   inside it).
+4. The folder you start it from.
+5. `~/.local/share/ultima1-engine/game` (`$XDG_DATA_HOME/ultima1-engine/game`),
+   e.g. `mkdir -p ~/.local/share/ultima1-engine/game && cp /path/to/ULTIMA1/* ~/.local/share/ultima1-engine/game/`.
+
+If no place has the files, the engine says which places it tried and which
+files each one lacks (in the terminal, and in a message window when
+started from a file manager).
+
+The game folder is only ever read.
+
+## 3. Starting
+
+With no options the game starts like the original: the title sequence,
+then the character menu (create a character, or continue one). Other
+starts: `--player N` (the game's `PLAYERn.U1`), `--save FILE`, `--gen`
+(straight to the character menu). `--help` lists every option.
+
+## 4. Keys
+
+The original's keys all work as they did (arrows move; A Attack, B Board,
+C Cast, D Drop, E Enter, F Fire, G Get, I Inform, K Klimb, N Noise, O Open,
+Q Quit and save, R Ready, S Steal, T Transact, U Unlock, X eXit, Z Ztats;
+Space passes; the README has the full table). The engine adds keys the original
+never reads:
+
+| Key | What it does |
+|---|---|
+| F1 | Options: display (Enhanced, EGA, CGA, Tandy), sound (original beeps, enhanced, mute), and the optional features. Everything optional is **off** by default. |
+| F2 | Save slots (turn on "Save slots" in F1) |
+| F3 | Command help screen (turn on "Help screen" in F1) |
+| F4 | Turbo: every wait 4x shorter (always available) |
+| F5 / F9 | Quicksave / quickload (with save slots on) |
+| F6 | Character page (turn on "Character" in F1) |
+| Tab | Dungeon automap / world map (turn on the maps in F1) |
+| PgUp / PgDn | Message log (turn on "Message log" in F1) |
+| Alt+Enter | Fullscreen on/off |
+
+The enhanced mode (F1, Video: Enhanced) draws our own CC-BY-SA art over
+the same game; the original EGA picture is the default.
+
+## 5. Where saves and settings live
+
+* **Saves and characters**: `~/.local/share/ultima1-engine/saves/`
+  (`$XDG_DATA_HOME/ultima1-engine/saves`). The roster files
+  (`PLAYER1.U1` ... `PLAYER4.U1`) are original 820-byte records; save slots
+  and maps sit beside them. The first time, the characters that came with
+  the game are copied there. Saves never go into the game folder, so your
+  original files are never changed and a read-only game folder (a CD) is
+  fine. `--save-to FILE` or `--roster DIR` choose another place.
+* **Settings**: `~/.config/ultima1-engine/config.toml`
+  (`$XDG_CONFIG_HOME/ultima1-engine/config.toml`), written by the F1 menu.
+
+## 6. Bugs
+
+Please report problems as [GitHub issues](https://github.com/lilgoomba/ultima1-engine/issues)
+(the repository is private: ask for access if you cannot open it). Say
+which release, your distribution, what you did and what happened; the
+terminal output (start the AppImage from a terminal) and a screenshot
+help. Please do not attach game files or saves made from them.

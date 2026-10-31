@@ -199,6 +199,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // "/x/data" is not an absolute path on Windows.
     fn data_dir_follows_xdg() {
         let p = |s: &str| Some(PathBuf::from(s));
         assert_eq!(data_dir_from(p("/x/data"), p("/home/u"), None), p("/x/data/ultima1-engine"));

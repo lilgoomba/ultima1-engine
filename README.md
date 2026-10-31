@@ -426,8 +426,10 @@ steady_timing = true
 ```
 
 Only settings that differ from the default are written. `--fullscreen` and
-`--crt` turn those on for one run; screenshots take `--crt`, `--slots` and
-`--log` (`--smoothing off|pixel-art` for the scaler; `--keys` may hold `{save1}`..`{save5}`, `{saveq}`, `{load1}`..).
+`--crt` turn those on for one run; `--smoothing off|linear|pixel-art` picks the
+scaler for one run. Screenshots take `--crt`, `--slots`, `--log` and
+`--smoothing`, and their `--keys` may hold `{save1}`..`{save5}`, `{saveq}`,
+`{load1}`..
 
 ### More optional features (F1, all off by default; SPEC §23)
 
@@ -442,7 +444,7 @@ Only settings that differ from the default are written. `--fullscreen` and
 | Arrow repeat | | Our own repeat for a held arrow: Repeat delay (250-800 ms, default 250) and Repeat rate (default "Game pace", one step each pass of the main loop as the original moves; or 4-16 a second, never faster than the game pace). Repeats come only at the command prompt, so they never answer a question. "System" is the old behaviour. |
 | Gamepad | | SDL game controllers: d-pad or left stick move; buttons as below. |
 | Music | | Original chiptune music per area (title, overworld, town, castle, dungeon, space, Mondain's lair; victory and death stings), crossfaded on area changes and paused in the F1 menu. Music volume (10-100%, default 50%) is separate from the effects. Silent when sound is Mute. See CREDITS. |
-| Smoothing | | How the picture is enlarged: Off (square pixels, as the original), Linear (bilinear filtering) or Pixel art (our own Scale2x/EPX edge-rounding scaler to at least 1280 wide, then a short linear stretch). Works in both EGA and enhanced video, and with whole-pixel scaling (the fit is still whole multiples of the original size). With CRT on, the pixel-art scaler runs first and the scanlines are drawn on its output; any smoothing also filters the CRT texture. |
+| Smoothing | | How the picture is enlarged: Off (square pixels, as the original), Linear (bilinear filtering) or Pixel art (our own Scale2x/EPX edge-rounding scaler to at least 1280 wide, then a short linear stretch). Works in both EGA and enhanced video, and with whole-pixel scaling (the fit is still whole multiples of the original size). With CRT on, the pixel-art scaler runs first and the scanlines are drawn on its output; any smoothing also filters the CRT texture. Note: Pixel art also rounds the square corners of the screen frames and text-window borders (an effect of the edge-rounding scaler); use Linear or Off for sharp corners. |
 | Keys | Enter | The rebind screen: give any command or screen one extra key. |
 
 The maps are kept in `PLAYER2.U1.map` beside the player file, only with a

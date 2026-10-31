@@ -1373,6 +1373,36 @@ fn weapon_shop(tail: &str) -> String {
 }
 
 #[test]
+fn dropping_asks_first_when_set_and_no_keeps_the_item() {
+    // In Britain: Drop, Weapon, b (a dagger); then Drop, Pence, 5.
+    let keys = |w: &str, p: &str| format!("{{left}}{{left}}edwb{w}dp5{{enter}}{p}");
+    let Some(plain) = play(41, 39, &keys("", "")) else { return };
+    let start = PlayerRecord::parse(&game_dir().unwrap().read("PLAYER2.U1").unwrap()).unwrap();
+    let (daggers, coin) = (|g: &Game| g.rec.u16_at(0x62), |g: &Game| g.rec.u16_at(off::COIN));
+    let run = |w: &str, p: &str| {
+        let mut io = ScriptIo::from_text(&keys(w, p));
+        io.qol.confirm = 1;
+        play_io(41, 39, &mut io, 2, &[], |_| {}).unwrap()
+    };
+    let (no, yes) = (run("n", "n"), run("y", "y"));
+    assert!(start.u16_at(0x62) > 0);
+    assert_eq!(daggers(&plain), start.u16_at(0x62) - 1, "off: dropped at once, as the original");
+    assert_eq!((daggers(&no), coin(&no)), (daggers(&plain) + 1, coin(&plain) + 5), "N keeps both");
+    assert_eq!(yes.rec.as_bytes(), plain.rec.as_bytes(), "Y: the same as the original");
+    // Above the value set: no question, the keys go on as in the original.
+    let mut io = ScriptIo::from_text(&keys("", ""));
+    io.qol.confirm = 30000;
+    let high = play_io(41, 39, &mut io, 2, &[], |_| {}).unwrap();
+    assert_eq!(high.rec.as_bytes(), plain.rec.as_bytes());
+    // The box asks in words.
+    let mut io = ScriptIo::from_text("{left}{left}edwb");
+    io.qol.confirm = 1;
+    let asking = play_io(41, 39, &mut io, 2, &[], |_| {}).unwrap();
+    let all: String = (0..25).map(|r| asking.term.row_text(r)).collect::<Vec<_>>().join("\n");
+    assert!(all.contains("Drop Dagger?") && all.contains("Sure? (Y/N)"), "{all}");
+}
+
+#[test]
 fn selling_asks_first_when_set_and_no_keeps_the_item() {
     let Some(plain) = play(41, 39, &weapon_shop("")) else { return };
     let daggers = |g: &Game| g.rec.u16_at(0x62);

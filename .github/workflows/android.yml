@@ -11,6 +11,10 @@ on:
   workflow_dispatch:
   push:
     tags: ["*"]
+    # Until this file is on the default branch (where "Run workflow" looks
+    # for it), pushes to the port's branch that touch Android run it too.
+    branches: [android-port]
+    paths: ["android/**", "crates/u1-android/**", ".github/workflows/android.yml"]
 
 env:
   CARGO_TERM_COLOR: always

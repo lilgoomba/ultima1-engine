@@ -729,7 +729,7 @@ fn space(out: &mut [u8], s: usize, t: &Term, sc: &crate::term::SScene, pack: &Pa
         let k = (bw / iw).min(tall * bh / ih);
         let (w, h) = (iw * k, ih * k);
         let r = (o.x as f32 - g + (bw - w) / 2.0, o.y as f32 - g + (bh - h) / 2.0, w, h);
-        stretch(out, s, img, r, o.rot, |x, y| interior(x, y));
+        stretch(out, s, img, r, o.rot, interior);
     }
 }
 

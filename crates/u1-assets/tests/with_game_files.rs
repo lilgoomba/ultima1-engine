@@ -15,8 +15,13 @@ use u1_assets::space::SpaceFiles;
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::Term;
 
+/// The game files named by `U1_GAME_DIR`. Without them each test here
+/// returns early and passes (CI has no game files), saying so on stderr.
 fn game_dir() -> Option<GameDir> {
-    let d = std::env::var_os("U1_GAME_DIR")?;
+    let Some(d) = std::env::var_os("U1_GAME_DIR") else {
+        eprintln!("skipped: U1_GAME_DIR is not set");
+        return None;
+    };
     GameDir::new(d).ok()
 }
 

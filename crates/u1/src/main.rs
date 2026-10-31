@@ -48,6 +48,9 @@ use u1_assets::soundpack::{SoundMode, SoundPack};
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::{Term, H, W};
 
+/// A picture and the rectangle of it drawn over the screen.
+type Overlay<'a> = (&'a Term, (usize, usize, usize, usize));
+
 /// One keyboard/animation poll of the original main loop, measured in
 /// DOSBox (130 ms at 20000 cycles).
 const POLL: Duration = Duration::from_micros(130_000);
@@ -717,7 +720,7 @@ impl SdlIo {
     /// The screen, or (with `over`) the screen with another picture's
     /// rectangle over it (a window, a note); the enhanced art stays on
     /// what the rectangle leaves uncovered. Then the CRT filter, if on.
-    fn present_over(&mut self, t: &Term, over: Option<(&Term, (usize, usize, usize, usize))>) -> IoResult<()> {
+    fn present_over(&mut self, t: &Term, over: Option<Overlay>) -> IoResult<()> {
         let ms = self.start.elapsed().as_millis() as u64;
         let pack = if self.enhanced { self.pack.as_ref() } else { None };
         let (w, h, rgb) = match (pack, over) {

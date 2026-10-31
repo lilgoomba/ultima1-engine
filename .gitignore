@@ -1,4 +1,5 @@
 /target
+/target-*/
 # Never commit original game data. These patterns are a safety net.
 *.BIN
 *.bin

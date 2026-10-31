@@ -69,7 +69,7 @@ mod tests {
         let mut tiles: Vec<Vec<u8>> = (0..10).map(|_| vec![0u8; 16]).collect();
         tiles[0] = (0..16u8).collect();
         let tiles = TileSet { width: 16, height: 1, tiles };
-        let map = WorldMap::parse_lenient(&vec![0u8; 84 * 2]).unwrap(); // all water
+        let map = WorldMap::parse_lenient(&[0u8; 84 * 2]).unwrap(); // all water
         for tick in 0..8 {
             let fb = render_world(&map, &tiles, &EGA_PALETTE, 0, 0, 1, 1, tick);
             for x in 0..16 {

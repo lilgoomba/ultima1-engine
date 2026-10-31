@@ -8,3 +8,19 @@ edition = "2021"
 license = "GPL-3.0-or-later"
 repository = ""
 rust-version = "1.75"
+
+# Lints allowed for the whole workspace, each for a reason. The rest of
+# clippy's defaults are errors in CI (`-D warnings`).
+[workspace.lints.clippy]
+# Loops over indices and branches that repeat the same body follow the
+# structure of the original program as the SPEC describes it, step by step.
+needless_range_loop = "allow"
+if_same_then_else = "allow"
+# Folding these `if`s into match guards would borrow `self` mutably in the
+# guard (does not compile) or hide the original's order of tests.
+collapsible_match = "allow"
+# Offsets written as `base + 0` and `x * 1` keep record and table layouts
+# readable next to their neighbours.
+identity_op = "allow"
+# The game's command handlers take the state they need explicitly.
+too_many_arguments = "allow"

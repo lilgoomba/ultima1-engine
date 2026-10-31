@@ -28,7 +28,7 @@ impl Repeater {
 
     /// Whatever held `by` was let go.
     pub fn release(&mut self, by: i32) {
-        if self.held.map_or(false, |(_, h, _)| h == by) {
+        if self.held.is_some_and(|(_, h, _)| h == by) {
             self.held = None;
         }
     }
@@ -91,7 +91,7 @@ const DPAD: [(&str, u8); 4] = [("dpup", keys::UP), ("dpdown", keys::DOWN), ("dpl
 
 /// A stable id for a button, for [`Repeater`] (always negative).
 fn button_id(name: &str) -> i32 {
-    let i = DPAD.iter().position(|d| d.0 == name).map_or_else(|| 4 + crate::keymap::BUTTONS.iter().position(|&b| b == name).unwrap_or(99), |i| i);
+    let i = DPAD.iter().position(|d| d.0 == name).unwrap_or_else(|| 4 + crate::keymap::BUTTONS.iter().position(|&b| b == name).unwrap_or(99));
     -1 - i as i32
 }
 

@@ -155,12 +155,8 @@ impl MondainFiles {
         // Slot 0 is blank; the first eleven world tiles go to slots 10..=20,
         // then the nineteen lair tiles overwrite slots 1..=19.
         let mut tiles = vec![vec![0u8; 256]; 21];
-        for i in 0..11 {
-            tiles[10 + i] = world.tiles[i].clone();
-        }
-        for i in 0..19 {
-            tiles[1 + i] = mond.tiles[i].clone();
-        }
+        tiles[10..21].clone_from_slice(&world.tiles[..11]);
+        tiles[1..20].clone_from_slice(&mond.tiles[..19]);
         let nif = g.read("NIF.BIN")?;
         if nif.len() < NIF_SIZE {
             return Err(crate::AssetError::BadSize { what: "NIF.BIN".into(), expected: NIF_SIZE.to_string(), got: nif.len() });

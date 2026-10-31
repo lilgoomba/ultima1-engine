@@ -199,7 +199,7 @@ impl Game {
             let (x, y) = (col * 8, row * 8);
             match kind {
                 5 => self.field_glyph(x as i32, y as i32 - 3, 12, c),
-                0 | 1 | 2 => self.term.fill(x, y, x + 9, y + 6, c),
+                0..=2 => self.term.fill(x, y, x + 9, y + 6, c),
                 3 | 4 => {
                     self.term.line(x as i32 + 2, y as i32, x as i32 + 2, y as i32 + 6, c);
                     self.term.line(x as i32 + 7, y as i32, x as i32 + 7, y as i32 + 6, c);
@@ -285,7 +285,7 @@ impl Game {
             LocationKind::Dungeon => me.vc(WARN, 2),
         };
         let mut counts = [0usize; 4];
-        let visited: Vec<(u8, u8, usize)> = self.a.locs.locations.iter().filter(|l| self.explore.visited.contains(&(l.id as u8))).map(|l| (l.x, l.y, l.id as usize)).collect();
+        let visited: Vec<(u8, u8, usize)> = self.a.locs.locations.iter().filter(|l| self.explore.visited.contains(&(l.id as u8))).map(|l| (l.x, l.y, l.id)).collect();
         for &(x, y, id) in &visited {
             let Some(k) = kind_of(id) else { continue };
             counts[k as usize] += 1;
@@ -340,7 +340,7 @@ impl Game {
             }
         }
         let mut counts = [0usize; 4];
-        let visited: Vec<(u8, u8, usize)> = self.a.locs.locations.iter().filter(|l| self.explore.visited.contains(&(l.id as u8))).map(|l| (l.x, l.y, l.id as usize)).collect();
+        let visited: Vec<(u8, u8, usize)> = self.a.locs.locations.iter().filter(|l| self.explore.visited.contains(&(l.id as u8))).map(|l| (l.x, l.y, l.id)).collect();
         let blk = self.vc(BLACK, 0);
         for &(x, y, id) in &visited {
             let Some(k) = kind_of(id) else { continue };
@@ -622,7 +622,7 @@ impl Game {
         centre(&mut self.term, 10, "Sure? (Y/N)", t);
         let k = io.key(&self.term)?;
         self.term = saved;
-        Ok(k.to_ascii_uppercase() == b'Y')
+        Ok(k.eq_ignore_ascii_case(&b'Y'))
     }
 }
 
@@ -637,7 +637,7 @@ mod tests {
         assert!(hint(b'T', OUTDOORS).is_none());
         assert!(hint(b'T', crate::game::TOWN).is_some());
         assert!(hint(b'Z', OUTDOORS).is_none());
-        for k in [b'A', b'F', b'D', b'R', b'T'] {
+        for k in *b"AFDRT" {
             if let Some(h) = hint(k, crate::game::TOWN) {
                 assert!(h.len() <= 29, "{h}");
             }

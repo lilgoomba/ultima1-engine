@@ -171,7 +171,7 @@ impl DScene {
     /// The pieces, farthest first (stable for equal keys).
     pub fn ordered(&self) -> Vec<&DPiece> {
         let mut v: Vec<&(i32, DPiece)> = self.pieces.iter().collect();
-        v.sort_by(|a, b| b.0.cmp(&a.0));
+        v.sort_by_key(|p| std::cmp::Reverse(p.0));
         v.into_iter().map(|p| &p.1).collect()
     }
 }
@@ -209,7 +209,7 @@ impl View<'_> {
         }
         let base = self.v.base[cx as usize];
         let shift = if cx == 4 { 5 } else { cx as u32 };
-        let Some(bytes) = self.v.shapes.get(id).cloned() else { return None };
+        let bytes = self.v.shapes.get(id).cloned()?;
         let mut ext: Option<(i32, i32, i32, i32)> = None;
         let mut grow = |x: i32, y: i32| {
             ext = Some(match ext {

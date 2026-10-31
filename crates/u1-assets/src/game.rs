@@ -879,7 +879,7 @@ impl Game {
             for s in msgs {
                 self.term.println(&s);
             }
-            let attacks: Vec<_> = self.ow.attacks.drain(..).collect();
+            let attacks: Vec<_> = std::mem::take(&mut self.ow.attacks);
             for at in attacks {
                 self.monster_attack_msg(io, at)?;
             }

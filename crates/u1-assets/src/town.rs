@@ -577,6 +577,10 @@ impl Game {
             self.snd(io, 1);
             return Ok(());
         }
+        if !self.sure(io, i32::from(n), &format!("Drop {n} pence?"))? {
+            self.say(m::NONE);
+            return Ok(());
+        }
         self.add(off::COIN, -n);
         self.show_coin();
         let c = self.tcell(self.px, self.py);
@@ -639,7 +643,17 @@ impl Game {
         self.term.cursor(14, 24);
         let key = self.key(io)?.to_ascii_lowercase();
         let k = key.wrapping_sub(b'a') as usize;
-        if (1..=last).contains(&k) && self.qty(base, k) != 0 {
+        let worth = |g: &Self| {
+            let cha = g.stat(crate::game::CHA);
+            i32::from(if base == slot::WEAPON { crate::rules::weapon_sell_price(k as i16, cha) } else { crate::rules::armour_sell_price(k as i16, cha) })
+        };
+        let ok = (1..=last).contains(&k) && self.qty(base, k) != 0;
+        let ok = ok && {
+            let what = format!("Drop {}?", self.ptr(names, k).trim());
+            let v = worth(self);
+            self.sure(io, v, &what)?
+        };
+        if ok {
             let name = self.ptr(names, k);
             self.term.print(&name);
             self.add(base + 2 * k, -1);

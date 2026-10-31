@@ -58,11 +58,52 @@ pub struct Qol {
     /// The original's processor-bound waits replaced by comfortable fixed
     /// ones (a speaker effect no longer freezes the game).
     pub steady: bool,
+    // The second group (SPEC §23). The game-side screens open at the
+    // command prompt only and are drawn over a copy of the screen.
+    /// The dungeon automap (Tab in a dungeon).
+    pub automap: bool,
+    /// The overworld mini-map (Tab outdoors and in towns).
+    pub minimap: bool,
+    /// The character screen (F6).
+    pub charsheet: bool,
+    /// The command reference (F3).
+    pub help: bool,
+    /// Short hints in the message window when a command prompts.
+    pub hints: bool,
+    /// Ask before selling or dropping something worth at least this much
+    /// (0: never ask).
+    pub confirm: u16,
+    /// Our own auto-repeat for a held arrow key (and pad direction).
+    pub repeat: bool,
+    /// Milliseconds before the repeat starts.
+    pub repeat_delay: u16,
+    /// Steps per second while it repeats.
+    pub repeat_rate: u8,
+    /// Gamepads (SDL game controllers).
+    pub gamepad: bool,
 }
 
 impl Default for Qol {
     fn default() -> Self {
-        Qol { fullscreen: false, scaling: Scaling::Whole, crt: false, slots: false, log: false, turbo: false, message_delay: 100, fast_space: false, steady: false }
+        Qol { fullscreen: false, scaling: Scaling::Whole, crt: false, slots: false, log: false, turbo: false, message_delay: 100, fast_space: false, steady: false,
+            automap: false, minimap: false, charsheet: false, help: false, hints: false, confirm: 0,
+            repeat: false, repeat_delay: 400, repeat_rate: 8, gamepad: false }
+    }
+}
+
+/// The confirmation thresholds the options menu cycles through (0: off).
+pub const CONFIRM_VALUES: [u16; 6] = [0, 10, 50, 100, 250, 500];
+/// The auto-repeat delays (ms) and rates (steps per second) offered.
+pub const REPEAT_DELAYS: [u16; 4] = [250, 400, 600, 800];
+pub const REPEAT_RATES: [u8; 4] = [4, 8, 12, 16];
+
+/// The next of `list` after `v` (`back`: before), the first if `v` is
+/// not in it.
+pub fn cycle<T: Copy + PartialEq>(list: &[T], v: T, back: bool) -> T {
+    let n = list.len();
+    match list.iter().position(|&x| x == v) {
+        Some(i) => list[if back { (i + n - 1) % n } else { (i + 1) % n }],
+        None => list[0],
     }
 }
 
@@ -94,6 +135,17 @@ impl Qol {
             f *= 0.5;
         }
         f
+    }
+
+    /// Whether a thing worth `v` needs a yes before it is sold or dropped.
+    pub fn must_confirm(&self, v: i32) -> bool {
+        self.confirm > 0 && v >= i32::from(self.confirm)
+    }
+
+    /// The auto-repeat's first wait and its step.
+    pub fn repeat_timing(&self) -> (std::time::Duration, std::time::Duration) {
+        use std::time::Duration;
+        (Duration::from_millis(u64::from(self.repeat_delay)), Duration::from_millis(1000 / u64::from(self.repeat_rate.max(1))))
     }
 
     /// The next message delay in [`MESSAGE_DELAYS`] (`back`: the one before).
@@ -177,6 +229,20 @@ mod tests {
         assert_eq!(seen, [50, 25, 0, 100]);
         q.cycle_delay(true);
         assert_eq!(q.message_delay, 0);
+    }
+
+    #[test]
+    fn second_group_defaults_off() {
+        let q = Qol::default();
+        assert!(!q.automap && !q.minimap && !q.charsheet && !q.help && !q.hints && !q.repeat && !q.gamepad);
+        assert!(!q.must_confirm(30000), "never asks with the setting off");
+        let q = Qol { confirm: 100, ..q };
+        assert!(q.must_confirm(100) && !q.must_confirm(99));
+        assert_eq!(cycle(&CONFIRM_VALUES, 0, false), 10);
+        assert_eq!(cycle(&CONFIRM_VALUES, 0, true), 500);
+        assert_eq!(cycle(&REPEAT_RATES, 3, false), 4, "unknown value: the first");
+        let (d, s) = Qol { repeat_delay: 250, repeat_rate: 10, ..q }.repeat_timing();
+        assert_eq!((d.as_millis(), s.as_millis()), (250, 100));
     }
 
     #[test]

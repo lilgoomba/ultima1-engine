@@ -193,6 +193,12 @@ impl Game {
         let k = key.wrapping_sub(b'A') as usize;
         if (1..=last).contains(&k) && self.qty(base, k) != 0 {
             let p = price(k);
+            let what = format!("Sell {} for {p}?", self.ptr(names, k).trim());
+            if !self.sure(io, i32::from(p), &what)? {
+                self.say(m::NOTHING);
+                self.nl();
+                return Ok(());
+            }
             self.add(off::COIN, p);
             self.add(base + 2 * k, -1);
             if self.rec.u16_at(ready) as usize == k {

@@ -1,0 +1,60 @@
+# The Android APK (android/build.sh). Started by hand (Actions tab, "Run
+# workflow", or `gh workflow run android.yml`) or by a tag, as it takes a
+# while. The APK is uploaded as the run's artifact. It holds no game files.
+#
+# For now it is signed with a throwaway key made for each run (so each
+# run's APK installs only over an APK from that same run): a lasting key
+# would go in repository secrets, which is the owner's call.
+name: Android
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apk:
+    name: APK (arm64-v8a, x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - name: Android SDK parts
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "ndk;26.3.11579264" "cmake;3.22.1" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> "$GITHUB_ENV"
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Throwaway signing key
+        run: |
+          keytool -genkeypair -keystore "$RUNNER_TEMP/ci.jks" -storepass ci-debug -keypass ci-debug -alias u1 \
+            -keyalg RSA -keysize 2048 -validity 365 -dname "CN=ultima1-engine CI"
+          {
+            echo "U1_KEYSTORE=$RUNNER_TEMP/ci.jks"
+            echo "U1_KEYSTORE_PASS=ci-debug"
+            echo "U1_KEY_ALIAS=u1"
+          } >> "$GITHUB_ENV"
+      - name: Build
+        run: android/build.sh release
+      - name: Check
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify "$apk"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | head -4
+          ! unzip -l "$apk" | grep -iE '\.(bin|exe|u1)$'
+          cp "$apk" ultima1-engine-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ultima1-engine-android
+          path: ultima1-engine-android.apk

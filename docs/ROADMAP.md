@@ -98,5 +98,16 @@ the tests keep the original behaviour.
 * **Smoothing** (F1, off by default; SPEC §24): linear, or our own
   Scale2x pixel-art scaler.
 
+## Android port (branch android-port, alpha)
+
+* APK built from SDL2's Android project with the engine as libmain.so
+  (docs/ANDROID.md); the player imports their own game folder or .zip
+  on first run (PLAYING-ANDROID.md).
+* Engine-drawn touch controls (d-pad with hold-to-repeat, command
+  letters, number pad, F1/map/log/quicksave/quickload, system keyboard),
+  hideable; also on the desktop with U1_TOUCH=1.
+* Still to do: movable/resizable buttons, a lasting release key in CI,
+  testing on real devices.
+
 ## Future ideas (not built)
 

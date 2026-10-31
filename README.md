@@ -165,7 +165,8 @@ cargo run --release -p u1 -- --game-dir "/path/to/Ultima1" --player 2
 ```
 
 **Just want to play?** Download the Linux AppImage from the releases and
-see [PLAYING.md](PLAYING.md).
+see [PLAYING.md](PLAYING.md). On Android (alpha, sideloaded APK, touch
+controls): [PLAYING-ANDROID.md](PLAYING-ANDROID.md).
 
 `u1` needs your own game folder. It reads `MAP.BIN`, `TCD.BIN`, the tile
 sets, `OUT.EXE` (for its tables and texts) and a save. The game folder is
@@ -524,8 +525,11 @@ docs/ROADMAP.md    optional quality-of-life features (planned)
 assets/enhanced    default asset pack for --video enhanced and --sound enhanced
 docs/demo.png      demo screenshot (synthetic art)
 packaging/         AppImage build script, .desktop file and icon (our own, CC-BY-SA 4.0)
-.github/workflows  CI (ci.yml) and the AppImage release (release.yml)
+.github/workflows  CI (ci.yml), the AppImage release (release.yml), the Android APK (android.yml)
 PLAYING.md         how to play from the AppImage
+PLAYING-ANDROID.md how to install and play the Android APK
+android/           the Android app (SDL2's Java activity + our import screen; docs/ANDROID.md)
+crates/u1-android  the engine as Android's libmain.so
 ```
 
 ## Continuous integration and releases

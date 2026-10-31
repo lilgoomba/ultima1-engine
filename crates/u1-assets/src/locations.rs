@@ -71,11 +71,7 @@ impl LocationTable {
         if xs.len() != LOCATION_COUNT || ys.len() != LOCATION_COUNT || names.len() != LOCATION_COUNT {
             return Err(AssetError::Invalid("location table needs 84 entries".into()));
         }
-        let locations = names
-            .into_iter()
-            .enumerate()
-            .map(|(i, name)| Location { id: i + 1, x: xs[i], y: ys[i], name })
-            .collect();
+        let locations = names.into_iter().enumerate().map(|(i, name)| Location { id: i + 1, x: xs[i], y: ys[i], name }).collect();
         Ok(LocationTable { locations })
     }
 
@@ -90,8 +86,7 @@ impl LocationTable {
         for i in 0..LOCATION_COUNT {
             let p = NAME_PTRS + 2 * i;
             let off = DATA_BASE + u16::from_le_bytes([exe[p], exe[p + 1]]) as usize;
-            let end = exe[off..].iter().position(|&b| b == 0).map(|e| off + e)
-                .ok_or_else(|| AssetError::Invalid("unterminated location name".into()))?;
+            let end = exe[off..].iter().position(|&b| b == 0).map(|e| off + e).ok_or_else(|| AssetError::Invalid("unterminated location name".into()))?;
             names.push(String::from_utf8_lossy(&exe[off..end]).into_owned());
         }
         Self::from_parts(xs, ys, names)

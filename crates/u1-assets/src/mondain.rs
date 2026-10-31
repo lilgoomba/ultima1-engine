@@ -6,13 +6,13 @@
 //! user's MONDAIN.EXE; the pictures from EGAMOND.BIN, EGATILES.BIN and
 //! NIF.BIN, all read at runtime.
 
-use crate::sound::Sfx;
 use crate::exe::Exe;
 use crate::game::Game;
 use crate::gamedir::GameDir;
 use crate::io::{keys, Halt, Io, IoResult};
 use crate::rng::U1Rng;
 use crate::save::off;
+use crate::sound::Sfx;
 use crate::term::{ArtId, BLACK, BLUE, RAW, TEXT, WHITE};
 use crate::tiles::{TileSet, CGA_MOND, EGA_MOND, T1K_MOND};
 
@@ -968,11 +968,7 @@ impl Lair<'_> {
                 }
             }
             let (sx, sy) = (dx.signum(), dy.signum());
-            let moved = if self.rnd(1, 255) & 1 != 0 {
-                self.step(0, sy) || self.step(sx, 0)
-            } else {
-                self.step(sx, 0) || self.step(0, sy)
-            };
+            let moved = if self.rnd(1, 255) & 1 != 0 { self.step(0, sy) || self.step(sx, 0) } else { self.step(sx, 0) || self.step(0, sy) };
             if !moved && self.phase == P_DEMON {
                 self.hp += 5;
             }

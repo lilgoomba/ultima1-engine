@@ -99,11 +99,7 @@ impl WorldMap {
     /// Parse `MAP.BIN`, requiring the documented 13,104-byte size.
     pub fn parse(data: &[u8]) -> Result<Self> {
         if data.len() != MAP_BIN_SIZE {
-            return Err(AssetError::BadSize {
-                what: "MAP.BIN".into(),
-                expected: MAP_BIN_SIZE.to_string(),
-                got: data.len(),
-            });
+            return Err(AssetError::BadSize { what: "MAP.BIN".into(), expected: MAP_BIN_SIZE.to_string(), got: data.len() });
         }
         Self::parse_lenient(data)
     }
@@ -111,11 +107,7 @@ impl WorldMap {
     /// Parse any whole number of 84-byte rows (height inferred).
     pub fn parse_lenient(data: &[u8]) -> Result<Self> {
         if data.is_empty() || data.len() % BYTES_PER_ROW != 0 {
-            return Err(AssetError::BadSize {
-                what: "MAP.BIN".into(),
-                expected: format!("a non-zero multiple of {BYTES_PER_ROW}"),
-                got: data.len(),
-            });
+            return Err(AssetError::BadSize { what: "MAP.BIN".into(), expected: format!("a non-zero multiple of {BYTES_PER_ROW}"), got: data.len() });
         }
         let mut cells = Vec::with_capacity(data.len() * 2);
         for &b in data {

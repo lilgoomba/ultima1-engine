@@ -61,21 +61,7 @@ OPTIONS:
 KEYS: arrows scroll (Shift = 8 cells), Home recentres, Esc quits.";
 
 fn parse_args() -> Result<Args, String> {
-    let mut a = Args {
-        game_dir: None,
-        demo: false,
-        mode: None,
-        seed: 1,
-        scale: 3,
-        cols: 21,
-        rows: 13,
-        start: None,
-        screenshot: None,
-        full_map: None,
-        frame: None,
-        locations: false,
-        dungeon: None,
-    };
+    let mut a = Args { game_dir: None, demo: false, mode: None, seed: 1, scale: 3, cols: 21, rows: 13, start: None, screenshot: None, full_map: None, frame: None, locations: false, dungeon: None };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut val = |name: &str| it.next().ok_or_else(|| format!("{name} needs a value"));
@@ -93,10 +79,7 @@ fn parse_args() -> Result<Args, String> {
             "--start" => {
                 let v = val("--start")?;
                 let (x, y) = v.split_once(',').ok_or("--start expects X,Y")?;
-                a.start = Some((
-                    x.trim().parse().map_err(|_| "bad X")?,
-                    y.trim().parse().map_err(|_| "bad Y")?,
-                ));
+                a.start = Some((x.trim().parse().map_err(|_| "bad X")?, y.trim().parse().map_err(|_| "bad Y")?));
             }
             "--screenshot" => a.screenshot = Some(val("--screenshot")?.into()),
             "--full-map" => a.full_map = Some(val("--full-map")?.into()),
@@ -104,11 +87,7 @@ fn parse_args() -> Result<Args, String> {
             "--locations" => a.locations = true,
             "--dungeon" => {
                 let v = val("--dungeon")?;
-                let n: Vec<u16> = v
-                    .split(',')
-                    .map(|p| p.trim().parse::<u16>())
-                    .collect::<Result<_, _>>()
-                    .map_err(|e| format!("--dungeon: {e}"))?;
+                let n: Vec<u16> = v.split(',').map(|p| p.trim().parse::<u16>()).collect::<Result<_, _>>().map_err(|e| format!("--dungeon: {e}"))?;
                 if n.len() != 4 || !(1..=10).contains(&n[2]) {
                     return Err("--dungeon expects X,Y,LEVEL(1-10),SAVESEED".into());
                 }
@@ -145,18 +124,11 @@ fn load(a: &Args) -> Result<World, String> {
     }
     let dir = a.game_dir.as_ref().expect("checked");
     let g = GameDir::new(dir).map_err(|e| e.to_string())?;
-    let mode = a
-        .mode
-        .or_else(|| g.detect_video_mode())
-        .ok_or("no EGATILES.BIN / T1KTILES.BIN / CGATILES.BIN found in game directory")?;
+    let mode = a.mode.or_else(|| g.detect_video_mode()).ok_or("no EGATILES.BIN / T1KTILES.BIN / CGATILES.BIN found in game directory")?;
     let tiles = g.load_world_tiles(mode).map_err(|e| e.to_string())?;
     let map = g.load_world_map().map_err(|e| e.to_string())?;
     if map.height != u1_assets::map::WORLD_HEIGHT {
-        eprintln!(
-            "warning: MAP.BIN has {} rows (spec expects {}); please report this",
-            map.height,
-            u1_assets::map::WORLD_HEIGHT
-        );
+        eprintln!("warning: MAP.BIN has {} rows (spec expects {}); please report this", map.height, u1_assets::map::WORLD_HEIGHT);
     }
     let palette = if mode == VideoMode::Cga { cga_as_16(&CGA_PALETTE_1_LOW) } else { EGA_PALETTE };
     Ok(World { map, tiles, palette, label: format!("{mode:?}") })
@@ -244,34 +216,18 @@ fn run(a: Args) -> Result<(), String> {
     let max_x = world.map.width as isize - a.cols as isize;
     let max_y = world.map.height as isize - a.rows as isize;
     let clamp = |x: isize, y: isize| (x.clamp(0, max_x.max(0)), y.clamp(0, max_y.max(0)));
-    let centre = clamp(
-        world.map.width as isize / 4 - a.cols as isize / 2,
-        world.map.height as isize / 4 - a.rows as isize / 2,
-    );
+    let centre = clamp(world.map.width as isize / 4 - a.cols as isize / 2, world.map.height as isize / 4 - a.rows as isize / 2);
     let (mut vx, mut vy) = a.start.map(|(x, y)| clamp(x, y)).unwrap_or(centre);
 
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
-    let window = video
-        .window("u1view", fb_w * a.scale, fb_h * a.scale)
-        .position_centered()
-        .build()
-        .map_err(|e| e.to_string())?;
+    let window = video.window("u1view", fb_w * a.scale, fb_h * a.scale).position_centered().build().map_err(|e| e.to_string())?;
     let mut canvas = match window.into_canvas().accelerated().present_vsync().build() {
         Ok(c) => c,
-        Err(_) => video
-            .window("u1view", fb_w * a.scale, fb_h * a.scale)
-            .build()
-            .map_err(|e| e.to_string())?
-            .into_canvas()
-            .software()
-            .build()
-            .map_err(|e| e.to_string())?,
+        Err(_) => video.window("u1view", fb_w * a.scale, fb_h * a.scale).build().map_err(|e| e.to_string())?.into_canvas().software().build().map_err(|e| e.to_string())?,
     };
     let tc = canvas.texture_creator();
-    let mut tex = tc
-        .create_texture_streaming(PixelFormatEnum::RGB24, fb_w, fb_h)
-        .map_err(|e| e.to_string())?;
+    let mut tex = tc.create_texture_streaming(PixelFormatEnum::RGB24, fb_w, fb_h).map_err(|e| e.to_string())?;
     let mut events = sdl.event_pump()?;
     let t0 = Instant::now();
 
@@ -284,9 +240,7 @@ fn run(a: Args) -> Result<(), String> {
         if let Some(path) = &a.screenshot {
             // Read back what SDL actually rendered.
             let (w, h) = canvas.output_size()?;
-            let pixels = canvas
-                .read_pixels(None, PixelFormatEnum::RGB24)
-                .unwrap_or_else(|_| Vec::new());
+            let pixels = canvas.read_pixels(None, PixelFormatEnum::RGB24).unwrap_or_else(|_| Vec::new());
             if pixels.len() == (w * h * 3) as usize {
                 write_png(path, w, h, &pixels)?;
             } else {
@@ -297,10 +251,7 @@ fn run(a: Args) -> Result<(), String> {
             return Ok(());
         }
         canvas.present();
-        canvas
-            .window_mut()
-            .set_title(&format!("u1view [{}] - view ({vx},{vy}) - arrows scroll, Esc quits", world.label))
-            .map_err(|e| e.to_string())?;
+        canvas.window_mut().set_title(&format!("u1view [{}] - view ({vx},{vy}) - arrows scroll, Esc quits", world.label)).map_err(|e| e.to_string())?;
 
         for ev in events.poll_iter() {
             match ev {

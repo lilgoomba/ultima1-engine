@@ -368,68 +368,15 @@ pub mod m {
     pub const TIP_WENCH: usize = 0x0E7A;
     pub const TIP_LECHER: usize = 0x0E81;
     pub const SEDUCED: [(usize, usize, usize); 3] = [(9, 8, 0x0DDF), (11, 10, 0x0DF7), (13, 11, 0x0E0B)];
-    pub const QUEST_TEXT: [(usize, usize, usize); 7] = [
-        (5, 7, 0x1005),
-        (5, 8, 0x1023),
-        (8, 9, 0x1041),
-        (5, 10, 0x105A),
-        (5, 11, 0x1077),
-        (5, 12, 0x1095),
-        (5, 13, 0x10B2),
-    ];
+    pub const QUEST_TEXT: [(usize, usize, usize); 7] = [(5, 7, 0x1005), (5, 8, 0x1023), (8, 9, 0x1041), (5, 10, 0x105A), (5, 11, 0x1077), (5, 12, 0x1095), (5, 13, 0x10B2)];
 
     /// Shop titles by kind and town index (layout - 2): lines of
     /// (column, row, message). Empty = no such shop in that town.
-    pub const TITLE_TRANSPORT: [&[(usize, usize, usize)]; 8] = [
-        &[(10, 4, 0x553), (13, 5, 0x569)],
-        &[],
-        &[],
-        &[(9, 4, 0x579)],
-        &[],
-        &[(7, 4, 0x590)],
-        &[],
-        &[(8, 4, 0x5AC), (15, 5, 0x5C5)],
-    ];
-    pub const TITLE_ARMOUR: [&[(usize, usize, usize)]; 8] = [
-        &[(11, 4, 0x5D1), (8, 5, 0x5E4)],
-        &[(15, 4, 0x5FE)],
-        &[(13, 4, 0x60C)],
-        &[(10, 4, 0x61A)],
-        &[],
-        &[(5, 4, 0x62F)],
-        &[],
-        &[(11, 4, 0x64D)],
-    ];
-    pub const TITLE_WEAPON: [&[(usize, usize, usize)]; 8] = [
-        &[(11, 4, 0x660), (8, 5, 0x5E4)],
-        &[(11, 4, 0x673)],
-        &[(12, 4, 0x686)],
-        &[(10, 4, 0x697)],
-        &[(12, 4, 0x6AC)],
-        &[(13, 4, 0x6BD)],
-        &[(12, 4, 0x6CC)],
-        &[(10, 4, 0x697)],
-    ];
-    pub const TITLE_MAGIC: [&[(usize, usize, usize)]; 8] =
-        [&[(9, 4, 0x6DC)], &[(12, 4, 0x6F4)], &[(13, 4, 0x705)], &[(5, 4, 0x714)], &[], &[], &[], &[(11, 4, 0x733)]];
-    pub const TITLE_FOOD: [&[(usize, usize, usize)]; 8] = [
-        &[(5, 4, 0x747)],
-        &[(8, 4, 0x766)],
-        &[],
-        &[(13, 4, 0x77F)],
-        &[(9, 4, 0x78D)],
-        &[(11, 4, 0x7A4)],
-        &[(6, 4, 0x7B6)],
-        &[(8, 4, 0x7D3)],
-    ];
-    pub const TITLE_PUB: [&[(usize, usize, usize)]; 8] = [
-        &[(14, 4, 0x7EC)],
-        &[(11, 4, 0x7F8)],
-        &[(13, 4, 0x80A)],
-        &[(13, 4, 0x819)],
-        &[],
-        &[(12, 4, 0x828)],
-        &[(10, 4, 0x836)],
-        &[(11, 4, 0x84A)],
-    ];
+    pub const TITLE_TRANSPORT: [&[(usize, usize, usize)]; 8] = [&[(10, 4, 0x553), (13, 5, 0x569)], &[], &[], &[(9, 4, 0x579)], &[], &[(7, 4, 0x590)], &[], &[(8, 4, 0x5AC), (15, 5, 0x5C5)]];
+    pub const TITLE_ARMOUR: [&[(usize, usize, usize)]; 8] = [&[(11, 4, 0x5D1), (8, 5, 0x5E4)], &[(15, 4, 0x5FE)], &[(13, 4, 0x60C)], &[(10, 4, 0x61A)], &[], &[(5, 4, 0x62F)], &[], &[(11, 4, 0x64D)]];
+    pub const TITLE_WEAPON: [&[(usize, usize, usize)]; 8] =
+        [&[(11, 4, 0x660), (8, 5, 0x5E4)], &[(11, 4, 0x673)], &[(12, 4, 0x686)], &[(10, 4, 0x697)], &[(12, 4, 0x6AC)], &[(13, 4, 0x6BD)], &[(12, 4, 0x6CC)], &[(10, 4, 0x697)]];
+    pub const TITLE_MAGIC: [&[(usize, usize, usize)]; 8] = [&[(9, 4, 0x6DC)], &[(12, 4, 0x6F4)], &[(13, 4, 0x705)], &[(5, 4, 0x714)], &[], &[], &[], &[(11, 4, 0x733)]];
+    pub const TITLE_FOOD: [&[(usize, usize, usize)]; 8] = [&[(5, 4, 0x747)], &[(8, 4, 0x766)], &[], &[(13, 4, 0x77F)], &[(9, 4, 0x78D)], &[(11, 4, 0x7A4)], &[(6, 4, 0x7B6)], &[(8, 4, 0x7D3)]];
+    pub const TITLE_PUB: [&[(usize, usize, usize)]; 8] = [&[(14, 4, 0x7EC)], &[(11, 4, 0x7F8)], &[(13, 4, 0x80A)], &[(13, 4, 0x819)], &[], &[(12, 4, 0x828)], &[(10, 4, 0x836)], &[(11, 4, 0x84A)]];
 }

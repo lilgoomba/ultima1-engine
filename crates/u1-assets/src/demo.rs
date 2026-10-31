@@ -91,7 +91,13 @@ fn tile(index: usize) -> Vec<u8> {
             for y in 2..15 {
                 let half = (y - 2) / 2 + 1;
                 for x in 8 - half..=7 + half {
-                    let col = if y < 6 { 15 } else if x < 8 { 7 } else { 8 };
+                    let col = if y < 6 {
+                        15
+                    } else if x < 8 {
+                        7
+                    } else {
+                        8
+                    };
                     c.set(x, y, col);
                 }
             }
@@ -155,9 +161,7 @@ fn tile(index: usize) -> Vec<u8> {
 /// 52 placeholder 16x16 tiles encoded as a synthetic EGA row-planar file
 /// (6,656 bytes, same layout as EGATILES.BIN).
 pub fn demo_egatiles_bin() -> Vec<u8> {
-    (0..EGA_TILES.count)
-        .flat_map(|i| encode_tile(&tile(i), TileEncoding::EgaRowPlanar, T, T).expect("valid tile"))
-        .collect()
+    (0..EGA_TILES.count).flat_map(|i| encode_tile(&tile(i), TileEncoding::EgaRowPlanar, T, T).expect("valid tile")).collect()
 }
 
 fn value_noise(x: f32, y: f32, cell: f32, seed: u32) -> f32 {
@@ -181,9 +185,7 @@ pub fn demo_map_bin(seed: u32) -> Vec<u8> {
     for y in 0..h {
         for x in 0..w {
             let (fx, fy) = (x as f32, y as f32);
-            let n = 0.55 * value_noise(fx, fy, 24.0, seed)
-                + 0.3 * value_noise(fx, fy, 9.0, seed ^ 0xA5A5)
-                + 0.15 * value_noise(fx, fy, 4.0, seed ^ 0x5A5A);
+            let n = 0.55 * value_noise(fx, fy, 24.0, seed) + 0.3 * value_noise(fx, fy, 9.0, seed ^ 0xA5A5) + 0.15 * value_noise(fx, fy, 4.0, seed ^ 0x5A5A);
             // Distance to the centre of this quadrant -> island falloff.
             let qx = (x % (w / 2)) as f32 / (w / 2) as f32 - 0.5;
             let qy = (y % (h / 2)) as f32 / (h / 2) as f32 - 0.5;
@@ -231,10 +233,7 @@ mod tests {
         assert_eq!(tiles.len(), 52);
         assert_eq!(tiles.tiles[0], tile(0));
         let map = WorldMap::parse(&demo_map_bin(1)).unwrap();
-        let count = |t: Terrain| (0..map.height)
-            .flat_map(|y| (0..map.width).map(move |x| (x, y)))
-            .filter(|&(x, y)| map.terrain(x, y) == t)
-            .count();
+        let count = |t: Terrain| (0..map.height).flat_map(|y| (0..map.width).map(move |x| (x, y))).filter(|&(x, y)| map.terrain(x, y) == t).count();
         assert!(count(Terrain::Water) > 1000);
         assert!(count(Terrain::Grass) > 500);
         assert!(count(Terrain::Town) > 0);

@@ -82,9 +82,7 @@ impl GameDir {
 
     /// Best available world tile set, preferring EGA, then Tandy, then CGA.
     pub fn detect_video_mode(&self) -> Option<VideoMode> {
-        [VideoMode::Ega, VideoMode::Tandy, VideoMode::Cga]
-            .into_iter()
-            .find(|m| self.find(m.world_tiles().file_name).is_some())
+        [VideoMode::Ega, VideoMode::Tandy, VideoMode::Cga].into_iter().find(|m| self.find(m.world_tiles().file_name).is_some())
     }
 
     pub fn load_world_tiles(&self, mode: VideoMode) -> Result<TileSet> {

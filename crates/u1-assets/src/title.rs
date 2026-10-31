@@ -95,19 +95,35 @@ impl TitleFiles {
 
     /// Text colour (`4a20`): white, or CGA colour 3.
     fn c_text(&self) -> u8 {
-        if self.mode == 0 { 3 | RAW } else { 15 }
+        if self.mode == 0 {
+            3 | RAW
+        } else {
+            15
+        }
     }
     /// Logo colour: light blue, or CGA colour 1 (`4a22`).
     fn c_logo(&self) -> u8 {
-        if self.mode == 0 { 1 | RAW } else { 9 }
+        if self.mode == 0 {
+            1 | RAW
+        } else {
+            9
+        }
     }
     /// Line colour (`4a24`): blue, or CGA colour 2.
     fn c_line(&self) -> u8 {
-        if self.mode == 0 { 2 | RAW } else { 1 }
+        if self.mode == 0 {
+            2 | RAW
+        } else {
+            1
+        }
     }
     /// Page text colour (`4a26`): light cyan, or CGA colour 3.
     fn c_page(&self) -> u8 {
-        if self.mode == 0 { 3 | RAW } else { 11 }
+        if self.mode == 0 {
+            3 | RAW
+        } else {
+            11
+        }
     }
 
     /// Logo cell: `*` in the left table for columns up to `split`, else in

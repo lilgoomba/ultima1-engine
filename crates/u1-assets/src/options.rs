@@ -5,8 +5,8 @@
 //! it with the game paused, over a copy of the screen.
 
 use crate::config::VideoChoice;
-use crate::qol::{self, Qol, Scaling};
 use crate::io::keys;
+use crate::qol::{self, Qol, Scaling};
 use crate::soundpack::SoundMode;
 use crate::term::{Term, BLACK, BLUE, TEXT, WARN};
 
@@ -240,7 +240,11 @@ impl OptionsMenu {
                     }
                     let old = self.video;
                     self.video = VideoChoice::ALL[i];
-                    if old == self.video { MenuKey::Stay } else { MenuKey::Changed }
+                    if old == self.video {
+                        MenuKey::Stay
+                    } else {
+                        MenuKey::Changed
+                    }
                 } else if ROWS[self.row] == Row::Sound {
                     let i = SOUNDS.iter().position(|&s| s == self.sound).unwrap_or(0);
                     self.sound = SOUNDS[(i + step.min(2)) % 3];

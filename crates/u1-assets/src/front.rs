@@ -36,13 +36,7 @@ pub fn intro(g: &GameDir, mode: &mut VideoMode, io: &mut dyn Io) -> crate::Resul
 
 /// The character program from its first menu; `clock` makes each run's
 /// clock. Returns the last screen and how the program ended.
-pub fn character(
-    g: &GameDir,
-    dir: &Path,
-    mode: &mut VideoMode,
-    clock: &mut dyn FnMut() -> Box<dyn FnMut() -> [u8; 4]>,
-    io: &mut dyn Io,
-) -> crate::Result<(Term, IoResult<GenEnd>)> {
+pub fn character(g: &GameDir, dir: &Path, mode: &mut VideoMode, clock: &mut dyn FnMut() -> Box<dyn FnMut() -> [u8; 4]>, io: &mut dyn Io) -> crate::Result<(Term, IoResult<GenEnd>)> {
     let mut f = GenFiles::load(g, *mode)?;
     loop {
         let mut gen = Gen::new(&f, dir, clock());

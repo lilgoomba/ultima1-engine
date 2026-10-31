@@ -100,9 +100,7 @@ impl DungeonLevel {
         loop {
             a = (rng.range(0, 242) % 9 + 1) as usize;
             b = (rng.range(0, 242) % 9 + 1) as usize;
-            let ok = self.monsters[a][b] == -1
-                && !matches!(self.cells[a][b], Cell::Wall | Cell::SecretDoor | Cell::ForceField)
-                && self.items[a][b] != Item::Chest;
+            let ok = self.monsters[a][b] == -1 && !matches!(self.cells[a][b], Cell::Wall | Cell::SecretDoor | Cell::ForceField) && self.items[a][b] != Item::Chest;
             if ok {
                 break;
             }
@@ -166,11 +164,7 @@ impl DungeonLevel {
 /// 0x10EA0 (first index `a`) and 0x10EC0 (second index `b`).
 pub fn fixed_spots_from_out_exe(exe: &[u8]) -> crate::Result<[(u8, u8); 16]> {
     if exe.len() != crate::locations::OUT_EXE_SIZE {
-        return Err(crate::AssetError::BadSize {
-            what: "OUT.EXE".into(),
-            expected: crate::locations::OUT_EXE_SIZE.to_string(),
-            got: exe.len(),
-        });
+        return Err(crate::AssetError::BadSize { what: "OUT.EXE".into(), expected: crate::locations::OUT_EXE_SIZE.to_string(), got: exe.len() });
     }
     let w = |o: usize| u16::from_le_bytes([exe[o], exe[o + 1]]);
     let mut spots = [(0u8, 0u8); 16];
@@ -187,21 +181,11 @@ pub fn fixed_spots_from_out_exe(exe: &[u8]) -> crate::Result<[(u8, u8); 16]> {
 /// Seed used for a level's structure: 5*X + 3*Y + 17*level + save word 0x32
 /// (X, Y = the dungeon entrance on the overworld), all wrapping 16-bit.
 pub fn structure_seed(x: u16, y: u16, level: u16, save_seed: u16) -> u16 {
-    x.wrapping_mul(5)
-        .wrapping_add(y.wrapping_mul(3))
-        .wrapping_add(level.wrapping_mul(17))
-        .wrapping_add(save_seed)
+    x.wrapping_mul(5).wrapping_add(y.wrapping_mul(3)).wrapping_add(level.wrapping_mul(17)).wrapping_add(save_seed)
 }
 
 /// Generate one level (1..=10) with its own generator (see [`build`]).
-pub fn generate(
-    x: u16,
-    y: u16,
-    level: u16,
-    save_seed: u16,
-    fixed_spots: &[(u8, u8); 16],
-    item_seed: u16,
-) -> DungeonLevel {
+pub fn generate(x: u16, y: u16, level: u16, save_seed: u16, fixed_spots: &[(u8, u8); 16], item_seed: u16) -> DungeonLevel {
     let mut rng = U1Rng::new(0);
     build(&mut rng, x, y, level, save_seed, fixed_spots, item_seed, (1, 1))
 }
@@ -213,16 +197,7 @@ pub fn generate(
 /// generator. `fixed_spots` is the game's list of 16 candidate (a, b)
 /// positions for extra walls / force fields, read from the user's OUT.EXE.
 #[allow(clippy::too_many_arguments)]
-pub fn build(
-    rng: &mut U1Rng,
-    x: u16,
-    y: u16,
-    level: u16,
-    save_seed: u16,
-    fixed_spots: &[(u8, u8); 16],
-    item_seed: u16,
-    player: (usize, usize),
-) -> DungeonLevel {
+pub fn build(rng: &mut U1Rng, x: u16, y: u16, level: u16, save_seed: u16, fixed_spots: &[(u8, u8); 16], item_seed: u16, player: (usize, usize)) -> DungeonLevel {
     let n = DUNGEON_SIZE;
     rng.seed(structure_seed(x, y, level, save_seed));
     let mut cells = [[Cell::Empty; DUNGEON_SIZE]; DUNGEON_SIZE];
@@ -269,14 +244,7 @@ pub fn build(
         cells[1][1] = Cell::LadderUp; // the exit next to the entrance
         cells[7][3] = Cell::Empty;
     }
-    let mut d = DungeonLevel {
-        level,
-        cells,
-        items,
-        monsters: [[-1; DUNGEON_SIZE]; DUNGEON_SIZE],
-        hp: [[0; DUNGEON_SIZE]; DUNGEON_SIZE],
-        used: [false; 5],
-    };
+    let mut d = DungeonLevel { level, cells, items, monsters: [[-1; DUNGEON_SIZE]; DUNGEON_SIZE], hp: [[0; DUNGEON_SIZE]; DUNGEON_SIZE], used: [false; 5] };
     for _ in 0..3 {
         d.place_monster(rng, player);
     }
@@ -288,10 +256,7 @@ mod tests {
     use super::*;
 
     // Synthetic candidate spots (not the game's table).
-    const SPOTS: [(u8, u8); 16] = [
-        (1, 1), (1, 3), (1, 5), (1, 7), (1, 9), (3, 1), (3, 3), (3, 5),
-        (5, 1), (5, 3), (5, 5), (5, 9), (9, 1), (9, 3), (9, 5), (9, 9),
-    ];
+    const SPOTS: [(u8, u8); 16] = [(1, 1), (1, 3), (1, 5), (1, 7), (1, 9), (3, 1), (3, 3), (3, 5), (5, 1), (5, 3), (5, 5), (5, 9), (9, 1), (9, 3), (9, 5), (9, 9)];
 
     #[test]
     fn seed_formula() {

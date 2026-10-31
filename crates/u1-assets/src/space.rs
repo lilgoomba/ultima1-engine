@@ -4,13 +4,13 @@
 //! Everything runs on the player record; the strings and bitmaps come
 //! from the user's SPACE.EXE, EGASPACE.BIN and EGAFIGHT.BIN at runtime.
 
-use crate::sound::Sfx;
 use crate::exe::Exe;
 use crate::game::Game;
 use crate::gamedir::GameDir;
 use crate::io::{Halt, Io, IoResult};
 use crate::rng::U1Rng;
 use crate::save::off;
+use crate::sound::Sfx;
 use crate::term::{space_part as sp, BLACK, RAW, TEXT, W};
 
 /// Size of the supported SPACE.EXE.
@@ -611,7 +611,11 @@ impl<'a> Space<'a> {
         }
     }
     fn max_shield(ty: i16) -> i16 {
-        if ty == 2 { 5000 } else { 1000 }
+        if ty == 2 {
+            5000
+        } else {
+            1000
+        }
     }
     fn port_heading(p: i16) -> i16 {
         [1, 0, 3, 2][(p & 3) as usize]
@@ -865,7 +869,13 @@ impl<'a> Space<'a> {
                     let old = self.g.term.px[i];
                     self.g.term.px[i] = match (ega, on) {
                         (true, true) => C_WHITE,
-                        (_, false) => if ega { BLACK } else { old & !v },
+                        (_, false) => {
+                            if ega {
+                                BLACK
+                            } else {
+                                old & !v
+                            }
+                        }
                         (false, true) => old | v,
                     };
                     lit.push(i as u32);

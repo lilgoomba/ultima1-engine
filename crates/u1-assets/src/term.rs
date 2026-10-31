@@ -37,8 +37,7 @@ pub enum ArtId {
 }
 
 /// Names of the [`ArtId::Space`] parts, by number (manifest `[space.NAME]`).
-pub const SPACE_PARTS: [&str; 12] =
-    ["frame", "cockpit", "starfield", "deep", "earth", "sun", "station", "ship0", "ship1", "ship2", "fighter", "reticle"];
+pub const SPACE_PARTS: [&str; 12] = ["frame", "cockpit", "starfield", "deep", "earth", "sun", "station", "ship0", "ship1", "ship2", "fighter", "reticle"];
 
 /// [`ArtId::Space`] numbers.
 pub mod space_part {
@@ -95,8 +94,7 @@ pub struct SScene {
 }
 
 /// Names of the [`ArtId::Dun`] parts, by number (manifest `[dungeon.NAME]`).
-pub const DUN_PARTS: [&str; 12] =
-    ["wall", "door", "secret", "floor", "ceiling", "ladder_up", "ladder_down", "hole_up", "hole_down", "chest", "coffin", "field"];
+pub const DUN_PARTS: [&str; 12] = ["wall", "door", "secret", "floor", "ceiling", "ladder_up", "ladder_down", "hole_up", "hole_down", "chest", "coffin", "field"];
 
 /// [`ArtId::Dun`] numbers.
 pub mod dun {
@@ -200,7 +198,8 @@ impl Term {
 
     /// The same frame for a CGA (`cga`) or a 16-colour screen.
     pub fn with_cga(cga: bool) -> Self {
-        let mut t = Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new(), dscene: None, sscene: None, backdrop: None, log: None };
+        let mut t =
+            Term { px: vec![0; W * H], col: 1, row: 24, pen: (0, 0), inverted: false, cga, blink_at: None, remap: None, art: Vec::new(), dscene: None, sscene: None, backdrop: None, log: None };
         t.fill(0, 0, W - 1, H - 1, BLUE);
         t.fill(7, 7, 312, 152, WHITE);
         t.fill(VIEW.0, VIEW.1, VIEW.2, VIEW.3, BLACK);

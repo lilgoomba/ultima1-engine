@@ -47,7 +47,11 @@ impl Game {
         for &(c, r, o) in t[i] {
             self.at(c, r, o);
         }
-        if i == 0 || (idx7 && i == 7) { idx0 } else { 6 }
+        if i == 0 || (idx7 && i == 7) {
+            idx0
+        } else {
+            6
+        }
     }
 
     /// `7377`: the counter the player stands at.

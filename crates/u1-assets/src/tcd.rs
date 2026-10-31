@@ -34,11 +34,7 @@ pub struct TownCastleMaps {
 impl TownCastleMaps {
     pub fn parse(data: &[u8]) -> Result<Self> {
         if data.len() != TCD_BIN_SIZE {
-            return Err(AssetError::BadSize {
-                what: "TCD.BIN".into(),
-                expected: TCD_BIN_SIZE.to_string(),
-                got: data.len(),
-            });
+            return Err(AssetError::BadSize { what: "TCD.BIN".into(), expected: TCD_BIN_SIZE.to_string(), got: data.len() });
         }
         let maps = data
             .chunks_exact(TCD_MAP_SIZE)

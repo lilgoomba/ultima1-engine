@@ -86,9 +86,27 @@ pub struct Qol {
 
 impl Default for Qol {
     fn default() -> Self {
-        Qol { fullscreen: false, scaling: Scaling::Whole, crt: false, slots: false, log: false, turbo: false, message_delay: 100, fast_space: false, steady: false,
-            automap: false, minimap: false, charsheet: false, help: false, hints: false, confirm: 0,
-            repeat: false, repeat_delay: 250, repeat_rate: 0, gamepad: false }
+        Qol {
+            fullscreen: false,
+            scaling: Scaling::Whole,
+            crt: false,
+            slots: false,
+            log: false,
+            turbo: false,
+            message_delay: 100,
+            fast_space: false,
+            steady: false,
+            automap: false,
+            minimap: false,
+            charsheet: false,
+            help: false,
+            hints: false,
+            confirm: 0,
+            repeat: false,
+            repeat_delay: 250,
+            repeat_rate: 0,
+            gamepad: false,
+        }
     }
 }
 
@@ -164,7 +182,11 @@ impl Qol {
 /// How many output rows (and columns) a source pixel becomes under the CRT
 /// filter: a 320x200 frame is drawn at 3x, the enhanced 640x400 at 2x.
 pub fn crt_factor(w: usize) -> usize {
-    if w <= 320 { 3 } else { 2 }
+    if w <= 320 {
+        3
+    } else {
+        2
+    }
 }
 
 /// The CRT filter: `rgb` (`w` x `h`) enlarged `k` times with dark gaps
@@ -183,7 +205,13 @@ pub fn crt(rgb: &[u8], w: usize, h: usize, k: usize) -> Vec<u8> {
             let r = if x + 1 < w { i + 3 } else { i };
             for sx in 0..k {
                 // The pixel, a little of its neighbour on that side.
-                let n = if sx == 0 { l } else if sx == k - 1 { r } else { i };
+                let n = if sx == 0 {
+                    l
+                } else if sx == k - 1 {
+                    r
+                } else {
+                    i
+                };
                 let px: [u32; 3] = std::array::from_fn(|c| (u32::from(rgb[i + c]) * 7 + u32::from(rgb[n + c])) / 8);
                 for (sy, &b) in rows.iter().enumerate().take(k) {
                     let o = ((y * k + sy) * ow + x * k + sx) * 3;
@@ -227,10 +255,12 @@ mod tests {
         assert_eq!(q.wait_factor(Wait::Sound, false), 0.0, "an effect no longer holds the game");
         assert_eq!(q.wait_factor(Wait::Poll, false), 1.0);
         let mut q = Qol::default();
-        let seen: Vec<u8> = (0..4).map(|_| {
-            q.cycle_delay(false);
-            q.message_delay
-        }).collect();
+        let seen: Vec<u8> = (0..4)
+            .map(|_| {
+                q.cycle_delay(false);
+                q.message_delay
+            })
+            .collect();
         assert_eq!(seen, [50, 25, 0, 100]);
         q.cycle_delay(true);
         assert_eq!(q.message_delay, 0);

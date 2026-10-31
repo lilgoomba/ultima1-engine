@@ -12,16 +12,7 @@ use crate::tiles::TileSet;
 /// (about 0.165 s each in the original): it scrolls water and selects the
 /// castle/town frames (SPEC §3.5).
 #[allow(clippy::too_many_arguments)]
-pub fn render_world(
-    map: &WorldMap,
-    tiles: &TileSet,
-    palette: &[Rgb; 16],
-    left: isize,
-    top: isize,
-    cols: usize,
-    rows: usize,
-    frame: usize,
-) -> Vec<u8> {
+pub fn render_world(map: &WorldMap, tiles: &TileSet, palette: &[Rgb; 16], left: isize, top: isize, cols: usize, rows: usize, frame: usize) -> Vec<u8> {
     let (tw, th) = (tiles.width, tiles.height);
     let pitch = cols * tw * 3;
     let mut out = vec![0u8; pitch * rows * th];
@@ -59,11 +50,7 @@ mod tests {
 
     #[test]
     fn renders_expected_colours() {
-        let tiles = TileSet {
-            width: 2,
-            height: 2,
-            tiles: (0..10).map(|i| vec![i as u8; 4]).collect(),
-        };
+        let tiles = TileSet { width: 2, height: 2, tiles: (0..10).map(|i| vec![i as u8; 4]).collect() };
         let mut bytes = vec![0u8; 84 * 2];
         bytes[0] = 0x31; // (0,0)=water? no: high nibble 3 = mountain, low 1 = grass
         let map = WorldMap::parse_lenient(&bytes).unwrap();
@@ -71,7 +58,7 @@ mod tests {
         assert_eq!(fb.len(), 3 * 2 * 3 * 2);
         assert_eq!(&fb[0..3], &EGA_PALETTE[3]); // mountain -> tile 3
         assert_eq!(&fb[6..9], &EGA_PALETTE[1]); // grass -> tile 1
-        // Off-map rendering stays black.
+                                                // Off-map rendering stays black.
         let fb = render_world(&map, &tiles, &EGA_PALETTE, -1, 0, 1, 1, 0);
         assert!(fb.iter().all(|&b| b == 0));
     }

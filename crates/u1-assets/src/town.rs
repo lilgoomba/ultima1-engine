@@ -1,13 +1,13 @@
 //! Towns and castles: walking, the NPCs' turn, fighting, stealing, the
 //! jail door and the princess (SPEC §9; verified from original executable).
 
-use crate::sound::Sfx;
 use crate::exe::m;
 use crate::game::*;
 use crate::io::{Io, IoResult};
 use crate::overworld::Entity;
 use crate::rules::{self, Dir};
 use crate::save::off;
+use crate::sound::Sfx;
 use crate::tcd::{TCD_HEIGHT, TCD_WIDTH};
 use crate::term::{BLACK, BLUE, TEXT};
 

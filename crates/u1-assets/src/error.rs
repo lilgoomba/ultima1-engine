@@ -7,7 +7,11 @@ pub enum AssetError {
     /// A required file was not found in the game directory.
     NotFound(String),
     /// A file had a size inconsistent with the documented format.
-    BadSize { what: String, expected: String, got: usize },
+    BadSize {
+        what: String,
+        expected: String,
+        got: usize,
+    },
     /// Invalid parameters supplied to a decoder.
     Invalid(String),
 }

@@ -572,16 +572,8 @@ impl Game {
             self.term.print_at_attr(col + k.len() + 1, row, d, t);
         }
         self.term.print_at_attr(1, 16, "Engine keys", w);
-        let eng = [
-            ("F1", "options"),
-            ("F2", "save slots"),
-            ("F5/F9", "qsave/qload"),
-            ("PgUp", "message log"),
-            ("Tab", "map (if on)"),
-            ("F6", "character"),
-            ("F3", "this help"),
-            ("Alt+Ent", "fullscreen"),
-        ];
+        let eng =
+            [("F1", "options"), ("F2", "save slots"), ("F5/F9", "qsave/qload"), ("PgUp", "message log"), ("Tab", "map (if on)"), ("F6", "character"), ("F3", "this help"), ("Alt+Ent", "fullscreen")];
         for (i, (k, d)) in eng.iter().enumerate() {
             let (col, row) = (1 + 20 * (i % 2), 17 + i / 2);
             self.term.print_at_attr(col, row, k, w);

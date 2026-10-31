@@ -1198,7 +1198,8 @@ file = "x.png"
 
     #[test]
     fn dungeon_art_takes_any_size() {
-        let text = "tile_size = 32\n[dungeon.wall]\nfile = \"a\"\n[dungeon.field]\nframes = [\"a\", \"a\"]\nfps = 6\n[dmon.24]\nfile = \"a\"\n[dungeon.nothing]\nfile = \"a\"\n[dmon.25]\nfile = \"a\"\n";
+        let text =
+            "tile_size = 32\n[dungeon.wall]\nfile = \"a\"\n[dungeon.field]\nframes = [\"a\", \"a\"]\nfps = 6\n[dmon.24]\nfile = \"a\"\n[dungeon.nothing]\nfile = \"a\"\n[dmon.25]\nfile = \"a\"\n";
         let p = Pack::parse(text, |_| Ok(Rgba::new(37, 53))).unwrap();
         assert_eq!(p.entries[&ArtId::Dun(dun::WALL)].frames[0].w, 37);
         assert_eq!(p.entries[&ArtId::Dun(dun::FIELD)].frames.len(), 2);

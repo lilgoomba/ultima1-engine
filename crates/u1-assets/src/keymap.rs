@@ -62,10 +62,7 @@ pub const ACTIONS: [Action; 28] = [
 
 /// Keys the original does nothing with at its command prompt, so they
 /// can be bound without clashing with any of its controls.
-pub const FREE: [&str; 31] = [
-    "j", "l", "m", "p", "w", "y", "0", "1", "3", "5", "7", "9", ";", "'", ",", ".", "/", "[", "]", "\\", "-", "=", "`", "tab", "f3",
-    "f6", "f7", "f8", "f10", "f11", "f12",
-];
+pub const FREE: [&str; 31] = ["j", "l", "m", "p", "w", "y", "0", "1", "3", "5", "7", "9", ";", "'", ",", ".", "/", "[", "]", "\\", "-", "=", "`", "tab", "f3", "f6", "f7", "f8", "f10", "f11", "f12"];
 
 pub fn is_free(name: &str) -> bool {
     FREE.contains(&name)
@@ -223,12 +220,7 @@ impl PadMap {
     }
 
     pub fn config_lines(&self) -> Vec<String> {
-        BUTTONS
-            .iter()
-            .enumerate()
-            .filter(|&(i, _)| self.buttons[i] != PAD_DEFAULTS[i])
-            .map(|(i, b)| format!("pad_{b} = \"{}\"", self.buttons[i]))
-            .collect()
+        BUTTONS.iter().enumerate().filter(|&(i, _)| self.buttons[i] != PAD_DEFAULTS[i]).map(|(i, b)| format!("pad_{b} = \"{}\"", self.buttons[i])).collect()
     }
 }
 

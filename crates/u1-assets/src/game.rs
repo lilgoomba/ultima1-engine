@@ -331,10 +331,7 @@ impl Game {
         let objs = self.rec.objects();
         let p = objs[0];
         let tile = tile_for_transport(self.transport());
-        self.rec.set_object(
-            0,
-            &MapObject { kind: u16::from(tile), unknown_02: self.player_aux, x: self.ow.x as u16, y: self.ow.y as u16, hits: p.hits },
-        );
+        self.rec.set_object(0, &MapObject { kind: u16::from(tile), unknown_02: self.player_aux, x: self.ow.x as u16, y: self.ow.y as u16, hits: p.hits });
         let ents: Vec<Entity> = self.ow.entities.iter().take(39).copied().collect();
         for (i, e) in ents.iter().enumerate() {
             self.rec.set_object(i + 1, &MapObject { kind: u16::from(e.tile), unknown_02: e.aux, x: e.x as u16, y: e.y as u16, hits: e.hp });
@@ -824,9 +821,7 @@ impl Game {
             b' ' => {
                 self.sayln(m::PASS);
             }
-            keys::LEFT | keys::RIGHT | keys::UP | keys::DOWN if self.mode == crate::dgame::DUNGEON => {
-                self.dungeon_move(io, key)
-            }
+            keys::LEFT | keys::RIGHT | keys::UP | keys::DOWN if self.mode == crate::dgame::DUNGEON => self.dungeon_move(io, key),
             keys::LEFT => self.cmd_move(io, Dir::West)?,
             keys::RIGHT => self.cmd_move(io, Dir::East)?,
             keys::UP => self.cmd_move(io, Dir::North)?,
@@ -968,8 +963,7 @@ impl Game {
             self.err(io, m::XIT_FIRST);
             return Ok(());
         }
-        let Some(i) = self.ow.entity_at(self.ow.x, self.ow.y).filter(|&i| (0x0B..=0x12).contains(&self.ow.entities[i].tile))
-        else {
+        let Some(i) = self.ow.entity_at(self.ow.x, self.ow.y).filter(|&i| (0x0B..=0x12).contains(&self.ow.entities[i].tile)) else {
             self.err(io, m::NOTHING_TO_BOARD);
             return Ok(());
         };
@@ -1405,16 +1399,7 @@ impl Game {
     /// Outdoor fight (`cf3`): the shot tile flies cell by cell (sound
     /// `snd` on the first, two ticks between the others) until it meets a
     /// monster or a mountain or runs out of range.
-    pub(crate) fn outdoor_attack(
-        &mut self,
-        io: &mut dyn Io,
-        d: Dir,
-        snd: u8,
-        range: i32,
-        dmg: i32,
-        hit: i32,
-        shot: u8,
-    ) -> IoResult<()> {
+    pub(crate) fn outdoor_attack(&mut self, io: &mut dyn Io, d: Dir, snd: u8, range: i32, dmg: i32, hit: i32, shot: u8) -> IoResult<()> {
         let (dx, dy) = d.delta();
         let mut k = 1;
         let (mut col, mut row, mut cell, mut t);
@@ -1794,4 +1779,3 @@ impl Game {
         Ok(())
     }
 }
-

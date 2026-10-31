@@ -93,11 +93,7 @@ fn rd(b: &[u8], o: usize) -> u16 {
 impl PlayerRecord {
     pub fn parse(data: &[u8]) -> Result<Self> {
         if data.len() != SAVE_SIZE {
-            return Err(AssetError::BadSize {
-                what: "PLAYERn.U1".into(),
-                expected: SAVE_SIZE.to_string(),
-                got: data.len(),
-            });
+            return Err(AssetError::BadSize { what: "PLAYERn.U1".into(), expected: SAVE_SIZE.to_string(), got: data.len() });
         }
         Ok(PlayerRecord { raw: data.to_vec() })
     }
@@ -120,14 +116,30 @@ impl PlayerRecord {
         n[..end].iter().map(|&c| c as char).collect()
     }
 
-    pub fn race(&self) -> u16 { self.u16_at(off::RACE) }
-    pub fn class(&self) -> u16 { self.u16_at(off::CLASS) }
-    pub fn sex(&self) -> u16 { self.u16_at(off::SEX) }
-    pub fn hits(&self) -> u16 { self.u16_at(off::HITS) }
-    pub fn coin(&self) -> u16 { self.u16_at(off::COIN) }
-    pub fn experience(&self) -> u16 { self.u16_at(off::EXPERIENCE) }
-    pub fn food(&self) -> u16 { self.u16_at(off::FOOD) }
-    pub fn transport(&self) -> u16 { self.u16_at(off::TRANSPORT) }
+    pub fn race(&self) -> u16 {
+        self.u16_at(off::RACE)
+    }
+    pub fn class(&self) -> u16 {
+        self.u16_at(off::CLASS)
+    }
+    pub fn sex(&self) -> u16 {
+        self.u16_at(off::SEX)
+    }
+    pub fn hits(&self) -> u16 {
+        self.u16_at(off::HITS)
+    }
+    pub fn coin(&self) -> u16 {
+        self.u16_at(off::COIN)
+    }
+    pub fn experience(&self) -> u16 {
+        self.u16_at(off::EXPERIENCE)
+    }
+    pub fn food(&self) -> u16 {
+        self.u16_at(off::FOOD)
+    }
+    pub fn transport(&self) -> u16 {
+        self.u16_at(off::TRANSPORT)
+    }
 
     /// Strength, Agility, Stamina, Charisma, Wisdom, Intelligence.
     pub fn stats(&self) -> [u16; 6] {
@@ -170,13 +182,7 @@ impl PlayerRecord {
         (0..OBJECT_COUNT)
             .map(|i| {
                 let b = OBJECTS_OFFSET + i * OBJECT_SIZE;
-                MapObject {
-                    kind: rd(&self.raw, b),
-                    unknown_02: rd(&self.raw, b + 2),
-                    x: rd(&self.raw, b + 4),
-                    y: rd(&self.raw, b + 6),
-                    hits: rd(&self.raw, b + 8),
-                }
+                MapObject { kind: rd(&self.raw, b), unknown_02: rd(&self.raw, b + 2), x: rd(&self.raw, b + 4), y: rd(&self.raw, b + 6), hits: rd(&self.raw, b + 8) }
             })
             .collect()
     }

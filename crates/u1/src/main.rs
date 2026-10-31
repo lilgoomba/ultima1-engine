@@ -24,29 +24,29 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use std::sync::Arc;
 use u1_assets::config::{self, Config, VideoChoice};
 use u1_assets::enhanced::{self, Pack};
-use u1_assets::msglog::{self, LogView};
-use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
-use u1_assets::explore::Explore;
-use u1_assets::input::{PadAction, PadEvent, PadInput, Repeater};
-use u1_assets::keymap::{KeyMap, RebindKey, RebindScreen};
-use u1_assets::qol::{self, Qol, Scaling, Wait};
-use u1_assets::slots::{SaveReq, Slot, SlotKey, SlotScreen};
 use u1_assets::exe::Exe;
+use u1_assets::explore::Explore;
 use u1_assets::game::{Assets, Game, VideoSet};
 use u1_assets::gamedir::{GameDir, VideoMode};
+use u1_assets::gen::GenEnd;
+use u1_assets::input::{PadAction, PadEvent, PadInput, Repeater};
 use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
+use u1_assets::keymap::{KeyMap, RebindKey, RebindScreen};
 use u1_assets::locations::LocationTable;
+use u1_assets::msglog::{self, LogView};
+use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
 use u1_assets::palette::{cga_as_16, Rgb, CGA_PALETTE_1_LOW, EGA_PALETTE};
+use u1_assets::qol::{self, Qol, Scaling, Wait};
 use u1_assets::rules::ExeTables;
 use u1_assets::save::PlayerRecord;
+use u1_assets::slots::{SaveReq, Slot, SlotKey, SlotScreen};
 use u1_assets::sound::{self, Sfx};
 use u1_assets::soundpack::{SoundMode, SoundPack};
-use std::sync::Arc;
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::{Term, H, W};
-use u1_assets::gen::GenEnd;
 
 /// One keyboard/animation poll of the original main loop, measured in
 /// DOSBox (130 ms at 20000 cycles).
@@ -288,9 +288,7 @@ fn features(q: &mut Qol, list: &str) -> Result<(), String> {
 fn pack_dir(a: &Args) -> Option<PathBuf> {
     match &a.pack {
         Some(d) => Some(d.clone()),
-        None => [PathBuf::from("assets/enhanced"), Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/enhanced")]
-            .into_iter()
-            .find(|d| d.join("manifest.toml").is_file()),
+        None => [PathBuf::from("assets/enhanced"), Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/enhanced")].into_iter().find(|d| d.join("manifest.toml").is_file()),
     }
 }
 
@@ -372,7 +370,11 @@ fn video_mode(a: &Args) -> Result<VideoMode, String> {
 }
 
 fn palette_for(mode: VideoMode) -> [Rgb; 16] {
-    if mode == VideoMode::Cga { cga_as_16(&CGA_PALETTE_1_LOW) } else { EGA_PALETTE }
+    if mode == VideoMode::Cga {
+        cga_as_16(&CGA_PALETTE_1_LOW)
+    } else {
+        EGA_PALETTE
+    }
 }
 
 /// The directory the character program keeps its roster in.
@@ -413,7 +415,13 @@ fn front(a: &Args, mode: VideoMode, io: &mut dyn Io) -> Result<Front, String> {
     }
     let dir = roster_dir(a)?;
     let fixed = a.seed.is_some();
-    let mut clock = || -> Box<dyn FnMut() -> [u8; 4]> { if fixed { Box::new(|| [0, 0, 0, 0]) } else { Box::new(local_time) } };
+    let mut clock = || -> Box<dyn FnMut() -> [u8; 4]> {
+        if fixed {
+            Box::new(|| [0, 0, 0, 0])
+        } else {
+            Box::new(local_time)
+        }
+    };
     let (t, r) = u1_assets::front::character(&g, &dir, &mut mode, &mut clock, io).map_err(|e| e.to_string())?;
     match r {
         Ok(GenEnd::Play { path, .. }) => {
@@ -1207,44 +1215,59 @@ impl SdlIo {
             Modal::Options => {
                 let video = VideoChoice::from_parts(self.enhanced, self.wanted);
                 let mut m = OptionsMenu::new(video, self.sound, self.avail).with_qol(self.qol);
-                self.run_modal(t, &mut m, |m, c| m.draw(c), |io, m, k, _| match m.key(k) {
-                    MenuKey::Changed => {
-                        io.choose(m.video, m.sound);
-                        io.apply_qol(m.qol);
-                        io.save_config(true);
-                        true
-                    }
-                    MenuKey::Rebind => {
-                        io.modal_wanted = Some(Modal::Rebind);
-                        false
-                    }
-                    MenuKey::Close => false,
-                    MenuKey::Stay => true,
-                })
+                self.run_modal(
+                    t,
+                    &mut m,
+                    |m, c| m.draw(c),
+                    |io, m, k, _| match m.key(k) {
+                        MenuKey::Changed => {
+                            io.choose(m.video, m.sound);
+                            io.apply_qol(m.qol);
+                            io.save_config(true);
+                            true
+                        }
+                        MenuKey::Rebind => {
+                            io.modal_wanted = Some(Modal::Rebind);
+                            false
+                        }
+                        MenuKey::Close => false,
+                        MenuKey::Stay => true,
+                    },
+                )
             }
             Modal::Rebind => {
                 let mut r = RebindScreen::new(self.keymap.clone());
-                self.run_modal(t, &mut r, |r, c| r.draw(c), |io, r, k, name| match r.key(k, name) {
-                    RebindKey::Changed => {
-                        io.keymap = r.map.clone();
-                        io.save_config(false);
-                        true
-                    }
-                    RebindKey::Close => false,
-                    RebindKey::Stay => true,
-                })
+                self.run_modal(
+                    t,
+                    &mut r,
+                    |r, c| r.draw(c),
+                    |io, r, k, name| match r.key(k, name) {
+                        RebindKey::Changed => {
+                            io.keymap = r.map.clone();
+                            io.save_config(false);
+                            true
+                        }
+                        RebindKey::Close => false,
+                        RebindKey::Stay => true,
+                    },
+                )
             }
             Modal::Slots => {
                 let base = self.save_base.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1"));
                 let mut s = SlotScreen::new(&base);
-                self.run_modal(t, &mut s, |s, c| s.draw(c), |io, s, k, _| match s.key(k) {
-                    SlotKey::Do(r) => {
-                        io.request(r);
-                        false
-                    }
-                    SlotKey::Close => false,
-                    SlotKey::Stay => true,
-                })
+                self.run_modal(
+                    t,
+                    &mut s,
+                    |s, c| s.draw(c),
+                    |io, s, k, _| match s.key(k) {
+                        SlotKey::Do(r) => {
+                            io.request(r);
+                            false
+                        }
+                        SlotKey::Close => false,
+                        SlotKey::Stay => true,
+                    },
+                )
             }
             Modal::Log => {
                 let mut v = LogView::new(t);
@@ -1272,7 +1295,11 @@ impl SdlIo {
     /// The title or character program stops here for a display chosen on
     /// its screen ([`Io::display_restart`]).
     fn restarting(&self) -> IoResult<()> {
-        if self.restart { Err(Halt) } else { Ok(()) }
+        if self.restart {
+            Err(Halt)
+        } else {
+            Ok(())
+        }
     }
 
     /// Apply the menu's choice now (the display's pictures at the game's
@@ -1499,12 +1526,7 @@ fn play(a: &Args) -> Result<(), String> {
     let k = pack.as_ref().map_or(1, |p| p.scale()) as u32;
     let (iw, ih) = (W as u32 * k, H as u32 * k);
     let n = (a.scale / k).max(1);
-    let window = video
-        .window("u1 - Ultima I", iw * n, ih * n)
-        .position_centered()
-        .resizable()
-        .build()
-        .map_err(|e| e.to_string())?;
+    let window = video.window("u1 - Ultima I", iw * n, ih * n).position_centered().resizable().build().map_err(|e| e.to_string())?;
     let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
     canvas.set_logical_size(iw, ih).map_err(|e| e.to_string())?;
     canvas.set_integer_scale(true).map_err(|e| e.to_string())?;
@@ -1634,9 +1656,7 @@ fn main() -> ExitCode {
 
 /// Local wall-clock time as DOS reports it: hour, minute, second, hundredths.
 fn local_time() -> [u8; 4] {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     let t = now.as_secs() as libc::time_t;
     // SAFETY: localtime_r writes only into the zeroed `tm` we pass.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
@@ -1683,7 +1703,23 @@ mod tests {
     /// Our button names are SDL's own (the config's `pad_<name>` keys).
     #[test]
     fn button_names_are_sdls() {
-        for b in [Button::A, Button::B, Button::X, Button::Y, Button::Back, Button::Guide, Button::Start, Button::LeftStick, Button::RightStick, Button::LeftShoulder, Button::RightShoulder, Button::DPadUp, Button::DPadDown, Button::DPadLeft, Button::DPadRight] {
+        for b in [
+            Button::A,
+            Button::B,
+            Button::X,
+            Button::Y,
+            Button::Back,
+            Button::Guide,
+            Button::Start,
+            Button::LeftStick,
+            Button::RightStick,
+            Button::LeftShoulder,
+            Button::RightShoulder,
+            Button::DPadUp,
+            Button::DPadDown,
+            Button::DPadLeft,
+            Button::DPadRight,
+        ] {
             let Some(PadEvent::Button(n, true)) = pad_event(&Event::ControllerButtonDown { timestamp: 0, which: 0, button: b }) else { panic!() };
             assert_eq!(n, b.string(), "{b:?}");
         }

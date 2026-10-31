@@ -63,9 +63,7 @@ pub struct ExeTables {
 
 fn word(exe: &[u8], ds_off: usize) -> Result<u16> {
     let o = DATA_BASE + ds_off;
-    exe.get(o..o + 2)
-        .map(|b| u16::from_le_bytes([b[0], b[1]]))
-        .ok_or_else(|| AssetError::Invalid(format!("OUT.EXE too short for DS:{ds_off:04X}")))
+    exe.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]])).ok_or_else(|| AssetError::Invalid(format!("OUT.EXE too short for DS:{ds_off:04X}")))
 }
 
 fn words<const N: usize>(exe: &[u8], ds_off: usize) -> Result<[u16; N]> {
@@ -368,7 +366,11 @@ pub fn weapon_stock(layout: u32, moves: u32) -> Vec<u32> {
 
 /// Armour offered (same in every town).
 pub fn armour_stock(moves: u32) -> Vec<u32> {
-    if moves > 3000 { vec![1, 2, 3, 4, 5] } else { vec![1, 2, 3] }
+    if moves > 3000 {
+        vec![1, 2, 3, 4, 5]
+    } else {
+        vec![1, 2, 3]
+    }
 }
 
 /// Spells listed by a magic shop with map `layout`; wizards (class 2) see
@@ -439,9 +441,7 @@ pub(crate) mod tests {
     /// documented offsets.
     pub fn synthetic_exe() -> Vec<u8> {
         let mut exe = vec![0u8; OUT_EXE_SIZE];
-        let put = |exe: &mut Vec<u8>, ds: usize, v: u16| {
-            exe[DATA_BASE + ds..DATA_BASE + ds + 2].copy_from_slice(&v.to_le_bytes())
-        };
+        let put = |exe: &mut Vec<u8>, ds: usize, v: u16| exe[DATA_BASE + ds..DATA_BASE + ds + 2].copy_from_slice(&v.to_le_bytes());
         for i in 0..10 {
             put(&mut exe, ds::SPAWN_CHANCE + 2 * i, 10 * i as u16 + 1);
         }

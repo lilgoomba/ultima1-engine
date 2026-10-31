@@ -82,16 +82,32 @@ impl GenFiles {
 
     /// The colour variables set up by `3e9` (CGA ones are device values).
     fn white(&self) -> u8 {
-        if self.mode == 0 { 3 | RAW } else { 15 }
+        if self.mode == 0 {
+            3 | RAW
+        } else {
+            15
+        }
     }
     fn blue(&self) -> u8 {
-        if self.mode == 0 { 2 | RAW } else { 1 }
+        if self.mode == 0 {
+            2 | RAW
+        } else {
+            1
+        }
     }
     fn red(&self) -> u8 {
-        if self.mode == 0 { 1 | RAW } else { 12 }
+        if self.mode == 0 {
+            1 | RAW
+        } else {
+            12
+        }
     }
     fn text(&self) -> u8 {
-        if self.mode == 0 { 3 | RAW } else { 11 }
+        if self.mode == 0 {
+            3 | RAW
+        } else {
+            11
+        }
     }
 }
 
@@ -143,16 +159,7 @@ pub fn clock_value(t: [u8; 4]) -> u16 {
 impl<'a> Gen<'a> {
     /// `13b2`: read the first 15 bytes (the name) of each roster file.
     pub fn new(f: &'a GenFiles, dir: &Path, clock: Box<dyn FnMut() -> [u8; 4] + 'a>) -> Self {
-        let mut g = Gen {
-            f,
-            dir: dir.to_path_buf(),
-            names: [[0; 15]; 4],
-            used: [false; 4],
-            count: 0,
-            rec: [0; crate::save::SAVE_SIZE],
-            frame: 0,
-            clock,
-        };
+        let mut g = Gen { f, dir: dir.to_path_buf(), names: [[0; 15]; 4], used: [false; 4], count: 0, rec: [0; crate::save::SAVE_SIZE], frame: 0, clock };
         for i in 0..4 {
             if let Ok(b) = std::fs::read(roster_file(dir, i)) {
                 let n = b.len().min(15);
@@ -193,10 +200,7 @@ impl<'a> Gen<'a> {
             self.line(t, 0, 0xc7 - i, i, 0xc7, BLACK);
             self.line(t, 0x13f, 0xc7 - i, 0x13f - i, 0xc7, BLACK);
         }
-        for (x, y) in [
-            (0, 0), (0, 5), (5, 0), (0x13f, 0), (0x13a, 0), (0x13f, 5),
-            (0, 0xc7), (0, 0xc2), (5, 0xc7), (0x13f, 0xc7), (0x13f, 0xc2), (0x13a, 0xc7),
-        ] {
+        for (x, y) in [(0, 0), (0, 5), (5, 0), (0x13f, 0), (0x13a, 0), (0x13f, 5), (0, 0xc7), (0, 0xc2), (5, 0xc7), (0x13f, 0xc7), (0x13f, 0xc2), (0x13a, 0xc7)] {
             t.plot(x, y, BLACK);
         }
     }
@@ -627,10 +631,7 @@ impl<'a> Gen<'a> {
     /// Fill in the new character's fixed values and write the roster file.
     fn save(&mut self, t: &mut Term, io: &mut dyn Io, slot: usize) -> IoResult<()> {
         let seed = clock_value((self.clock)()).wrapping_add(self.stat(5)).wrapping_add(u16::from_le_bytes([self.rec[0x12], self.rec[0x13]]));
-        for (off, v) in [
-            (0x16, 150), (0x24, 100), (0x26, 0), (0x28, 200), (0x2a, 1), (0x2c, 0), (0x2e, 1), (0x30, 0),
-            (0x34, 49), (0x36, 40), (0x38, 1),
-        ] {
+        for (off, v) in [(0x16, 150), (0x24, 100), (0x26, 0), (0x28, 200), (0x2a, 1), (0x2c, 0), (0x2e, 1), (0x30, 0), (0x34, 49), (0x36, 40), (0x38, 1)] {
             self.set(off, v);
         }
         self.set(0x32, seed);

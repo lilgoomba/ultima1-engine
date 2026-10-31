@@ -289,10 +289,7 @@ impl Overworld {
                 }
                 let terr = Self::terrain(map, nx, ny);
                 let town_like = matches!(terr, 4..=7) && rules::monster_can_enter(e.tile, terr);
-                let ok = rules::monster_can_enter(e.tile, terr)
-                    && (town_like || rules::in_monster_band(nx, ny))
-                    && self.entity_at(nx, ny).is_none()
-                    && (nx, ny) != (self.x, self.y);
+                let ok = rules::monster_can_enter(e.tile, terr) && (town_like || rules::in_monster_band(nx, ny)) && self.entity_at(nx, ny).is_none() && (nx, ny) != (self.x, self.y);
                 if ok {
                     self.entities[i].x = nx;
                     self.entities[i].y = ny;

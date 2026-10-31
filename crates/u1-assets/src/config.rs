@@ -107,10 +107,7 @@ pub struct Kept {
     pub tables: Vec<String>,
 }
 
-const HEADER: [&str; 2] = [
-    "# ultima1-engine options, written by the in-game options menu (F1).",
-    "# Command-line options override these for one run.",
-];
+const HEADER: [&str; 2] = ["# ultima1-engine options, written by the in-game options menu (F1).", "# Command-line options override these for one run."];
 
 impl Config {
     pub fn parse(text: &str) -> Config {
@@ -391,9 +388,7 @@ mod tests {
 
     #[test]
     fn tolerant_parse() {
-        let c = Config::parse(
-            "# hand edited\n\nvideo='CGA'  # four colours\nsound = \"enhanced\"\nfuture = 3\n[keys]\nvideo = \"ega\"\n",
-        );
+        let c = Config::parse("# hand edited\n\nvideo='CGA'  # four colours\nsound = \"enhanced\"\nfuture = 3\n[keys]\nvideo = \"ega\"\n");
         assert_eq!(c.video, Some(VideoChoice::Cga));
         assert_eq!(c.sound, Some(SoundMode::Enhanced));
         assert!(c.warnings.is_empty(), "{:?}", c.warnings);

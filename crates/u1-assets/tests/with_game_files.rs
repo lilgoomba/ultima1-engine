@@ -8,12 +8,12 @@ use u1_assets::exe::Exe;
 use u1_assets::game::{Assets, Game};
 use u1_assets::gamedir::GameDir;
 use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
-use u1_assets::term::Term;
 use u1_assets::locations::LocationTable;
 use u1_assets::rules::ExeTables;
 use u1_assets::save::{off, MapObject, PlayerRecord};
 use u1_assets::space::SpaceFiles;
 use u1_assets::tcd::TownCastleMaps;
+use u1_assets::term::Term;
 
 fn game_dir() -> Option<GameDir> {
     let d = std::env::var_os("U1_GAME_DIR")?;
@@ -27,26 +27,12 @@ fn play(x: u16, y: u16, keys: &str) -> Option<Game> {
 
 /// As `play`, with a chosen seed, recorded clock values for the time seeds
 /// and a hook to adjust the save before starting.
-fn play_with(
-    x: u16,
-    y: u16,
-    keys: &str,
-    seed: u16,
-    times: &[u16],
-    adjust: impl FnOnce(&mut PlayerRecord),
-) -> Option<Game> {
+fn play_with(x: u16, y: u16, keys: &str, seed: u16, times: &[u16], adjust: impl FnOnce(&mut PlayerRecord)) -> Option<Game> {
     play_io(x, y, &mut ScriptIo::from_text(keys), seed, times, adjust)
 }
 
 /// As `play_with`, driven by any `Io`.
-fn play_io(
-    x: u16,
-    y: u16,
-    io: &mut dyn Io,
-    seed: u16,
-    times: &[u16],
-    adjust: impl FnOnce(&mut PlayerRecord),
-) -> Option<Game> {
+fn play_io(x: u16, y: u16, io: &mut dyn Io, seed: u16, times: &[u16], adjust: impl FnOnce(&mut PlayerRecord)) -> Option<Game> {
     let g = game_dir()?;
     let mode = g.detect_video_mode()?;
     let exe_bytes = g.read("OUT.EXE").ok()?;
@@ -339,12 +325,7 @@ struct LairBot {
 
 impl LairBot {
     fn new(prefix: &str, polls: u32) -> Self {
-        LairBot {
-            queue: ScriptIo::from_text(prefix).keys,
-            left: polls,
-            seen: Vec::new(),
-            frames: std::env::var_os("U1_LAIR_FRAMES").map(|_| Default::default()),
-        }
+        LairBot { queue: ScriptIo::from_text(prefix).keys, left: polls, seen: Vec::new(), frames: std::env::var_os("U1_LAIR_FRAMES").map(|_| Default::default()) }
     }
 
     fn keep(&mut self, t: &Term) {
@@ -554,11 +535,7 @@ fn character_program_writes_the_original_record_and_selects_it() {
     let Some(g) = game_dir() else { return };
     // Same keys as the DOSBox run the record was compared with (SPEC §17):
     // Str 25 and Agi 25, Elf, male fighter "Hero", kept; then play slot 1.
-    let s = format!(
-        "a{{right}}{{right}}{{down}}{{right}}{{up}}{}{{down}}{} baaHero{{enter}}yb1",
-        "{right}".repeat(13),
-        "{right}".repeat(14)
-    );
+    let s = format!("a{{right}}{{right}}{{down}}{{right}}{{up}}{}{{down}}{} baaHero{{enter}}yb1", "{right}".repeat(13), "{right}".repeat(14));
     for v in [VideoMode::Ega, VideoMode::Cga, VideoMode::Tandy] {
         let dir = std::env::temp_dir().join(format!("u1-gen-test-{}-{v:?}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -777,13 +754,8 @@ fn enhanced_dungeon_textures_with_fallbacks() {
     assert_ne!(compose(&t, pal, &green, 0), out);
     // The skeleton has no picture: its original outline shows.
     let sc = t.dscene.as_ref().unwrap();
-    let Some(DPiece::Obj(o)) = sc.pieces.iter().map(|p| &p.1).find(|p| matches!(p, DPiece::Obj(o) if o.id == ArtId::DMon(1))) else {
-        panic!("no skeleton")
-    };
-    let lit: Vec<(usize, usize)> = (o.y0..=o.y1)
-        .flat_map(|y| (o.x0..=o.x1).map(move |x| (x as usize, y as usize)))
-        .filter(|&(x, y)| t.px[y * 320 + x] != 0)
-        .collect();
+    let Some(DPiece::Obj(o)) = sc.pieces.iter().map(|p| &p.1).find(|p| matches!(p, DPiece::Obj(o) if o.id == ArtId::DMon(1))) else { panic!("no skeleton") };
+    let lit: Vec<(usize, usize)> = (o.y0..=o.y1).flat_map(|y| (o.x0..=o.x1).map(move |x| (x as usize, y as usize))).filter(|&(x, y)| t.px[y * 320 + x] != 0).collect();
     assert!(!lit.is_empty());
     for (x, y) in lit {
         let i = ((y * 2) * 640 + x * 2) * 3;
@@ -795,17 +767,17 @@ fn enhanced_dungeon_textures_with_fallbacks() {
     assert!(out2.chunks(3).any(|p| p[0] == 0 && p[1] == 0 && p[2] > 100));
     // A chest is a low, wide box in the original: a square picture fills
     // the box's width (rising above it) rather than shrinking to its height.
-    let Some(DPiece::Obj(c)) = sc.pieces.iter().map(|p| &p.1).find(|p| matches!(p, DPiece::Obj(o) if o.id == ArtId::Dun(u1_assets::term::dun::CHEST))) else {
-        panic!("no chest")
-    };
+    let Some(DPiece::Obj(c)) = sc.pieces.iter().map(|p| &p.1).find(|p| matches!(p, DPiece::Obj(o) if o.id == ArtId::Dun(u1_assets::term::dun::CHEST))) else { panic!("no chest") };
     assert!(c.x1 - c.x0 > c.y1 - c.y0, "{c:?}");
     let ch = colour_pack(&[("dungeon.wall", red), ("dungeon.chest", [0, 230, 0, 255])]);
     let out3 = compose(&t, pal, &ch, 0);
     let y = (c.y1 as usize) * 2;
-    let green: Vec<usize> = (0..640).filter(|&x| {
-        let p = &out3[(y * 640 + x) * 3..][..3];
-        p[1] > 60 && p[0] == 0 && p[2] == 0
-    }).collect();
+    let green: Vec<usize> = (0..640)
+        .filter(|&x| {
+            let p = &out3[(y * 640 + x) * 3..][..3];
+            p[1] > 60 && p[0] == 0 && p[2] == 0
+        })
+        .collect();
     let span = green.last().unwrap() - green.first().unwrap() + 1;
     assert!(span as i32 >= 2 * (c.x1 - c.x0), "{span} vs {c:?}");
 }
@@ -836,9 +808,7 @@ fn enhanced_dungeon_holes_keep_the_original_outline() {
         let mut t = Term::new();
         dview::draw(&mut t, &exe, &vt, &lv, 5, 2, SOUTH);
         let sc = t.dscene.as_ref().unwrap();
-        let Some(DPiece::Obj(h)) = sc.pieces.iter().map(|p| &p.1).find(|p| matches!(p, DPiece::Obj(o) if o.id == ArtId::Dun(id))) else {
-            panic!("no hole")
-        };
+        let Some(DPiece::Obj(h)) = sc.pieces.iter().map(|p| &p.1).find(|p| matches!(p, DPiece::Obj(o) if o.id == ArtId::Dun(id))) else { panic!("no hole") };
         // Four sides, level top and bottom; the far edge is the narrow one.
         let [tl, tr, br, bl] = h.quad.expect("hole outline");
         assert_eq!((tl.1, tr.1, br.1, bl.1), (h.y0, h.y0, h.y1, h.y1));
@@ -1103,11 +1073,7 @@ fn a_display_chosen_in_the_character_program_restarts_it_in_that_display() {
     use u1_assets::gamedir::VideoMode;
     use u1_assets::gen::GenEnd;
     let Some(g) = game_dir() else { return };
-    let s = format!(
-        "a{{right}}{{right}}{{down}}{{right}}{{up}}{}{{down}}{} baaHero{{enter}}yb1",
-        "{right}".repeat(13),
-        "{right}".repeat(14)
-    );
+    let s = format!("a{{right}}{{right}}{{down}}{{right}}{{up}}{}{{down}}{} baaHero{{enter}}yb1", "{right}".repeat(13), "{right}".repeat(14));
     let dir = std::env::temp_dir().join(format!("u1-gen-restart-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -1285,7 +1251,10 @@ fn sidecar_is_written_beside_the_save_and_the_record_is_the_original_s() {
     let walk = format!("{}{}q", rep("{right}", 6), rep("{down}", 3));
     let (a, b) = (dir.join("A.U1"), dir.join("B.U1"));
     SAVE_TO.with(|s| *s.borrow_mut() = Some(a.clone()));
-    let Some(_) = play(45, 38, &walk) else { SAVE_TO.with(|s| s.borrow_mut().take()); return };
+    let Some(_) = play(45, 38, &walk) else {
+        SAVE_TO.with(|s| s.borrow_mut().take());
+        return;
+    };
     SAVE_TO.with(|s| *s.borrow_mut() = Some(b.clone()));
     let mut io = ScriptIo::from_text(&walk);
     io.qol = second_group();

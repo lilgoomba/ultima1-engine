@@ -3,15 +3,15 @@
 //! the original's behaviour ("verified from original executable"); every
 //! message and table comes from the user's OUT.EXE at run time.
 
-use crate::sound::Sfx;
 use crate::dungeon::{self, Cell, DungeonLevel, Item, DUNGEON_SIZE};
 use crate::dview::{self, ViewTables, EAST, NORTH, SOUTH, WEST};
 use crate::exe::m;
 use crate::game::{slot, Game, AGI, HITS, INT, MAGIC_TILE, OUTDOORS, STA, STR, WIS};
 use crate::io::keys;
-use crate::rules::{self, Dir};
 use crate::io::Io;
+use crate::rules::{self, Dir};
 use crate::save::off;
+use crate::sound::Sfx;
 use crate::term::TEXT;
 
 pub const DUNGEON: u8 = 3;
@@ -127,16 +127,8 @@ impl Game {
             self.view_tables = Some(ViewTables::from_exe(&self.a.exe));
         }
         self.mode = DUNGEON;
-        self.dungeon = Some(DungeonState {
-            level: dungeon::generate(0, 0, 1, 0, &[(1, 1); 16], 0),
-            a: 1,
-            b: 1,
-            depth: 1,
-            facing: SOUTH,
-            bonus: 0,
-            title: true,
-            moved: [[false; DUNGEON_SIZE]; DUNGEON_SIZE],
-        });
+        self.dungeon =
+            Some(DungeonState { level: dungeon::generate(0, 0, 1, 0, &[(1, 1); 16], 0), a: 1, b: 1, depth: 1, facing: SOUTH, bonus: 0, title: true, moved: [[false; DUNGEON_SIZE]; DUNGEON_SIZE] });
         self.setup_level();
     }
 
@@ -222,9 +214,7 @@ impl Game {
         let (a, b) = self.ahead(1);
         let d = self.ds();
         let t = d.level.cell(a, b);
-        matches!(t, Cell::Wall | Cell::SecretDoor | Cell::ForceField)
-            || (t == Cell::Door && self.here() == Cell::Door)
-            || d.level.monster(a, b) != -1
+        matches!(t, Cell::Wall | Cell::SecretDoor | Cell::ForceField) || (t == Cell::Door && self.here() == Cell::Door) || d.level.monster(a, b) != -1
     }
 
     // ------------------------------------------------------------ K-limb
@@ -439,8 +429,7 @@ impl Game {
         loop {
             let (a, b) = self.ahead(i);
             let d = self.ds();
-            let blocked = d.level.monster(a, b) != -1
-                || matches!(d.level.cell(a, b), Cell::Wall | Cell::SecretDoor | Cell::ForceField | Cell::Door);
+            let blocked = d.level.monster(a, b) != -1 || matches!(d.level.cell(a, b), Cell::Wall | Cell::SecretDoor | Cell::ForceField | Cell::Door);
             if i >= range || blocked {
                 break;
             }
@@ -710,9 +699,7 @@ impl Game {
             let roll = self.r(1, 100);
             if roll < 25 {
                 let (px, py) = (self.ow.x, self.ow.y);
-                let found = self.ow.entities.iter().position(|e| {
-                    e.tile >= 0x13 && (px - e.x).abs().max((py - e.y).abs()) <= rules::attack_range(e.tile)
-                });
+                let found = self.ow.entities.iter().position(|e| e.tile >= 0x13 && (px - e.x).abs().max((py - e.y).abs()) <= rules::attack_range(e.tile));
                 if let Some(i) = found {
                     let e = self.ow.entities[i];
                     let (col, row) = (e.x - px + rules::PLAYER_COL, e.y - py + rules::PLAYER_ROW);
@@ -796,10 +783,7 @@ impl Game {
                     let a = self.r(1, 9);
                     let b = self.r(1, 9);
                     let d = self.ds();
-                    if (a, b) != (pa, pb)
-                        && !matches!(d.level.cell(a, b), Cell::ForceField | Cell::Wall | Cell::SecretDoor)
-                        && d.level.monster(a, b) == -1
-                    {
+                    if (a, b) != (pa, pb) && !matches!(d.level.cell(a, b), Cell::ForceField | Cell::Wall | Cell::SecretDoor) && d.level.monster(a, b) == -1 {
                         let d = self.dsm();
                         d.a = a;
                         d.b = b;

@@ -408,13 +408,7 @@ mod tests {
             let e = effect(n);
             let halves: Vec<u32> = e.spans.iter().skip(1).map(|s| s.1).collect();
             let hz = |c: u32| CPU_HZ / f64::from(2 * c);
-            println!(
-                "{n}: {:.1} ms, {} changes, first {:.0} Hz, last {:.0} Hz",
-                e.millis(),
-                e.edges(),
-                hz(halves[0]),
-                hz(*halves.last().unwrap())
-            );
+            println!("{n}: {:.1} ms, {} changes, first {:.0} Hz, last {:.0} Hz", e.millis(), e.edges(), hz(halves[0]), hz(*halves.last().unwrap()));
         }
     }
 

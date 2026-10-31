@@ -34,9 +34,7 @@ impl TileEncoding {
             TileEncoding::MonoLinear => (8, w / 8),
         };
         if w == 0 || h == 0 || w % align != 0 {
-            return Err(AssetError::Invalid(format!(
-                "tile width {w} not a positive multiple of {align} for {self:?}"
-            )));
+            return Err(AssetError::Invalid(format!("tile width {w} not a positive multiple of {align} for {self:?}")));
         }
         Ok(bytes_per_row * h)
     }
@@ -56,22 +54,13 @@ pub struct TileFileSpec {
 
 impl TileFileSpec {
     pub fn expected_size(&self) -> usize {
-        self.encoding
-            .bytes_per_tile(self.width, self.height)
-            .expect("static spec is valid")
-            * self.count
+        self.encoding.bytes_per_tile(self.width, self.height).expect("static spec is valid") * self.count
     }
 }
 
 macro_rules! spec {
     ($name:ident, $file:expr, $enc:ident, $w:expr, $h:expr, $n:expr) => {
-        pub const $name: TileFileSpec = TileFileSpec {
-            file_name: $file,
-            encoding: TileEncoding::$enc,
-            width: $w,
-            height: $h,
-            count: $n,
-        };
+        pub const $name: TileFileSpec = TileFileSpec { file_name: $file, encoding: TileEncoding::$enc, width: $w, height: $h, count: $n };
     };
 }
 
@@ -97,10 +86,8 @@ spec!(CGA_SPACE, "CGASPACE.BIN", CgaLinear, 32, 19, 48);
 spec!(T1K_SPACE, "T1KSPACE.BIN", TandyLinear, 32, 19, 24);
 
 /// All documented tile files.
-pub const ALL_TILE_FILES: [TileFileSpec; 15] = [
-    EGA_TILES, CGA_TILES, T1K_TILES, EGA_TOWN, CGA_TOWN, T1K_TOWN, EGA_MOND, CGA_MOND,
-    T1K_MOND, EGA_FIGHT, CGA_FIGHT, T1K_FIGHT, EGA_SPACE, CGA_SPACE, T1K_SPACE,
-];
+pub const ALL_TILE_FILES: [TileFileSpec; 15] =
+    [EGA_TILES, CGA_TILES, T1K_TILES, EGA_TOWN, CGA_TOWN, T1K_TOWN, EGA_MOND, CGA_MOND, T1K_MOND, EGA_FIGHT, CGA_FIGHT, T1K_FIGHT, EGA_SPACE, CGA_SPACE, T1K_SPACE];
 
 /// A decoded set of equally sized tiles. Each tile is `width * height`
 /// palette indices (0..=15 for EGA/Tandy/mono, 0..=3 for CGA), row-major.
@@ -117,27 +104,16 @@ impl TileSet {
     pub fn decode(data: &[u8], encoding: TileEncoding, width: usize, height: usize) -> Result<Self> {
         let bpt = encoding.bytes_per_tile(width, height)?;
         if data.is_empty() || data.len() % bpt != 0 {
-            return Err(AssetError::BadSize {
-                what: format!("{encoding:?} {width}x{height} tile data"),
-                expected: format!("a non-zero multiple of {bpt}"),
-                got: data.len(),
-            });
+            return Err(AssetError::BadSize { what: format!("{encoding:?} {width}x{height} tile data"), expected: format!("a non-zero multiple of {bpt}"), got: data.len() });
         }
-        let tiles = data
-            .chunks_exact(bpt)
-            .map(|chunk| decode_tile(chunk, encoding, width, height))
-            .collect();
+        let tiles = data.chunks_exact(bpt).map(|chunk| decode_tile(chunk, encoding, width, height)).collect();
         Ok(TileSet { width, height, tiles })
     }
 
     /// Decode a file according to a documented spec, enforcing its exact size.
     pub fn decode_spec(data: &[u8], spec: &TileFileSpec) -> Result<Self> {
         if data.len() != spec.expected_size() {
-            return Err(AssetError::BadSize {
-                what: spec.file_name.to_string(),
-                expected: spec.expected_size().to_string(),
-                got: data.len(),
-            });
+            return Err(AssetError::BadSize { what: spec.file_name.to_string(), expected: spec.expected_size().to_string(), got: data.len() });
         }
         Self::decode(data, spec.encoding, spec.width, spec.height)
     }
@@ -205,11 +181,7 @@ fn decode_tile(chunk: &[u8], enc: TileEncoding, w: usize, h: usize) -> Vec<u8> {
 pub fn encode_tile(pixels: &[u8], enc: TileEncoding, w: usize, h: usize) -> Result<Vec<u8>> {
     let bpt = enc.bytes_per_tile(w, h)?;
     if pixels.len() != w * h {
-        return Err(AssetError::Invalid(format!(
-            "expected {} pixels, got {}",
-            w * h,
-            pixels.len()
-        )));
+        return Err(AssetError::Invalid(format!("expected {} pixels, got {}", w * h, pixels.len())));
     }
     let mut out = vec![0u8; bpt];
     match enc {
@@ -336,7 +308,11 @@ mod tests {
                 let px: Vec<u8> = (0..spec.width * spec.height)
                     .map(|i| {
                         let v = ((i * 7 + t * 13) % max) as u8;
-                        if spec.encoding == TileEncoding::MonoLinear && v == 1 { 15 } else { v }
+                        if spec.encoding == TileEncoding::MonoLinear && v == 1 {
+                            15
+                        } else {
+                            v
+                        }
                     })
                     .collect();
                 file.extend(encode_tile(&px, spec.encoding, spec.width, spec.height).unwrap());

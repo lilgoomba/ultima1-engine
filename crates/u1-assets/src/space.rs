@@ -260,6 +260,7 @@ struct Space<'a> {
 /// Run the space program from a shuttle launch until it hands back to
 /// OUT. Assumes the record is in sync with the live game.
 pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
+    io.music(crate::music::Track::Space);
     let Some(files) = g.space.take() else { return Ok(SpaceEnd::Landed) };
     io.in_space(true);
     let mut s = Space::new(g, io, files);

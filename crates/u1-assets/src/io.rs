@@ -97,6 +97,10 @@ pub trait Io {
     /// may play something. Never waits.
     fn cue(&mut self, _ev: crate::sound::Sfx) {}
 
+    /// The area the game is in (or a moment such as death), for the
+    /// engine's optional music. The original has none; by default nothing.
+    fn music(&mut self, _t: crate::music::Track) {}
+
     /// A display chosen in the options menu, with its files, for the game
     /// to take at its next safe point (the main loop's key poll).
     fn video_switch(&mut self) -> Option<crate::game::VideoSet> {

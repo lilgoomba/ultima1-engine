@@ -50,6 +50,41 @@ impl FoodUse {
     }
 }
 
+/// How the picture is smoothed when it is enlarged (an engine option).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Smoothing {
+    /// Hard square pixels (the engine without the option).
+    #[default]
+    Off,
+    /// The graphics card's bilinear filter.
+    Linear,
+    /// Our own edge-directed pixel-art scaler (see `smooth`), then square
+    /// pixels for the rest of the enlargement.
+    PixelArt,
+}
+
+impl Smoothing {
+    pub const ALL: [Smoothing; 3] = [Smoothing::Off, Smoothing::Linear, Smoothing::PixelArt];
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Smoothing::Off => "off",
+            Smoothing::Linear => "linear",
+            Smoothing::PixelArt => "pixel-art",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Smoothing> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "off" | "none" => Some(Smoothing::Off),
+            "linear" | "bilinear" => Some(Smoothing::Linear),
+            "pixel-art" | "pixelart" | "pixel_art" | "xbr" => Some(Smoothing::PixelArt),
+            _ => None,
+        }
+    }
+}
+
+/// The music volumes offered, in per cent.
+pub const MUSIC_VOLUMES: [u8; 10] = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
 impl Scaling {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -119,6 +154,13 @@ pub struct Qol {
     /// Footsteps on the overworld (enhanced sound only; never with the
     /// original's beeps).
     pub footsteps: bool,
+    /// Our own area music (never with the original's beeps' silence
+    /// changed: it is a separate layer, off by default).
+    pub music: bool,
+    /// The music's loudness in per cent (separate from the effects).
+    pub music_volume: u8,
+    /// Smoothing of the enlarged picture.
+    pub smoothing: Smoothing,
 }
 
 impl Default for Qol {
@@ -145,6 +187,9 @@ impl Default for Qol {
             gamepad: false,
             food_use: FoodUse::Original,
             footsteps: true,
+            music: false,
+            music_volume: 50,
+            smoothing: Smoothing::Off,
         }
     }
 }

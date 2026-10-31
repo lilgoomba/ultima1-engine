@@ -740,6 +740,7 @@ impl Game {
         if self.hits() <= 0 || self.food() <= 0 {
             self.death(io)?;
         }
+        io.music(crate::music::Track::for_mode(self.mode));
         self.term.ornament_left(0, 24);
         self.term.cursor(1, 24);
         if self.mode == OUTDOORS {
@@ -1100,6 +1101,7 @@ impl Game {
 
     /// Death and resurrection `c47c` (verified from original executable).
     pub fn death(&mut self, io: &mut dyn Io) -> IoResult<()> {
+        io.music(crate::music::Track::Death);
         if self.mode == crate::dgame::DUNGEON {
             self.restore_dungeon_borders();
             self.dungeon = None;

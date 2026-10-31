@@ -46,10 +46,13 @@ pub enum Row {
     Gamepad,
     Food,
     Footsteps,
+    Music,
+    MusicVolume,
+    Smoothing,
     Keys,
 }
 
-pub const ROWS: [Row; 24] = [
+pub const ROWS: [Row; 27] = [
     Row::Video,
     Row::Sound,
     Row::Fullscreen,
@@ -73,6 +76,9 @@ pub const ROWS: [Row; 24] = [
     Row::Gamepad,
     Row::Food,
     Row::Footsteps,
+    Row::Music,
+    Row::MusicVolume,
+    Row::Smoothing,
     Row::Keys,
 ];
 
@@ -105,6 +111,9 @@ impl Row {
             Row::Gamepad => "Gamepad",
             Row::Food => "Food use",
             Row::Footsteps => "Footsteps",
+            Row::Music => "Music",
+            Row::MusicVolume => "Music volume",
+            Row::Smoothing => "Smoothing",
             Row::Keys => "Keys",
         }
     }
@@ -204,6 +213,14 @@ impl OptionsMenu {
             .into(),
             Row::Footsteps if self.sound != SoundMode::Enhanced => if q.footsteps { "On (enh. sound)" } else { "Off" }.into(),
             Row::Footsteps => on(q.footsteps),
+            Row::Music => on(q.music),
+            Row::MusicVolume => format!("{}%", q.music_volume),
+            Row::Smoothing => match q.smoothing {
+                qol::Smoothing::Off => "Off",
+                qol::Smoothing::Linear => "Linear",
+                qol::Smoothing::PixelArt => "Pixel art",
+            }
+            .into(),
             Row::Keys => "Enter: change".into(),
         }
     }
@@ -244,6 +261,9 @@ impl OptionsMenu {
                     Row::Gamepad => q.gamepad ^= true,
                     Row::Food => q.food_use = qol::cycle(&qol::FoodUse::ALL, q.food_use, k == keys::LEFT),
                     Row::Footsteps => q.footsteps ^= true,
+                    Row::Music => q.music ^= true,
+                    Row::MusicVolume => q.music_volume = qol::cycle(&qol::MUSIC_VOLUMES, q.music_volume, k == keys::LEFT),
+                    Row::Smoothing => q.smoothing = qol::cycle(&qol::Smoothing::ALL, q.smoothing, k == keys::LEFT),
                     Row::Keys => return MenuKey::Rebind,
                 }
                 if ROWS[self.row] == Row::Video {

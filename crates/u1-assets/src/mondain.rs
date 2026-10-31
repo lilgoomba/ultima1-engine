@@ -219,6 +219,7 @@ struct Lair<'a> {
 
 /// Run the lair from boarding the time machine with all four gems.
 pub fn run_mondain(g: &mut Game, io: &mut dyn Io) -> IoResult<MondainEnd> {
+    io.music(crate::music::Track::Lair);
     let Some(files) = g.mondain.take() else { return Ok(MondainEnd::Died) };
     let mut grid = [[0u8; ROWS]; COLS];
     for (x, col) in grid.iter_mut().enumerate() {
@@ -1094,6 +1095,7 @@ impl Lair<'_> {
 
     /// `1ea8` + `1f31`: the victory panel, then the NIF.BIN picture.
     fn victory(&mut self) -> R<()> {
+        self.io.music(crate::music::Track::Victory);
         self.draw_tile(T_DEAD, self.mx, self.my);
         self.g.term.plot(50, 7, WHITE);
         self.g.rec.set_u16(off::SOUND, 1);

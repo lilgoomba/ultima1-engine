@@ -28,6 +28,7 @@ pub mod locations;
 pub mod map;
 pub mod mondain;
 pub mod msglog;
+pub mod music;
 pub mod options;
 pub mod overworld;
 pub mod palette;

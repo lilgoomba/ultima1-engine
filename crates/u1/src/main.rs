@@ -37,6 +37,7 @@ use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
 use u1_assets::keymap::{KeyMap, RebindKey, RebindScreen};
 use u1_assets::locations::LocationTable;
 use u1_assets::msglog::{self, LogView};
+use u1_assets::music::{self, Track};
 use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
 use u1_assets::palette::{cga_as_16, Rgb, CGA_PALETTE_1_LOW, EGA_PALETTE};
 use u1_assets::qol::{self, Qol, Wait};
@@ -129,6 +130,7 @@ struct Args {
     roster: Option<PathBuf>,
     sound: SoundMode,
     sound_demo: Option<PathBuf>,
+    music_demo: Option<PathBuf>,
     enhanced: bool,
     pack: Option<PathBuf>,
     /// The display and sound options given on the command line (they win
@@ -170,6 +172,7 @@ fn parse_args() -> Result<Args, String> {
         roster: None,
         sound: SoundMode::Original,
         sound_demo: None,
+        music_demo: None,
         enhanced: false,
         pack: None,
         cli: config::Cli::default(),
@@ -228,6 +231,10 @@ fn parse_args() -> Result<Args, String> {
                 a.sound = SoundMode::parse(&v()?).ok_or("--sound wants original, enhanced or mute")?;
                 a.cli.sound = Some(a.sound);
             }
+            "--music-demo" => {
+                a.music_demo = Some(v()?.into());
+                have_dir = true;
+            }
             "--sound-demo" => {
                 a.sound_demo = Some(v()?.into());
                 have_dir = true;
@@ -260,12 +267,12 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other}\n{USAGE}")),
         }
     }
-    let interactive = a.screenshot.is_none() && a.sound_demo.is_none();
+    let interactive = a.screenshot.is_none() && a.sound_demo.is_none() && a.music_demo.is_none();
     let start_given = a.player.is_some() || a.save.is_some() || a.pos.is_some() || a.intro || a.gen;
     if interactive && !start_given {
         a.intro = true;
     }
-    if a.sound_demo.is_none() {
+    if a.sound_demo.is_none() && a.music_demo.is_none() {
         let front = a.intro || a.gen;
         a.game_dir = if have_dir { gamedir::locate(std::slice::from_ref(&a.game_dir), front)? } else { gamedir::locate(&game_dir_candidates(), front)? };
     }
@@ -391,6 +398,22 @@ fn sound_demo(a: &Args, out: &Path) -> Result<(), String> {
         println!("{l}");
     }
     Ok(())
+}
+
+/// `--music-demo`: the first 20 seconds of each music track (the stings
+/// whole), one after another, as a WAV file.
+fn music_demo(out: &Path) -> Result<(), String> {
+    let rate = 44_100;
+    let mut wav = Vec::new();
+    for t in Track::ALL {
+        let s = music::render(t, rate);
+        let n = if t.loops() { (20 * rate as usize).min(s.len()) } else { s.len() };
+        let fade = (rate as usize).min(n);
+        wav.extend(s[..n].iter().enumerate().map(|(i, &x)| if t.loops() && i + fade > n { (i32::from(x) * (n - i) as i32 / fade as i32) as i16 } else { x }));
+        wav.extend(std::iter::repeat(0i16).take(rate as usize / 2));
+        println!("{}", t.name());
+    }
+    std::fs::write(out, u1_assets::soundpack::encode_wav(rate, &wav)).map_err(|e| e.to_string())
 }
 
 fn load_pack(a: &Args) -> Result<Option<Pack>, String> {
@@ -748,6 +771,11 @@ struct SdlIo {
     qol: Qol,
     /// In space flight (for the fast space setting).
     in_space: bool,
+    /// The area the game is in (its music, when music is on).
+    area: Option<Track>,
+    /// The tracks rendered so far (by a background thread).
+    tracks: Arc<std::sync::Mutex<std::collections::HashMap<Track, Arc<Vec<i16>>>>>,
+    rendering: bool,
     /// The CRT filter's larger texture (its size, and the texture).
     crt_tex: Option<(usize, usize, sdl2::render::Texture<'static>)>,
     /// The last frame's internal size and whether it went through the CRT
@@ -776,6 +804,40 @@ const TOAST: Duration = Duration::from_millis(2500);
 const TOAST_BOX: (usize, usize, usize, usize) = (8, 8, 311, 15);
 
 impl SdlIo {
+    /// Bring the music in line with the area and the settings: start the
+    /// renderer the first time it is needed, then play, crossfade or stop.
+    fn sync_music(&mut self) {
+        let Some((dev, rate)) = &mut self.audio else { return };
+        let want = self.area.filter(|_| self.qol.music && self.sound != SoundMode::Mute);
+        let vol = f32::from(self.qol.music_volume) / 100.0;
+        let have = dev.lock().music.current();
+        if want.is_some() && !self.rendering {
+            self.rendering = true;
+            let (store, rate) = (self.tracks.clone(), *rate);
+            // The current area first, then the rest.
+            let first = want.unwrap_or(Track::Title);
+            std::thread::spawn(move || {
+                for t in std::iter::once(first).chain(Track::ALL.into_iter().filter(|&t| t != first)) {
+                    let s = Arc::new(music::render(t, rate));
+                    if let Ok(mut m) = store.lock() {
+                        m.insert(t, s);
+                    }
+                }
+            });
+        }
+        let mut m = dev.lock();
+        m.music.volume = vol;
+        match want {
+            None if have.is_some() => m.music.stop(),
+            Some(t) if have != Some(t) => {
+                if let Some(s) = self.tracks.lock().ok().and_then(|c| c.get(&t).cloned()) {
+                    m.music.start(t, s);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn present(&mut self, t: &Term) -> IoResult<()> {
         match self.toast.as_ref().filter(|(_, at)| at.elapsed() < TOAST) {
             Some((msg, _)) => {
@@ -879,6 +941,7 @@ impl SdlIo {
     }
 
     fn pump(&mut self) -> IoResult<()> {
+        self.sync_music();
         use sdl2::event::Event;
         use sdl2::keyboard::{Keycode, Mod};
         let evs: Vec<Event> = self.events.poll_iter().collect();
@@ -1182,6 +1245,13 @@ impl Io for SdlIo {
         }
     }
 
+    fn music(&mut self, t: Track) {
+        if self.area != Some(t) {
+            self.area = Some(t);
+            self.sync_music();
+        }
+    }
+
     fn video_switch(&mut self) -> Option<VideoSet> {
         if self.wanted == self.shown {
             return None;
@@ -1313,12 +1383,18 @@ impl SdlIo {
         }
         let opened = Instant::now();
         // One window can open the next (Options, then Keys).
+        if let Some((dev, _)) = &mut self.audio {
+            dev.lock().music.paused = true;
+        }
         while let Some(which) = self.modal_wanted.take() {
             self.in_menu = true;
             let r = self.run_one(t, which);
             self.in_menu = false;
             self.menu_keys.clear();
             r?;
+        }
+        if let Some((dev, _)) = &mut self.audio {
+            dev.lock().music.paused = false;
         }
         let paused = opened.elapsed();
         self.next = Instant::now() + POLL;
@@ -1542,6 +1618,8 @@ impl SdlIo {
 struct Mixer {
     voices: Vec<(Arc<Vec<i16>>, usize)>,
     rate: usize,
+    /// The area music (its own layer and volume).
+    music: music::Player,
 }
 
 impl Mixer {
@@ -1563,7 +1641,7 @@ impl sdl2::audio::AudioCallback for Mixer {
     type Channel = i16;
     fn callback(&mut self, out: &mut [i16]) {
         for o in out.iter_mut() {
-            let mut acc = 0i32;
+            let mut acc = self.music.sample();
             for (v, pos) in self.voices.iter_mut() {
                 if let Some(&x) = v.get(*pos) {
                     acc += i32::from(x);
@@ -1581,7 +1659,10 @@ impl sdl2::audio::AudioCallback for Mixer {
 fn open_speaker(sdl: &sdl2::Sdl) -> Option<(sdl2::audio::AudioDevice<Mixer>, u32)> {
     let sub = sdl.audio().map_err(|e| eprintln!("no audio: {e}")).ok()?;
     let want = sdl2::audio::AudioSpecDesired { freq: Some(44_100), channels: Some(1), samples: Some(512) };
-    let q = sub.open_playback(None, &want, |spec| Mixer { voices: Vec::new(), rate: spec.freq.max(1) as usize }).map_err(|e| eprintln!("no audio: {e}")).ok()?;
+    let q = sub
+        .open_playback(None, &want, |spec| Mixer { voices: Vec::new(), rate: spec.freq.max(1) as usize, music: music::Player::new(spec.freq.max(1) as u32) })
+        .map_err(|e| eprintln!("no audio: {e}"))
+        .ok()?;
     q.resume();
     let rate = q.spec().freq as u32;
     // The subsystem must outlive the queue.
@@ -1685,6 +1766,9 @@ fn play(a: &Args) -> Result<(), String> {
         restart: false,
         qol: Qol::default(),
         in_space: false,
+        area: None,
+        tracks: Default::default(),
+        rendering: false,
         crt_tex: None,
         last_frame: None,
         save_base: None,
@@ -1750,6 +1834,9 @@ fn main() -> ExitCode {
     let res = parse_args().and_then(|a| {
         if let Some(out) = &a.sound_demo {
             return sound_demo(&a, out);
+        }
+        if let Some(out) = &a.music_demo {
+            return music_demo(out);
         }
         install_font(&a)?;
         match &a.screenshot {

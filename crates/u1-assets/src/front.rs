@@ -15,6 +15,7 @@ use std::path::Path;
 /// (`None`), or the screen it was stopped on.
 pub fn intro(g: &GameDir, mode: &mut VideoMode, io: &mut dyn Io) -> crate::Result<Option<Term>> {
     let mut f = TitleFiles::load(g, *mode)?;
+    io.music(crate::music::Track::Title);
     loop {
         let mut t = title::blank_term(&f);
         match title::run_intro(&f, &mut t, io) {
@@ -38,6 +39,7 @@ pub fn intro(g: &GameDir, mode: &mut VideoMode, io: &mut dyn Io) -> crate::Resul
 /// clock. Returns the last screen and how the program ended.
 pub fn character(g: &GameDir, dir: &Path, mode: &mut VideoMode, clock: &mut dyn FnMut() -> Box<dyn FnMut() -> [u8; 4]>, io: &mut dyn Io) -> crate::Result<(Term, IoResult<GenEnd>)> {
     let mut f = GenFiles::load(g, *mode)?;
+    io.music(crate::music::Track::Title);
     loop {
         let mut gen = Gen::new(&f, dir, clock());
         let mut t = Term::with_cga(*mode == VideoMode::Cga);

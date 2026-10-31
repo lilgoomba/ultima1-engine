@@ -199,8 +199,15 @@ impl Config {
         flag(q.repeat, d.repeat, "arrow_repeat", "our own repeat for held arrows");
         flag(q.gamepad, d.gamepad, "gamepad", "SDL game controllers");
         flag(q.footsteps, d.footsteps, "footsteps", "overworld footsteps in enhanced sound");
+        flag(q.music, d.music, "music", "our own area music (F1)");
         if q.food_use != d.food_use {
             s += &format!("food_use = \"{}\"   # original | half | off\n", q.food_use.as_str());
+        }
+        if q.music_volume != d.music_volume {
+            s += &format!("music_volume = {}   # per cent: 10 .. 100\n", q.music_volume);
+        }
+        if q.smoothing != d.smoothing {
+            s += &format!("smoothing = \"{}\"   # off | linear | pixel-art\n", q.smoothing.as_str());
         }
         if q.scaling != d.scaling {
             s += &format!("scaling = \"{}\"   # whole | fill\n", q.scaling.as_str());
@@ -273,6 +280,15 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "arrow_repeat" => flag(v).map(|b| q.repeat = b),
         "gamepad" => flag(v).map(|b| q.gamepad = b),
         "footsteps" => flag(v).map(|b| q.footsteps = b),
+        "music" => flag(v).map(|b| q.music = b),
+        "music_volume" => match v.trim_end_matches('%').parse::<u8>() {
+            Ok(d) if crate::qol::MUSIC_VOLUMES.contains(&d) => {
+                q.music_volume = d;
+                Ok(())
+            }
+            _ => Err("10, 20 .. 100"),
+        },
+        "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {
                 q.confirm = d;
@@ -535,5 +551,24 @@ mod tests {
             assert!(!back.qol.footsteps);
         }
         assert_eq!(Config::parse("food_use = \"half\"\n").qol.food_use, FoodUse::Half);
+    }
+
+    #[test]
+    fn music_and_smoothing_round_trip() {
+        use crate::qol::Smoothing;
+        let d = Config::default();
+        assert!(!d.qol.music && d.qol.smoothing == Smoothing::Off);
+        assert!(!d.to_toml().contains("music") && !d.to_toml().contains("smoothing"));
+        for sm in Smoothing::ALL {
+            let mut c = Config::default();
+            c.qol.music = true;
+            c.qol.music_volume = 80;
+            c.qol.smoothing = sm;
+            let back = Config::parse(&c.to_toml());
+            assert_eq!((back.qol.music, back.qol.music_volume, back.qol.smoothing), (true, 80, sm));
+        }
+        let c = Config::parse("smoothing = \"pixel-art\"\nmusic_volume = 55\n");
+        assert_eq!((c.qol.smoothing, c.qol.music_volume), (Smoothing::PixelArt, 50));
+        assert!(!c.warnings.is_empty());
     }
 }

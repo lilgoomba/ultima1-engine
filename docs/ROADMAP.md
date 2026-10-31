@@ -92,3 +92,7 @@ the tests keep the original behaviour.
   the scaled picture (plain linear filtering, or xBR/HQx-style pixel-art
   scalers), off by default; the sharp whole-pixel picture stays the
   default.
+* **Enhanced art for vehicles (planned).** Pack pictures for the
+  overworld vehicle tiles 0x0B-0x12 (horse, cart, raft, frigate, aircar,
+  shuttle, time machine on the map, etc.), in the same 16-bit style and
+  CC-BY-SA licence as the monsters; the original tiles stay the fallback.

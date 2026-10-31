@@ -187,6 +187,7 @@ impl OptionsMenu {
             Row::Confirm => format!("Worth {}+", q.confirm),
             Row::Repeat => if q.repeat { "Own" } else { "System" }.into(),
             Row::RepeatDelay => format!("{} ms", q.repeat_delay),
+            Row::RepeatRate if q.repeat_rate == 0 => "Game pace".to_string(),
             Row::RepeatRate => format!("{} a second", q.repeat_rate),
             Row::Gamepad => on(q.gamepad),
             Row::Keys => "Enter: change".into(),

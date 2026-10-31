@@ -29,7 +29,8 @@ use u1_assets::enhanced::{self, Pack};
 use u1_assets::msglog::{self, LogView};
 use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
 use u1_assets::explore::Explore;
-use u1_assets::keymap::{KeyMap, PadMap, PadOut, RebindKey, RebindScreen};
+use u1_assets::input::{PadAction, PadEvent, PadInput, Repeater};
+use u1_assets::keymap::{KeyMap, RebindKey, RebindScreen};
 use u1_assets::qol::{self, Qol, Scaling, Wait};
 use u1_assets::slots::{SaveReq, Slot, SlotKey, SlotScreen};
 use u1_assets::exe::Exe;
@@ -620,15 +621,12 @@ struct SdlIo {
     at_prompt: bool,
     /// The extra keys and the gamepad's buttons.
     keymap: KeyMap,
-    pad: PadMap,
-    /// The engine's arrow repeat: the arrow held (and what holds it: a
-    /// keycode, or a negative number for the pad) and when it next repeats.
-    held: Option<(u8, i32, Instant)>,
+    pad: PadInput,
+    /// The engine's arrow repeat (SPEC §23.3).
+    held: Repeater,
     /// The gamepad subsystem and the pads open.
     gc: Option<sdl2::GameControllerSubsystem>,
     pads: Vec<sdl2::controller::GameController>,
-    /// The left stick's direction (an arrow code, or 0).
-    stick: u8,
     /// The sound output (none without an audio device).
     audio: Option<(sdl2::audio::AudioDevice<Mixer>, u32)>,
     sound: SoundMode,
@@ -864,14 +862,14 @@ impl SdlIo {
                     }
                 }
                 Event::KeyUp { keycode: Some(k), .. } => {
-                    if self.held.map_or(false, |(_, by, _)| by == k.into_i32()) {
-                        self.held = None;
-                    }
+                    self.held.release(k.into_i32());
                 }
                 Event::ControllerDeviceAdded { which, .. } if self.qol.gamepad => self.open_pad(which),
-                Event::ControllerButtonDown { button, .. } if self.qol.gamepad => self.pad_button(button, true),
-                Event::ControllerButtonUp { button, .. } if self.qol.gamepad => self.pad_button(button, false),
-                Event::ControllerAxisMotion { axis, value, .. } if self.qol.gamepad => self.pad_axis(axis, value),
+                Event::ControllerButtonDown { .. } | Event::ControllerButtonUp { .. } | Event::ControllerAxisMotion { .. } if self.qol.gamepad => {
+                    if let Some(e) = pad_event(&ev) {
+                        self.pad_event(e);
+                    }
+                }
                 _ => {}
             }
         }
@@ -891,8 +889,8 @@ impl SdlIo {
 
     /// Start the engine's repeat for arrow `a`, held by `by`.
     fn hold_arrow(&mut self, a: u8, by: i32) {
-        let (delay, _) = self.qol.repeat_timing();
-        self.held = Some((a, by, Instant::now() + delay));
+        let (delay, _) = self.qol.repeat_timing(self.scaled(POLL, Wait::Poll));
+        self.held.hold(a, by, Instant::now(), delay);
     }
 
     /// A key from the pad: to the open window, or to the game.
@@ -928,77 +926,17 @@ impl SdlIo {
         }
     }
 
-    /// A pad button: the d-pad is the arrows, the rest as the config says
-    /// (SPEC §23.4).
-    fn pad_button(&mut self, b: sdl2::controller::Button, down: bool) {
-        use sdl2::controller::Button;
-        let arrow = match b {
-            Button::DPadUp => Some(keys::UP),
-            Button::DPadDown => Some(keys::DOWN),
-            Button::DPadLeft => Some(keys::LEFT),
-            Button::DPadRight => Some(keys::RIGHT),
-            _ => None,
-        };
-        let by = -1 - b as i32;
-        if !down {
-            if self.held.map_or(false, |(_, h, _)| h == by) {
-                self.held = None;
+    /// A gamepad event, through the tested mapping layer (SPEC §23.3).
+    fn pad_event(&mut self, e: PadEvent) {
+        for act in self.pad.event(e, self.in_menu, self.qol.repeat) {
+            match act {
+                PadAction::Key(k, name) => self.pad_key(k, &name),
+                PadAction::Command(c) if self.wanted_code(c) => self.pending.push_back((None, Some(c))),
+                PadAction::Command(_) => {}
+                PadAction::Options => self.open(Modal::Options),
+                PadAction::Hold(a, by) => self.hold_arrow(a, by),
+                PadAction::Release(by) => self.held.release(by),
             }
-            return;
-        }
-        if let Some(a) = arrow {
-            self.pad_key(a, "");
-            if self.qol.repeat && !self.in_menu {
-                self.hold_arrow(a, by);
-            }
-            return;
-        }
-        match self.pad.out(&b.string()) {
-            PadOut::Key(k) => {
-                let name = match k {
-                    keys::ESC => "escape".to_string(),
-                    keys::ENTER => "return".to_string(),
-                    b' ' => "space".to_string(),
-                    k => (k as char).to_ascii_lowercase().to_string(),
-                };
-                self.pad_key(k, &name);
-            }
-            PadOut::Command(c) if !self.in_menu && self.wanted_code(c) => self.pending.push_back((None, Some(c))),
-            PadOut::Options => self.open(Modal::Options),
-            _ => {}
-        }
-    }
-
-    /// The left stick: past a third of its travel it is an arrow.
-    fn pad_axis(&mut self, axis: sdl2::controller::Axis, v: i16) {
-        use sdl2::controller::Axis;
-        const DEAD: i16 = 12_000;
-        let a = match axis {
-            Axis::LeftX if v < -DEAD => keys::LEFT,
-            Axis::LeftX if v > DEAD => keys::RIGHT,
-            Axis::LeftY if v < -DEAD => keys::UP,
-            Axis::LeftY if v > DEAD => keys::DOWN,
-            Axis::LeftX | Axis::LeftY => 0,
-            _ => return,
-        };
-        let horiz = matches!(axis, Axis::LeftX);
-        let same_axis = |s: u8| if horiz { matches!(s, keys::LEFT | keys::RIGHT) } else { matches!(s, keys::UP | keys::DOWN) };
-        if a == 0 {
-            if same_axis(self.stick) {
-                self.stick = 0;
-                if self.held.map_or(false, |(_, by, _)| by == -100) {
-                    self.held = None;
-                }
-            }
-            return;
-        }
-        if a == self.stick {
-            return;
-        }
-        self.stick = a;
-        self.pad_key(a, "");
-        if self.qol.repeat && !self.in_menu {
-            self.hold_arrow(a, -100);
         }
     }
 
@@ -1014,15 +952,13 @@ impl SdlIo {
         None
     }
 
-    /// A held arrow due to repeat.
+    /// A held arrow due to repeat: only at the command prompt, with no
+    /// key waiting and no window open, and at most one per step.
     fn repeat_due(&mut self) {
-        if let Some((a, by, at)) = self.held {
-            let now = Instant::now();
-            if now >= at && self.pending.is_empty() && !self.in_menu {
-                let (_, every) = self.qol.repeat_timing();
-                self.held = Some((a, by, (at + every).max(now)));
-                self.pending.push_back((Some(a), None));
-            }
+        let ready = self.at_prompt && self.pending.is_empty() && !self.in_menu;
+        let (_, step) = self.qol.repeat_timing(self.scaled(POLL, Wait::Poll));
+        if let Some(a) = self.held.due(Instant::now(), ready, step) {
+            self.pending.push_back((Some(a), None));
         }
     }
 
@@ -1205,6 +1141,39 @@ impl Io for SdlIo {
     }
 }
 
+/// An SDL controller event as the mapping layer's plain value.
+fn pad_event(ev: &sdl2::event::Event) -> Option<PadEvent<'static>> {
+    use sdl2::controller::{Axis, Button};
+    use sdl2::event::Event;
+    fn name(b: Button) -> &'static str {
+        match b {
+            Button::A => "a",
+            Button::B => "b",
+            Button::X => "x",
+            Button::Y => "y",
+            Button::Back => "back",
+            Button::Guide => "guide",
+            Button::Start => "start",
+            Button::LeftStick => "leftstick",
+            Button::RightStick => "rightstick",
+            Button::LeftShoulder => "leftshoulder",
+            Button::RightShoulder => "rightshoulder",
+            Button::DPadUp => "dpup",
+            Button::DPadDown => "dpdown",
+            Button::DPadLeft => "dpleft",
+            Button::DPadRight => "dpright",
+            _ => "",
+        }
+    }
+    match *ev {
+        Event::ControllerButtonDown { button, .. } => Some(PadEvent::Button(name(button), true)),
+        Event::ControllerButtonUp { button, .. } => Some(PadEvent::Button(name(button), false)),
+        Event::ControllerAxisMotion { axis: Axis::LeftX, value, .. } => Some(PadEvent::Stick(true, value)),
+        Event::ControllerAxisMotion { axis: Axis::LeftY, value, .. } => Some(PadEvent::Stick(false, value)),
+        _ => None,
+    }
+}
+
 fn is_arrow(c: u8) -> bool {
     matches!(c, keys::UP | keys::DOWN | keys::LEFT | keys::RIGHT)
 }
@@ -1228,7 +1197,7 @@ impl SdlIo {
         }
         let paused = opened.elapsed();
         self.next = Instant::now() + POLL;
-        self.held = None;
+        self.held.clear();
         self.present(t)?;
         Ok(paused)
     }
@@ -1332,7 +1301,7 @@ impl SdlIo {
             self.save_req = None;
         }
         if !q.repeat {
-            self.held = None;
+            self.held.clear();
         }
         if q.gamepad && !old.gamepad {
             self.open_pads();
@@ -1369,7 +1338,7 @@ impl SdlIo {
         }
         c.qol = self.qol;
         c.keys = self.keymap.clone();
-        c.pad = self.pad.clone();
+        c.pad = self.pad.map.clone();
         c.warnings.clear();
         if let Err(e) = c.save(p) {
             eprintln!("{}: {e}", p.display());
@@ -1555,13 +1524,12 @@ fn play(a: &Args) -> Result<(), String> {
         pending: Default::default(),
         at_prompt: false,
         keymap: cfg.keys.clone(),
-        pad: cfg.pad.clone(),
-        held: None,
+        pad: PadInput::new(cfg.pad.clone()),
+        held: Repeater::default(),
         // Opened even with the setting off (it reads nothing until a pad
         // is opened), so the menu can turn the gamepad on.
         gc: sdl.game_controller().map_err(|e| eprintln!("no gamepad support: {e}")).ok(),
         pads: Vec::new(),
-        stick: 0,
         audio,
         sound: set.sound,
         sounds: None,
@@ -1680,4 +1648,44 @@ fn local_time() -> [u8; 4] {
         ((d / 3600) as u8, (d / 60 % 60) as u8, (d % 60) as u8)
     };
     [h, m, s, (now.subsec_millis() / 10) as u8]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sdl2::controller::{Axis, Button};
+    use sdl2::event::Event;
+
+    /// Synthetic SDL controller events through the same path the window
+    /// takes (`pad_event`, then the mapping layer). A real controller is
+    /// still to be tried (SPEC §23.3).
+    #[test]
+    fn synthetic_controller_events_map_to_keys() {
+        let down = |b| Event::ControllerButtonDown { timestamp: 0, which: 0, button: b };
+        let up = |b| Event::ControllerButtonUp { timestamp: 0, which: 0, button: b };
+        let axis = |a, v| Event::ControllerAxisMotion { timestamp: 0, which: 0, axis: a, value: v };
+        let mut pad = PadInput::default();
+        let mut run = |e: Event| pad_event(&e).map(|p| pad.event(p, false, true)).unwrap_or_default();
+        assert_eq!(run(down(Button::A)), vec![PadAction::Key(b' ', "space".into())]);
+        assert_eq!(run(down(Button::Back)), vec![PadAction::Command(keys::MAP)]);
+        assert_eq!(run(down(Button::Guide)), vec![PadAction::Command(keys::HELP)]);
+        assert_eq!(run(down(Button::LeftStick)), vec![PadAction::Command(keys::CHARSHEET)]);
+        assert_eq!(run(down(Button::Start)), vec![PadAction::Options]);
+        let v = run(down(Button::DPadUp));
+        assert!(matches!(v[..], [PadAction::Key(keys::UP, _), PadAction::Hold(keys::UP, _)]), "{v:?}");
+        assert!(matches!(run(up(Button::DPadUp))[..], [PadAction::Release(_)]));
+        assert!(matches!(run(axis(Axis::LeftX, -30000))[..], [PadAction::Key(keys::LEFT, _), PadAction::Hold(..)]));
+        assert!(matches!(run(axis(Axis::LeftX, 0))[..], [PadAction::Release(_)]));
+        assert!(run(axis(Axis::TriggerLeft, 30000)).is_empty(), "triggers do nothing");
+        assert!(pad_event(&Event::Quit { timestamp: 0 }).is_none());
+    }
+
+    /// Our button names are SDL's own (the config's `pad_<name>` keys).
+    #[test]
+    fn button_names_are_sdls() {
+        for b in [Button::A, Button::B, Button::X, Button::Y, Button::Back, Button::Guide, Button::Start, Button::LeftStick, Button::RightStick, Button::LeftShoulder, Button::RightShoulder, Button::DPadUp, Button::DPadDown, Button::DPadLeft, Button::DPadRight] {
+            let Some(PadEvent::Button(n, true)) = pad_event(&Event::ControllerButtonDown { timestamp: 0, which: 0, button: b }) else { panic!() };
+            assert_eq!(n, b.string(), "{b:?}");
+        }
+    }
 }

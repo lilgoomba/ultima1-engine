@@ -214,7 +214,7 @@ impl Config {
             s += &format!("repeat_delay = {}   # ms: 250 | 400 | 600 | 800\n", q.repeat_delay);
         }
         if q.repeat_rate != d.repeat_rate {
-            s += &format!("repeat_rate = {}   # steps a second: 4 | 8 | 12 | 16\n", q.repeat_rate);
+            s += &format!("repeat_rate = {}   # steps a second: 0 (the game's pace) | 4 | 8 | 12 | 16\n", q.repeat_rate);
         }
         for l in self.keys.config_lines().into_iter().chain(self.pad.config_lines()) {
             s += &l;
@@ -290,7 +290,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
                 q.repeat_rate = d;
                 Ok(())
             }
-            _ => Err("4, 8, 12 or 16"),
+            _ => Err("0, 4, 8, 12 or 16"),
         },
         "scaling" => Scaling::parse(v).map(|x| q.scaling = x).ok_or("whole or fill"),
         "message_delay" => match v.trim_end_matches('%').parse::<u8>() {

@@ -77,7 +77,8 @@ pub struct Qol {
     pub repeat: bool,
     /// Milliseconds before the repeat starts.
     pub repeat_delay: u16,
-    /// Steps per second while it repeats.
+    /// Steps per second while it repeats (0: the original's pace, one
+    /// step per pass of its main loop).
     pub repeat_rate: u8,
     /// Gamepads (SDL game controllers).
     pub gamepad: bool,
@@ -87,7 +88,7 @@ impl Default for Qol {
     fn default() -> Self {
         Qol { fullscreen: false, scaling: Scaling::Whole, crt: false, slots: false, log: false, turbo: false, message_delay: 100, fast_space: false, steady: false,
             automap: false, minimap: false, charsheet: false, help: false, hints: false, confirm: 0,
-            repeat: false, repeat_delay: 400, repeat_rate: 8, gamepad: false }
+            repeat: false, repeat_delay: 250, repeat_rate: 0, gamepad: false }
     }
 }
 
@@ -95,7 +96,8 @@ impl Default for Qol {
 pub const CONFIRM_VALUES: [u16; 6] = [0, 10, 50, 100, 250, 500];
 /// The auto-repeat delays (ms) and rates (steps per second) offered.
 pub const REPEAT_DELAYS: [u16; 4] = [250, 400, 600, 800];
-pub const REPEAT_RATES: [u8; 4] = [4, 8, 12, 16];
+/// 0 is the game's own pace: one step per pass of the original main loop.
+pub const REPEAT_RATES: [u8; 5] = [0, 4, 8, 12, 16];
 
 /// The next of `list` after `v` (`back`: before), the first if `v` is
 /// not in it.
@@ -142,10 +144,13 @@ impl Qol {
         self.confirm > 0 && v >= i32::from(self.confirm)
     }
 
-    /// The auto-repeat's first wait and its step.
-    pub fn repeat_timing(&self) -> (std::time::Duration, std::time::Duration) {
+    /// The auto-repeat's first wait and its step. `poll` is one pass of
+    /// the original main loop at the current speed (the original moved a
+    /// held key at most once a pass); the step is never shorter.
+    pub fn repeat_timing(&self, poll: std::time::Duration) -> (std::time::Duration, std::time::Duration) {
         use std::time::Duration;
-        (Duration::from_millis(u64::from(self.repeat_delay)), Duration::from_millis(1000 / u64::from(self.repeat_rate.max(1))))
+        let rate = if self.repeat_rate == 0 { poll } else { Duration::from_millis(1000 / u64::from(self.repeat_rate)) };
+        (Duration::from_millis(u64::from(self.repeat_delay)), rate.max(poll))
     }
 
     /// The next message delay in [`MESSAGE_DELAYS`] (`back`: the one before).
@@ -240,9 +245,9 @@ mod tests {
         assert!(q.must_confirm(100) && !q.must_confirm(99));
         assert_eq!(cycle(&CONFIRM_VALUES, 0, false), 10);
         assert_eq!(cycle(&CONFIRM_VALUES, 0, true), 500);
-        assert_eq!(cycle(&REPEAT_RATES, 3, false), 4, "unknown value: the first");
-        let (d, s) = Qol { repeat_delay: 250, repeat_rate: 10, ..q }.repeat_timing();
-        assert_eq!((d.as_millis(), s.as_millis()), (250, 100));
+        assert_eq!(cycle(&REPEAT_RATES, 3, false), 0, "unknown value: the first");
+        let (d, s) = Qol { repeat_delay: 400, repeat_rate: 8, ..q }.repeat_timing(std::time::Duration::from_millis(100));
+        assert_eq!((d.as_millis(), s.as_millis()), (400, 125));
     }
 
     #[test]

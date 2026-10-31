@@ -18,6 +18,38 @@ pub enum Scaling {
     Fill,
 }
 
+/// How fast food goes outdoors (an optional engine rule change).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FoodUse {
+    /// The original's rate.
+    #[default]
+    Original,
+    /// Half the original's rate: every other unit the clock eats is kept
+    /// (the half is engine state only, never in the character record).
+    Half,
+    /// Food never goes down; buying and eating it still work.
+    Off,
+}
+
+impl FoodUse {
+    pub const ALL: [FoodUse; 3] = [FoodUse::Original, FoodUse::Half, FoodUse::Off];
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FoodUse::Original => "original",
+            FoodUse::Half => "half",
+            FoodUse::Off => "off",
+        }
+    }
+    pub fn parse(s: &str) -> Option<FoodUse> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "original" | "on" => Some(FoodUse::Original),
+            "half" | "1/2" => Some(FoodUse::Half),
+            "off" | "none" => Some(FoodUse::Off),
+            _ => None,
+        }
+    }
+}
+
 impl Scaling {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -82,6 +114,11 @@ pub struct Qol {
     pub repeat_rate: u8,
     /// Gamepads (SDL game controllers).
     pub gamepad: bool,
+    /// How fast food goes (rule change; original by default).
+    pub food_use: FoodUse,
+    /// Footsteps on the overworld (enhanced sound only; never with the
+    /// original's beeps).
+    pub footsteps: bool,
 }
 
 impl Default for Qol {
@@ -106,6 +143,8 @@ impl Default for Qol {
             repeat_delay: 250,
             repeat_rate: 0,
             gamepad: false,
+            food_use: FoodUse::Original,
+            footsteps: true,
         }
     }
 }

@@ -464,6 +464,10 @@ arrow_repeat = true
 repeat_delay = 250     # ms: 250 | 400 | 600 | 800
 repeat_rate = 0        # 0 = the game's pace (default) | 4 | 8 | 12 | 16 a second
 gamepad = true
+food_use = "original"  # original (default) | half | off: how fast food goes
+                       # outdoors; buying and eating work in every mode. Half
+                       # keeps its half unit in the engine, not the save.
+footsteps = true       # overworld footsteps (enhanced sound only; default on)
 key_attack = "j"       # an extra key; "none" clears a default
 key_map = "m"
 pad_x = "r"            # a letter/digit, space, enter, esc, up/down/left/right,

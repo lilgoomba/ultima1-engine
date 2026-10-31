@@ -198,6 +198,10 @@ impl Config {
         flag(q.hints, d.hints, "hints", "a line on what a command asks for");
         flag(q.repeat, d.repeat, "arrow_repeat", "our own repeat for held arrows");
         flag(q.gamepad, d.gamepad, "gamepad", "SDL game controllers");
+        flag(q.footsteps, d.footsteps, "footsteps", "overworld footsteps in enhanced sound");
+        if q.food_use != d.food_use {
+            s += &format!("food_use = \"{}\"   # original | half | off\n", q.food_use.as_str());
+        }
         if q.scaling != d.scaling {
             s += &format!("scaling = \"{}\"   # whole | fill\n", q.scaling.as_str());
         }
@@ -268,6 +272,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "hints" => flag(v).map(|b| q.hints = b),
         "arrow_repeat" => flag(v).map(|b| q.repeat = b),
         "gamepad" => flag(v).map(|b| q.gamepad = b),
+        "footsteps" => flag(v).map(|b| q.footsteps = b),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {
                 q.confirm = d;
@@ -289,6 +294,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
             }
             _ => Err("0, 4, 8, 12 or 16"),
         },
+        "food_use" => crate::qol::FoodUse::parse(v).map(|x| q.food_use = x).ok_or("original, half or off"),
         "scaling" => Scaling::parse(v).map(|x| q.scaling = x).ok_or("whole or fill"),
         "message_delay" => match v.trim_end_matches('%').parse::<u8>() {
             Ok(d) if MESSAGE_DELAYS.contains(&d) => {
@@ -511,5 +517,23 @@ mod tests {
             assert_eq!(VideoChoice::parse(v.as_str()), Some(v));
             assert_eq!(VideoChoice::from_parts(v.enhanced(), v.mode()), v);
         }
+    }
+
+    #[test]
+    fn food_use_and_footsteps_round_trip() {
+        use crate::qol::FoodUse;
+        assert_eq!(Config::default().qol.food_use, FoodUse::Original);
+        assert!(Config::default().qol.footsteps);
+        // The defaults write nothing.
+        assert!(!Config::default().to_toml().contains("food_use"));
+        for f in FoodUse::ALL {
+            let mut c = Config::default();
+            c.qol.food_use = f;
+            c.qol.footsteps = false;
+            let back = Config::parse(&c.to_toml());
+            assert_eq!(back.qol.food_use, f);
+            assert!(!back.qol.footsteps);
+        }
+        assert_eq!(Config::parse("food_use = \"half\"\n").qol.food_use, FoodUse::Half);
     }
 }

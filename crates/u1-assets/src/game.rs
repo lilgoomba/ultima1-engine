@@ -874,6 +874,7 @@ impl Game {
             self.ow.messages.clear();
             self.ow.attacks.clear();
             self.ow.dead = false;
+            self.ow.food_use = io.features().food_use;
             self.ow.end_turn(&self.a.map, &self.a.t);
             let msgs: Vec<String> = self.ow.messages.drain(..).collect();
             for s in msgs {

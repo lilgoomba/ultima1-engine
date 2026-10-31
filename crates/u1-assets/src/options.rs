@@ -44,10 +44,12 @@ pub enum Row {
     RepeatDelay,
     RepeatRate,
     Gamepad,
+    Food,
+    Footsteps,
     Keys,
 }
 
-pub const ROWS: [Row; 22] = [
+pub const ROWS: [Row; 24] = [
     Row::Video,
     Row::Sound,
     Row::Fullscreen,
@@ -69,6 +71,8 @@ pub const ROWS: [Row; 22] = [
     Row::RepeatDelay,
     Row::RepeatRate,
     Row::Gamepad,
+    Row::Food,
+    Row::Footsteps,
     Row::Keys,
 ];
 
@@ -99,6 +103,8 @@ impl Row {
             Row::RepeatDelay => "Repeat delay",
             Row::RepeatRate => "Repeat rate",
             Row::Gamepad => "Gamepad",
+            Row::Food => "Food use",
+            Row::Footsteps => "Footsteps",
             Row::Keys => "Keys",
         }
     }
@@ -190,6 +196,14 @@ impl OptionsMenu {
             Row::RepeatRate if q.repeat_rate == 0 => "Game pace".to_string(),
             Row::RepeatRate => format!("{} a second", q.repeat_rate),
             Row::Gamepad => on(q.gamepad),
+            Row::Food => match q.food_use {
+                qol::FoodUse::Original => "Original",
+                qol::FoodUse::Half => "Half",
+                qol::FoodUse::Off => "Off",
+            }
+            .into(),
+            Row::Footsteps if self.sound != SoundMode::Enhanced => if q.footsteps { "On (enh. sound)" } else { "Off" }.into(),
+            Row::Footsteps => on(q.footsteps),
             Row::Keys => "Enter: change".into(),
         }
     }
@@ -228,6 +242,8 @@ impl OptionsMenu {
                     Row::RepeatDelay => q.repeat_delay = qol::cycle(&qol::REPEAT_DELAYS, q.repeat_delay, k == keys::LEFT),
                     Row::RepeatRate => q.repeat_rate = qol::cycle(&qol::REPEAT_RATES, q.repeat_rate, k == keys::LEFT),
                     Row::Gamepad => q.gamepad ^= true,
+                    Row::Food => q.food_use = qol::cycle(&qol::FoodUse::ALL, q.food_use, k == keys::LEFT),
+                    Row::Footsteps => q.footsteps ^= true,
                     Row::Keys => return MenuKey::Rebind,
                 }
                 if ROWS[self.row] == Row::Video {

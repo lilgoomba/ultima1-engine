@@ -31,8 +31,8 @@ jobs:
         run: packaging/build-appimage.sh
       - name: Check it
         run: |
-          ls -l build/*.AppImage
-          ./build/*.AppImage --appimage-extract >/dev/null
+          ls -l build/ultima1-engine-*.AppImage
+          ./build/ultima1-engine-*.AppImage --appimage-extract >/dev/null
           if find squashfs-root -type f | grep -iE '\.(exe|bin|u1|16|4|com)$'; then
             echo "game data in the AppImage"; exit 1
           fi
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: appimage
-          path: build/*.AppImage
+          path: build/ultima1-engine-*.AppImage
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
@@ -52,5 +52,5 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           pre=""
           case "$tag" in *-*) pre="--prerelease" ;; esac
-          gh release create "$tag" build/*.AppImage --title "ultima1-engine $tag" $pre \
+          gh release create "$tag" build/ultima1-engine-*.AppImage --title "ultima1-engine $tag" $pre \
             --notes "Linux AppImage of ultima1-engine $tag. It contains no game files: you need your own copy of Ultima I (CD-ROM or GOG). See PLAYING.md for setup and keys."

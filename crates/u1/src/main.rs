@@ -738,6 +738,8 @@ struct SdlIo {
     canvas: sdl2::render::WindowCanvas,
     /// The touch controls (on Android, or with U1_TOUCH=1).
     touch: Option<TouchUi>,
+    /// "Import again" was chosen: end, for the import screen.
+    reimport: bool,
     tex: sdl2::render::Texture<'static>,
     events: sdl2::EventPump,
     palette: [Rgb; 16],
@@ -1092,6 +1094,14 @@ impl SdlIo {
     }
 
     fn pump(&mut self) -> IoResult<()> {
+        if self.reimport {
+            // Android's activity sees the marker as the program ends and
+            // opens the import screen (android/.../U1Activity.java).
+            if let Some(d) = self.game_dir.parent() {
+                let _ = std::fs::write(d.join("reimport"), b"");
+            }
+            return Err(Halt);
+        }
         self.sync_music();
         use sdl2::event::Event;
         use sdl2::keyboard::{Keycode, Mod};
@@ -1572,6 +1582,7 @@ impl SdlIo {
             Modal::Options => {
                 let video = VideoChoice::from_parts(self.enhanced, self.wanted);
                 let mut m = OptionsMenu::new(video, self.sound, self.avail).with_qol(self.qol);
+                m.import = cfg!(target_os = "android");
                 self.run_modal(
                     t,
                     &mut m,
@@ -1585,6 +1596,10 @@ impl SdlIo {
                         }
                         MenuKey::Rebind => {
                             io.modal_wanted = Some(Modal::Rebind);
+                            false
+                        }
+                        MenuKey::Import => {
+                            io.reimport = true;
                             false
                         }
                         MenuKey::Close => false,
@@ -1908,6 +1923,7 @@ fn play(a: &Args) -> Result<(), String> {
     let mut io = SdlIo {
         canvas,
         touch,
+        reimport: false,
         tex,
         events,
         palette,

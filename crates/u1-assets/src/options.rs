@@ -50,6 +50,8 @@ pub enum Row {
     MusicVolume,
     Smoothing,
     Keys,
+    /// Android only: bring in the game files again (`OptionsMenu::import`).
+    Import,
 }
 
 pub const ROWS: [Row; 27] = [
@@ -81,6 +83,17 @@ pub const ROWS: [Row; 27] = [
     Row::Smoothing,
     Row::Keys,
 ];
+
+/// The rows on Android, where the game files are imported into the app.
+pub const ROWS_IMPORT: [Row; 28] = {
+    let mut r = [Row::Import; 28];
+    let mut i = 0;
+    while i < ROWS.len() {
+        r[i] = ROWS[i];
+        i += 1;
+    }
+    r
+};
 
 /// Where the values start: one blank after the longest label.
 const VALUE_COL: usize = 17;
@@ -118,6 +131,7 @@ impl Row {
             Row::MusicVolume => "Music volume",
             Row::Smoothing => "Smoothing",
             Row::Keys => "Keys",
+            Row::Import => "Game files",
         }
     }
 }
@@ -132,6 +146,8 @@ pub struct OptionsMenu {
     pub avail: [bool; 4],
     /// The optional engine features (SPEC §22).
     pub qol: Qol,
+    /// The "Game files" row is there (Android).
+    pub import: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,6 +158,8 @@ pub enum MenuKey {
     Close,
     /// Open the key rebinding window.
     Rebind,
+    /// Choose the game files again (Android).
+    Import,
 }
 
 /// The engine's own windows (options, save slots, message log): black
@@ -170,7 +188,16 @@ impl OptionsMenu {
     pub const BOX: (usize, usize, usize, usize) = PANEL;
 
     pub fn new(video: VideoChoice, sound: SoundMode, avail: [bool; 4]) -> Self {
-        OptionsMenu { row: 0, video, sound, avail, qol: Qol::default() }
+        OptionsMenu { row: 0, video, sound, avail, qol: Qol::default(), import: false }
+    }
+
+    /// The rows shown: [`ROWS`], or [`ROWS_IMPORT`] with `import`.
+    pub fn rows(&self) -> &'static [Row] {
+        if self.import {
+            &ROWS_IMPORT
+        } else {
+            &ROWS
+        }
     }
 
     pub fn with_qol(mut self, qol: Qol) -> Self {
@@ -225,23 +252,25 @@ impl OptionsMenu {
             }
             .into(),
             Row::Keys => "Enter: change".into(),
+            Row::Import => "Enter: import again".into(),
         }
     }
 
     pub fn key(&mut self, k: u8) -> MenuKey {
         match k {
             keys::UP => {
-                self.row = (self.row + ROWS.len() - 1) % ROWS.len();
+                self.row = (self.row + self.rows().len() - 1) % self.rows().len();
                 MenuKey::Stay
             }
             keys::DOWN => {
-                self.row = (self.row + 1) % ROWS.len();
+                self.row = (self.row + 1) % self.rows().len();
                 MenuKey::Stay
             }
             keys::LEFT | keys::RIGHT | b' ' => {
                 let step = if k == keys::LEFT { 3 } else { 1 };
+                let row = self.rows()[self.row];
                 let q = &mut self.qol;
-                match ROWS[self.row] {
+                match row {
                     Row::Video | Row::Sound => {}
                     Row::Fullscreen => q.fullscreen ^= true,
                     Row::Scaling => q.scaling = if q.scaling == Scaling::Whole { Scaling::Fill } else { Scaling::Whole },
@@ -268,8 +297,9 @@ impl OptionsMenu {
                     Row::MusicVolume => q.music_volume = qol::cycle(&qol::MUSIC_VOLUMES, q.music_volume, k == keys::LEFT),
                     Row::Smoothing => q.smoothing = qol::cycle(&qol::Smoothing::ALL, q.smoothing, k == keys::LEFT),
                     Row::Keys => return MenuKey::Rebind,
+                    Row::Import => return MenuKey::Import,
                 }
-                if ROWS[self.row] == Row::Video {
+                if self.rows()[self.row] == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);
                     for _ in 0..4 {
                         i = (i + step) % 4;
@@ -284,7 +314,7 @@ impl OptionsMenu {
                     } else {
                         MenuKey::Changed
                     }
-                } else if ROWS[self.row] == Row::Sound {
+                } else if self.rows()[self.row] == Row::Sound {
                     let i = SOUNDS.iter().position(|&s| s == self.sound).unwrap_or(0);
                     self.sound = SOUNDS[(i + step.min(2)) % 3];
                     MenuKey::Changed
@@ -292,7 +322,8 @@ impl OptionsMenu {
                     MenuKey::Changed
                 }
             }
-            keys::ENTER if ROWS[self.row] == Row::Keys => MenuKey::Rebind,
+            keys::ENTER if self.rows()[self.row] == Row::Keys => MenuKey::Rebind,
+            keys::ENTER if self.rows()[self.row] == Row::Import => MenuKey::Import,
             keys::ENTER | keys::ESC => MenuKey::Close,
             _ => MenuKey::Stay,
         }
@@ -311,10 +342,10 @@ impl OptionsMenu {
         if top > 0 {
             t.print_at_attr(36, 4, "\u{18}", TEXT);
         }
-        if top + SHOWN < ROWS.len() {
+        if top + SHOWN < self.rows().len() {
             t.print_at_attr(36, 3 + SHOWN, "\u{19}", TEXT);
         }
-        for (i, &r) in ROWS.iter().enumerate().skip(top).take(SHOWN) {
+        for (i, &r) in self.rows().iter().enumerate().skip(top).take(SHOWN) {
             let row = 4 + i - top;
             let sel = i == self.row;
             t.print_at_attr(2, row, if sel { "\u{10}" } else { " " }, WARN);
@@ -332,8 +363,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_import_row_only_where_asked() {
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        assert!(!m.rows().contains(&Row::Import));
+        m.import = true;
+        m.key(keys::UP);
+        assert_eq!(m.rows()[m.row], Row::Import, "the last row");
+        assert_eq!(m.key(keys::ENTER), MenuKey::Import);
+        assert_eq!(m.key(keys::DOWN), MenuKey::Stay);
+        assert_eq!(m.row, 0);
+    }
+
+    #[test]
     fn labels_and_values_never_touch() {
-        for r in ROWS {
+        for r in ROWS_IMPORT {
             assert!(3 + r.label().len() + 1 < VALUE_COL, "{r:?}");
         }
     }

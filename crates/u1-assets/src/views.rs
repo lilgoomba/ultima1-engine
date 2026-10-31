@@ -109,7 +109,7 @@ impl Game {
         let saved = self.term.clone();
         match v {
             View::Map if self.mode == crate::dgame::DUNGEON => self.draw_automap(),
-            View::Map => self.draw_minimap(),
+            View::Map => return self.show_minimap(io, saved),
             View::Help => self.draw_help(),
             View::Character => self.draw_character(),
         }
@@ -129,7 +129,7 @@ impl Game {
         const S: i32 = 14;
         let (x0, y0) = (16, 24);
         let (wall, floor, door, up, down, field, you, frame) =
-            (self.vc(GREY, 3), self.vc(DARK, 2), self.vc(BROWN, 1), self.vc(YELLOW, 3), self.vc(LGREEN, 1), self.vc(MAGENTA, 2), self.vc(WARN, 3), self.vc(BLUE, 2));
+            (self.vc(GREY, 3), self.vc(DARK, 2), self.vc(BROWN, 1), self.vc(YELLOW, 3), self.vc(LGREEN, 1), self.vc(MAGENTA, 3), self.vc(WARN, 3), self.vc(BLUE, 2));
         let n = DUNGEON_SIZE as i32;
         self.term.line(x0 - 2, y0 - 2, x0 + n * S + 1, y0 - 2, frame);
         self.term.line(x0 - 2, y0 + n * S + 1, x0 + n * S + 1, y0 + n * S + 1, frame);
@@ -166,11 +166,7 @@ impl Game {
                             self.term.plot(cx - 1, tip, c);
                             self.term.plot(cx, tip, c);
                         }
-                        Seen::Field => {
-                            for k in (2..S - 2).step_by(3) {
-                                self.term.line(x + 2, y + k, x + S - 3, y + k, field);
-                            }
-                        }
+                        Seen::Field => self.field_glyph(x, y, S, field),
                         _ => {}
                     }
                 }
@@ -193,14 +189,17 @@ impl Game {
         let t = self.vc(TEXT, 1);
         let col = 22usize;
         let mut row = 4usize;
-        let face = ["", "west", "north", "east", "south"].get(facing as usize).copied().unwrap_or("");
+        // The direction in the original's own words, as its compass under
+        // the dungeon view shows it.
+        let face = self.s(m::COMPASS[crate::dview::compass_index(facing)]);
         let w = self.vc(WHITE, 3);
-        self.term.print_at_attr(col, row, &format!("Facing {face}"), w);
+        self.term.print_at_attr(col, row, &format!("Facing {}", face.trim()), w);
         row += 2;
         for (label, c, kind) in [("Wall", wall, 0), ("Corridor", floor, 1), ("Door", door, 2), ("Ladder up", up, 3), ("Ladder down", down, 4), ("Force field", field, 5), ("You", you, 6)] {
             let (x, y) = (col * 8, row * 8);
             match kind {
-                0 | 1 | 2 | 5 => self.term.fill(x, y, x + 9, y + 6, c),
+                5 => self.field_glyph(x as i32, y as i32 - 3, 12, c),
+                0 | 1 | 2 => self.term.fill(x, y, x + 9, y + 6, c),
                 3 | 4 => {
                     self.term.line(x as i32 + 2, y as i32, x as i32 + 2, y as i32 + 6, c);
                     self.term.line(x as i32 + 7, y as i32, x as i32 + 7, y as i32 + 6, c);
@@ -215,18 +214,59 @@ impl Game {
         self.term.print_at_attr(col, row + 1, &format!("Seen {seen} of {}", n * n), t);
     }
 
+    /// A force field on the automap, a `size` square at (x, y): stripes
+    /// over the corridor colour on 16 colours; on CGA, where the
+    /// corridor and the field share a colour, a lattice of crossing
+    /// diagonals on black instead, so the two differ in shape as well.
+    fn field_glyph(&mut self, x: i32, y: i32, size: i32, c: u8) {
+        if self.term.cga {
+            let (xu, yu, su) = (x as usize, y as usize, size as usize);
+            self.term.fill(xu + 1, yu + 1, xu + su - 2, yu + su - 2, BLACK);
+            for i in 1..size - 1 {
+                for j in 1..size - 1 {
+                    if (i + j) % 4 == 0 || (i - j).rem_euclid(4) == 0 {
+                        self.term.plot(x + i, y + j, c);
+                    }
+                }
+            }
+        } else {
+            for k in (2..size - 2).step_by(3) {
+                self.term.line(x + 2, y + k, x + size - 3, y + k, c);
+            }
+        }
+    }
+
     // ------------------------------------------------------------ mini-map
 
-    pub fn draw_minimap(&mut self) {
-        self.view_frame("Map of the lands you have seen", "Tab or any key: back");
+    /// The mini-map opens zoomed in round the player; Z switches between
+    /// that and the whole world, any other key goes back.
+    fn show_minimap(&mut self, io: &mut dyn Io, saved: crate::term::Term) -> IoResult<()> {
+        let mut whole = false;
+        loop {
+            self.draw_minimap(whole);
+            match io.key(&self.term)? {
+                b'z' | b'Z' => whole = !whole,
+                _ => break,
+            }
+            self.term = saved.clone();
+        }
+        self.term = saved;
+        Ok(())
+    }
+
+    /// Cells drawn per side when zoomed in, and the size of each.
+    pub const MINIMAP_ZOOM: usize = 4;
+
+    pub fn draw_minimap(&mut self, whole: bool) {
+        let foot = if whole { "Z zoom in - other keys: back" } else { "Z whole map - other keys: back" };
+        self.view_frame("Map of the lands you have seen", foot);
+        if !whole {
+            return self.draw_minimap_zoomed();
+        }
         let (x0, y0) = (12usize, 22usize);
         let colours = [self.vc(BLUE, 2), self.vc(LGREEN, 1), self.vc(GREEN, 1), self.vc(GREY, 3)];
         let plain = self.vc(LGREEN, 1);
-        let b = self.vc(DARK, 2);
-        self.term.line(x0 as i32 - 2, y0 as i32 - 2, (x0 + WORLD_WIDTH) as i32 + 1, y0 as i32 - 2, b);
-        self.term.line(x0 as i32 - 2, (y0 + WORLD_HEIGHT) as i32 + 1, (x0 + WORLD_WIDTH) as i32 + 1, (y0 + WORLD_HEIGHT) as i32 + 1, b);
-        self.term.line(x0 as i32 - 2, y0 as i32 - 2, x0 as i32 - 2, (y0 + WORLD_HEIGHT) as i32 + 1, b);
-        self.term.line((x0 + WORLD_WIDTH) as i32 + 1, y0 as i32 - 2, (x0 + WORLD_WIDTH) as i32 + 1, (y0 + WORLD_HEIGHT) as i32 + 1, b);
+        self.minimap_frame(x0, y0);
         for y in 0..WORLD_HEIGHT {
             for x in 0..WORLD_WIDTH {
                 if !self.explore.seen_world(x, y) {
@@ -262,6 +302,84 @@ impl Game {
             }
         }
         self.term.plot(px, py, you);
+        self.minimap_legend(&visited, counts);
+    }
+
+    /// The frame round the map area.
+    fn minimap_frame(&mut self, x0: usize, y0: usize) {
+        let b = self.vc(DARK, 2);
+        let (l, t, r, bt) = (x0 as i32 - 2, y0 as i32 - 2, (x0 + WORLD_WIDTH) as i32 + 1, (y0 + WORLD_HEIGHT) as i32 + 1);
+        self.term.line(l, t, r, t, b);
+        self.term.line(l, bt, r, bt, b);
+        self.term.line(l, t, l, bt, b);
+        self.term.line(r, t, r, bt, b);
+    }
+
+    /// The same area, each cell a square `MINIMAP_ZOOM` pixels a side,
+    /// centred on the player (the world wraps round, as it does to walk).
+    fn draw_minimap_zoomed(&mut self) {
+        let z = Self::MINIMAP_ZOOM;
+        let (x0, y0) = (12usize, 22usize);
+        self.minimap_frame(x0, y0);
+        let (cols, rows) = (WORLD_WIDTH / z, WORLD_HEIGHT / z);
+        let (w, h) = (WORLD_WIDTH as i32, WORLD_HEIGHT as i32);
+        let (cx, cy) = (self.ow.x.rem_euclid(w), self.ow.y.rem_euclid(h));
+        let (ox, oy) = (cx - cols as i32 / 2, cy - rows as i32 / 2);
+        let colours = [self.vc(BLUE, 2), self.vc(LGREEN, 1), self.vc(GREEN, 1), self.vc(GREY, 3)];
+        let plain = self.vc(LGREEN, 1);
+        let at = |i: usize, j: usize| (x0 + i * z, y0 + j * z);
+        for j in 0..rows {
+            for i in 0..cols {
+                let (x, y) = ((ox + i as i32).rem_euclid(w) as usize, (oy + j as i32).rem_euclid(h) as usize);
+                if !self.explore.seen_world(x, y) {
+                    continue;
+                }
+                let c = colours.get(self.a.map.cell(x, y) as usize).copied().unwrap_or(plain);
+                let (px, py) = at(i, j);
+                self.term.fill(px, py, px + z - 1, py + z - 1, c);
+            }
+        }
+        let mut counts = [0usize; 4];
+        let visited: Vec<(u8, u8, usize)> = self.a.locs.locations.iter().filter(|l| self.explore.visited.contains(&(l.id as u8))).map(|l| (l.x, l.y, l.id as usize)).collect();
+        let blk = self.vc(BLACK, 0);
+        for &(x, y, id) in &visited {
+            let Some(k) = kind_of(id) else { continue };
+            counts[k as usize] += 1;
+            let (i, j) = ((x as i32 - ox).rem_euclid(w), (y as i32 - oy).rem_euclid(h));
+            if i >= cols as i32 || j >= rows as i32 {
+                continue;
+            }
+            let c = match k {
+                LocationKind::Town => self.vc(WHITE, 3),
+                LocationKind::Castle => self.vc(YELLOW, 3),
+                LocationKind::Landmark => self.vc(TEXT, 1),
+                LocationKind::Dungeon => self.vc(WARN, 2),
+            };
+            // A ring of the place's colour with a dark middle.
+            let (px, py) = at(i as usize, j as usize);
+            self.term.fill(px, py, px + z - 1, py + z - 1, c);
+            self.term.fill(px + 1, py + 1, px + z - 2, py + z - 2, blk);
+        }
+        let you = self.vc(MAGENTA, 2);
+        let (px, py) = at(cols / 2, rows / 2);
+        let (px, py) = ((px + z / 2) as i32, (py + z / 2) as i32);
+        for d in 1..=6 {
+            for (dx, dy) in [(d, 0), (-d, 0), (0, d), (0, -d)] {
+                self.term.plot(px + dx, py + dy, if d <= 2 { blk } else { you });
+            }
+        }
+        self.term.plot(px, py, you);
+        self.minimap_legend(&visited, counts);
+    }
+
+    fn minimap_legend(&mut self, visited: &[(u8, u8, usize)], counts: [usize; 4]) {
+        let you = self.vc(MAGENTA, 2);
+        let mark = |k: LocationKind, me: &Game| match k {
+            LocationKind::Town => me.vc(WHITE, 3),
+            LocationKind::Castle => me.vc(YELLOW, 3),
+            LocationKind::Landmark => me.vc(TEXT, 1),
+            LocationKind::Dungeon => me.vc(WARN, 2),
+        };
         // Legend.
         let t = self.vc(TEXT, 1);
         let col = 24usize;

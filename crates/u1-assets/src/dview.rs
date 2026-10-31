@@ -639,16 +639,21 @@ pub fn visible(lv: &DungeonLevel, pa: i32, pb: i32, facing: u16) -> Vec<(i32, i3
     out
 }
 
-/// Compass text between two ornaments under the view.
-pub fn compass(t: &mut Term, e: &Exe, facing: u16) {
-    t.ornament_left(16, 19);
-    let i = match facing {
+/// Which of the original's compass words (North, South, East, West) a
+/// facing is.
+pub fn compass_index(facing: u16) -> usize {
+    match facing {
         NORTH => 0,
         SOUTH => 1,
         EAST => 2,
         _ => 3,
-    };
-    t.print(&e.s(m::COMPASS[i]));
+    }
+}
+
+/// Compass text between two ornaments under the view.
+pub fn compass(t: &mut Term, e: &Exe, facing: u16) {
+    t.ornament_left(16, 19);
+    t.print(&e.s(m::COMPASS[compass_index(facing)]));
     t.ornament_right(24, 19);
     t.cursor(1, 24);
 }

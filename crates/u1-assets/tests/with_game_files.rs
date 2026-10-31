@@ -1237,6 +1237,48 @@ fn automap_screen_shows_the_seen_count() {
 }
 
 #[test]
+fn automap_facing_is_the_original_compass_word() {
+    // The dungeon view's compass (the original's words) and the automap
+    // agree, for each way round.
+    for (turns, word) in [("", "South"), ("{left}", "East"), ("{left}{left}", "North"), ("{right}", "West")] {
+        let keys = format!("e{turns}");
+        let mut io = ScriptIo::from_text(&keys);
+        io.qol = second_group();
+        let Some(g) = play_io(59, 29, &mut io, 2, &[], |_| {}) else { return };
+        let compass = g.term.row_text(19);
+        assert!(compass.contains(word), "{turns}: compass {compass:?}");
+        let mut io = ScriptIo::from_text(&format!("{keys}{{map}}"));
+        io.qol = second_group();
+        let g = play_io(59, 29, &mut io, 2, &[], |_| {}).unwrap();
+        let all: String = (0..25).map(|r| g.term.row_text(r)).collect::<Vec<_>>().join("\n");
+        assert!(all.contains(&format!("Facing {word}")), "{turns}: {all}");
+    }
+}
+
+#[test]
+fn minimap_opens_zoomed_and_z_switches_to_the_whole_world() {
+    let walk = format!("{}{}", rep("{right}", 4), rep("{down}", 2));
+    let Some(plain) = play(45, 38, &walk) else { return };
+    let text = |g: &Game| (0..25).map(|r| g.term.row_text(r)).collect::<Vec<_>>().join("\n");
+    let mut io = ScriptIo::from_text(&format!("{walk}{{map}}"));
+    io.qol = second_group();
+    let zoomed = play_io(45, 38, &mut io, 2, &[], |_| {}).unwrap();
+    assert!(text(&zoomed).contains("Z whole map"), "{}", text(&zoomed));
+    let mut io = ScriptIo::from_text(&format!("{walk}{{map}}z"));
+    io.qol = second_group();
+    let whole = play_io(45, 38, &mut io, 2, &[], |_| {}).unwrap();
+    assert!(text(&whole).contains("Z zoom in"), "{}", text(&whole));
+    assert_ne!(zoomed.term.px, whole.term.px);
+    // Z, Z again, then any key: back to the game as it was (the text; the
+    // water moves on with each key, so not every pixel).
+    let mut io = ScriptIo::from_text(&format!("{walk}{{map}}zZ{{map}}"));
+    io.qol = second_group();
+    let back = play_io(45, 38, &mut io, 2, &[], |_| {}).unwrap();
+    assert_eq!(text(&plain), text(&back));
+    assert_eq!(plain.rec.as_bytes(), back.rec.as_bytes());
+}
+
+#[test]
 fn sidecar_is_written_beside_the_save_and_the_record_is_the_original_s() {
     let dir = std::env::temp_dir().join(format!("u1-qol2-sidecar-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);

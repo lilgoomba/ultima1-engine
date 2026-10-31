@@ -110,12 +110,12 @@ pub fn layout(ww: u32, wh: u32, dpi: f32, o: Overlay) -> Vec<Button> {
         ("F1", Act::Options),
         ("Map", Act::Map),
         ("Log", Act::Log),
-        ("QSav", Act::QuickSave),
-        ("QLd", Act::QuickLoad),
+        ("Sav", Act::QuickSave),
+        ("Lod", Act::QuickLoad),
         ("Kbd", Act::Keyboard),
         ("Ent", Act::Key(keys::ENTER)),
         ("Esc", Act::Key(keys::ESC)),
-        ("Hide", Act::Hide),
+        ("Hid", Act::Hide),
     ];
     let sh = u * 3 / 4;
     for (i, (l, a)) in top.iter().enumerate() {

@@ -48,6 +48,7 @@ use u1_assets::sound::{self, Sfx};
 use u1_assets::soundpack::{SoundMode, SoundPack};
 use u1_assets::tcd::TownCastleMaps;
 use u1_assets::term::{Term, H, W};
+use u1_assets::touch;
 
 /// A picture and the rectangle of it drawn over the screen.
 type Overlay<'a> = (&'a Term, (usize, usize, usize, usize));
@@ -716,8 +717,27 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
 
 /// The window: every poll shows the screen and waits out the rest of the
 /// original's 130 ms.
+/// The on-screen controls' state (u1_assets::touch).
+struct TouchUi {
+    o: touch::Overlay,
+    dpi: f32,
+    /// The buttons as last laid out (for the window's size then).
+    buttons: Vec<touch::Button>,
+    /// Which button each finger (or the mouse, -1) pressed.
+    down: Vec<(i64, touch::Act)>,
+    text: sdl2::keyboard::TextInputUtil,
+}
+
+/// The id the arrow repeat knows a finger by (keys use their keycodes,
+/// which are all far from these).
+fn finger_tag(f: i64) -> i32 {
+    -1000 - (f & 0xFFFF) as i32
+}
+
 struct SdlIo {
     canvas: sdl2::render::WindowCanvas,
+    /// The touch controls (on Android, or with U1_TOUCH=1).
+    touch: Option<TouchUi>,
     tex: sdl2::render::Texture<'static>,
     events: sdl2::EventPump,
     palette: [Rgb; 16],
@@ -904,8 +924,12 @@ impl SdlIo {
     fn redraw(&mut self) {
         let Some((w, h, crt)) = self.last_frame else { return };
         let (ww, wh) = self.canvas.output_size().unwrap_or((w, h));
-        let (x, y, dw, dh) = qol::fit(ww, wh, w, h, self.qol.scaling);
-        let dst = sdl2::rect::Rect::new(x, y, dw, dh);
+        let (ax, ay, aw, ah) = match &self.touch {
+            Some(t) => touch::game_area(ww, wh, t.dpi, t.o),
+            None => (0, 0, ww, wh),
+        };
+        let (x, y, dw, dh) = qol::fit(aw, ah, w, h, self.qol.scaling);
+        let dst = sdl2::rect::Rect::new(ax + x, ay + y, dw, dh);
         self.canvas.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
         self.canvas.clear();
         let tex = match (&self.crt_tex, crt) {
@@ -913,7 +937,117 @@ impl SdlIo {
             _ => &self.tex,
         };
         let _ = self.canvas.copy(tex, None, dst);
+        self.draw_touch(ww, wh);
         self.canvas.present();
+    }
+
+    /// The touch buttons, see-through, over whatever is under them.
+    fn draw_touch(&mut self, ww: u32, wh: u32) {
+        use sdl2::pixels::Color;
+        use sdl2::rect::Rect;
+        let Some(t) = &mut self.touch else { return };
+        t.buttons = touch::layout(ww, wh, t.dpi, t.o);
+        self.canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
+        for b in &t.buttons {
+            let pressed = t.down.iter().any(|d| d.1 == b.act);
+            let r = Rect::new(b.x, b.y, b.w as u32, b.h as u32);
+            self.canvas.set_draw_color(if pressed { Color::RGBA(200, 200, 255, 150) } else { Color::RGBA(60, 60, 90, 90) });
+            let _ = self.canvas.fill_rect(r);
+            self.canvas.set_draw_color(Color::RGBA(220, 220, 255, 110));
+            let _ = self.canvas.draw_rect(r);
+            // The label in the engine's own font, as large as fits.
+            let n = b.label.chars().count().max(1) as i32;
+            let px = ((b.h * 5 / 10) / 8).min(b.w * 85 / 100 / (8 * n)).max(1);
+            let (lx, ly) = (b.x + (b.w - 8 * px * n) / 2, b.y + (b.h - 8 * px) / 2);
+            let mut dots = Vec::new();
+            for (i, c) in b.label.chars().enumerate() {
+                for (row, bits) in u1_assets::font::glyph(c).iter().enumerate() {
+                    for col in 0..8 {
+                        if bits & (0x80 >> col) != 0 {
+                            dots.push(Rect::new(lx + (i as i32 * 8 + col) * px, ly + row as i32 * px, px as u32, px as u32));
+                        }
+                    }
+                }
+            }
+            self.canvas.set_draw_color(Color::RGBA(255, 255, 255, 200));
+            let _ = self.canvas.fill_rects(&dots);
+        }
+        self.canvas.set_blend_mode(sdl2::render::BlendMode::None);
+    }
+
+    /// A touch (or, with U1_TOUCH, a click) at window pixel (x, y).
+    fn touch_down(&mut self, id: i64, x: i32, y: i32) {
+        let act = {
+            let Some(t) = &mut self.touch else { return };
+            let Some(b) = touch::hit(&t.buttons, x, y) else { return };
+            let act = b.act;
+            t.down.retain(|d| d.0 != id);
+            t.down.push((id, act));
+            act
+        };
+        use touch::Act;
+        match act {
+            Act::Key(c) => {
+                let name = match c {
+                    keys::ENTER => "return".to_string(),
+                    keys::ESC => "escape".to_string(),
+                    keys::BACKSPACE => "backspace".to_string(),
+                    b' ' => "space".to_string(),
+                    c => (c as char).to_ascii_lowercase().to_string(),
+                };
+                self.pad_key(c, &name);
+            }
+            Act::Arrow(a) => {
+                let name = match a {
+                    keys::UP => "up",
+                    keys::DOWN => "down",
+                    keys::LEFT => "left",
+                    _ => "right",
+                };
+                self.pad_key(a, name);
+                if !self.in_menu {
+                    // Held, it repeats (whatever the key-repeat option).
+                    self.hold_arrow(a, finger_tag(id));
+                }
+            }
+            Act::Options => self.open(Modal::Options),
+            Act::Map if self.in_menu => {}
+            Act::Map if self.wanted_code(keys::MAP) => self.pending.push_back((None, Some(keys::MAP))),
+            Act::Map => self.note("Map: turn on Automap or Minimap (F1)"),
+            Act::Log if self.qol.log && (self.in_menu || !self.front) => self.open(Modal::Log),
+            Act::Log => self.note("Log: turn on the Message log (F1)"),
+            Act::QuickSave | Act::QuickLoad if !self.qol.slots => self.note("Turn on Save slots (F1) first"),
+            Act::QuickSave | Act::QuickLoad if self.in_menu => {}
+            Act::QuickSave => self.request(SaveReq::Save(Slot::Quick)),
+            Act::QuickLoad => self.request(SaveReq::Load(Slot::Quick)),
+            Act::Keyboard | Act::Numbers | Act::Hide | Act::Show => {
+                let Some(t) = &mut self.touch else { return };
+                match act {
+                    Act::Keyboard if t.text.is_active() => t.text.stop(),
+                    Act::Keyboard => t.text.start(),
+                    Act::Numbers => t.o.numbers = !t.o.numbers,
+                    _ => t.o.hidden = !t.o.hidden,
+                }
+            }
+        }
+        self.redraw();
+    }
+    fn touch_up(&mut self, id: i64) {
+        let Some(t) = &mut self.touch else { return };
+        if let Some(i) = t.down.iter().position(|d| d.0 == id) {
+            t.down.remove(i);
+            self.held.release(finger_tag(id));
+            self.redraw();
+        }
+    }
+
+    /// A finger sliding off its button lets go of it (an arrow stops).
+    fn touch_move(&mut self, id: i64, x: i32, y: i32) {
+        let Some(t) = &self.touch else { return };
+        let Some(&(_, act)) = t.down.iter().find(|d| d.0 == id) else { return };
+        if touch::hit(&t.buttons, x, y).map(|b| b.act) != Some(act) {
+            self.touch_up(id);
+        }
     }
 
     /// `d` under the speed settings.
@@ -965,6 +1099,19 @@ impl SdlIo {
         for ev in evs {
             match ev {
                 Event::Quit { .. } => return Err(Halt),
+                Event::FingerDown { finger_id, x, y, .. } | Event::FingerUp { finger_id, x, y, .. } | Event::FingerMotion { finger_id, x, y, .. } if self.touch.is_some() => {
+                    let (ww, wh) = self.canvas.output_size().unwrap_or((1, 1));
+                    let (px, py) = ((x * ww as f32) as i32, (y * wh as f32) as i32);
+                    match ev {
+                        Event::FingerDown { .. } => self.touch_down(finger_id, px, py),
+                        Event::FingerUp { .. } => self.touch_up(finger_id),
+                        _ => self.touch_move(finger_id, px, py),
+                    }
+                }
+                // The mouse stands in for a finger on the desktop (SDL's
+                // copies of real touches are left out).
+                Event::MouseButtonDown { which, x, y, .. } if self.touch.is_some() && which != u32::MAX => self.touch_down(-1, x, y),
+                Event::MouseButtonUp { which, .. } if self.touch.is_some() && which != u32::MAX => self.touch_up(-1),
                 Event::Window { win_event, .. } => {
                     use sdl2::event::WindowEvent as We;
                     if matches!(win_event, We::SizeChanged(..) | We::Resized(..) | We::Exposed | We::Maximized | We::Restored | We::Shown) {
@@ -987,7 +1134,8 @@ impl SdlIo {
                         Keycode::Up | Keycode::Kp8 => Some(keys::UP),
                         Keycode::Down | Keycode::Kp2 => Some(keys::DOWN),
                         Keycode::Return | Keycode::KpEnter => Some(keys::ENTER),
-                        Keycode::Escape => Some(keys::ESC),
+                        // Android's Back is Esc.
+                        Keycode::Escape | Keycode::AcBack => Some(keys::ESC),
                         Keycode::Backspace => Some(keys::BACKSPACE),
                         // The engine's own keys: none of them the original's.
                         Keycode::F1 => {
@@ -1750,8 +1898,16 @@ fn play(a: &Args) -> Result<(), String> {
     // Opened even when muted, so the options can turn sound on.
     let audio = open_speaker(&sdl);
     let sound_src = pack_src.as_ref().map(|d| d.join("sounds"));
+    let touch = (cfg!(target_os = "android") || std::env::var("U1_TOUCH").is_ok_and(|v| v == "1")).then(|| {
+        let text = video.text_input();
+        // SDL starts the system's text input with the window; the
+        // keyboard button turns it on when wanted.
+        text.stop();
+        TouchUi { o: Default::default(), dpi: video.display_dpi(0).map_or(160.0, |d| d.0), buttons: Vec::new(), down: Vec::new(), text }
+    });
     let mut io = SdlIo {
         canvas,
+        touch,
         tex,
         events,
         palette,

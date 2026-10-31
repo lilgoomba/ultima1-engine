@@ -218,6 +218,17 @@ pub enum Sfx {
     Launch,
     Dock,
     Hyperjump,
+    /// Overworld footsteps (enhanced sound only, an engine option): on
+    /// foot over grass and open ground,
+    FootGrass,
+    /// on foot in a forest,
+    FootForest,
+    /// riding a horse or a cart,
+    Hooves,
+    /// on a raft or a frigate,
+    Waves,
+    /// in an aircar (or anything else with an engine).
+    Engine,
 }
 
 /// How far (in squares, either way) a townsperson's step is heard in the
@@ -225,7 +236,7 @@ pub enum Sfx {
 pub const NPC_STEP_RANGE: i32 = 4;
 
 impl Sfx {
-    pub const ALL: [Sfx; 28] = [
+    pub const ALL: [Sfx; 33] = [
         Sfx::Bump,
         Sfx::Crash,
         Sfx::Burn,
@@ -254,6 +265,11 @@ impl Sfx {
         Sfx::Launch,
         Sfx::Dock,
         Sfx::Hyperjump,
+        Sfx::FootGrass,
+        Sfx::FootForest,
+        Sfx::Hooves,
+        Sfx::Waves,
+        Sfx::Engine,
     ];
 
     /// The file stem in a sound pack (`sounds/<name>.wav`).
@@ -287,6 +303,11 @@ impl Sfx {
             Sfx::Launch => "launch",
             Sfx::Dock => "dock",
             Sfx::Hyperjump => "hyperjump",
+            Sfx::FootGrass => "foot_grass",
+            Sfx::FootForest => "foot_forest",
+            Sfx::Hooves => "hooves",
+            Sfx::Waves => "waves",
+            Sfx::Engine => "engine",
         }
     }
 
@@ -305,6 +326,7 @@ impl Sfx {
             Sfx::Laser | Sfx::EnemyLaser => 8,
             Sfx::Starfield => 9,
             Sfx::Miss | Sfx::Dodge | Sfx::Launch | Sfx::Dock | Sfx::Hyperjump => return None,
+            Sfx::FootGrass | Sfx::FootForest | Sfx::Hooves | Sfx::Waves | Sfx::Engine => return None,
         })
     }
 
@@ -329,6 +351,19 @@ impl Sfx {
     /// beeps for every step).
     pub fn npc_step_heard(dx: i32, dy: i32) -> bool {
         dx.abs().max(dy.abs()) <= NPC_STEP_RANGE
+    }
+
+    /// The footstep for one overworld move: by transport (0 on foot, 1
+    /// horse, 2 cart, 3 raft, 4 frigate, 5 and up engines) and, on foot,
+    /// by the terrain stepped onto (2 forest).
+    pub fn footstep(transport: u16, terrain: u8) -> Sfx {
+        match transport {
+            0 if terrain == 2 => Sfx::FootForest,
+            0 => Sfx::FootGrass,
+            1 | 2 => Sfx::Hooves,
+            3 | 4 => Sfx::Waves,
+            _ => Sfx::Engine,
+        }
     }
 
     pub fn cue_only(self) -> bool {
@@ -437,5 +472,20 @@ mod tests {
         assert!(s.iter().any(|&v| v > 7000));
         let ms = s.len() as f64 * 1000.0 / 44100.0;
         assert!((ms - e.millis()).abs() < 0.1);
+    }
+
+    #[test]
+    fn footsteps_by_transport_and_terrain() {
+        assert_eq!(Sfx::footstep(0, 1), Sfx::FootGrass);
+        assert_eq!(Sfx::footstep(0, 2), Sfx::FootForest);
+        assert_eq!(Sfx::footstep(0, 6), Sfx::FootGrass);
+        assert_eq!(Sfx::footstep(1, 2), Sfx::Hooves);
+        assert_eq!(Sfx::footstep(2, 1), Sfx::Hooves);
+        assert_eq!(Sfx::footstep(3, 0), Sfx::Waves);
+        assert_eq!(Sfx::footstep(4, 0), Sfx::Waves);
+        assert_eq!(Sfx::footstep(5, 1), Sfx::Engine);
+        for t in 0..8 {
+            assert!(Sfx::footstep(t, 1).cue_only(), "footsteps are never in the original");
+        }
     }
 }

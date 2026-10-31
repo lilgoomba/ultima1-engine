@@ -42,10 +42,18 @@ starfield.wav         0.03s  each star-field frame in space (9)
 step.wav              0.05s  your step in towns, castles and Mondain's castle (4)
 victory.wav           2.21s  Mondain defeated (5, three times)
 
+Overworld footsteps (an engine option, F1 "Footsteps" / footsteps = on;
+silent in the original, played only in the enhanced sound mode):
+foot_grass.wav        0.09s  each move on foot over grass and open ground
+foot_forest.wav       0.11s  each move on foot through forest
+hooves.wav            0.16s  each move on a horse or in a cart
+waves.wav             0.32s  each move on a raft or frigate
+engine.wav            0.16s  each move in an aircar (or other engine)
+
 Levels: every sound is set to 0.8 of the beeps' loudness (the RMS of the
 loudest 50 ms; peaks at most twice the beep amplitude), footsteps and the
 star field well below, and the five sounds for events the original leaves
-silent at 0.3.
+silent at 0.3; the overworld footsteps at about 0.12-0.15.
 
 Any event without a file here plays the original effect instead.
 Music: none (the original has none; no music is added).

@@ -5,7 +5,7 @@
 //! it with the game paused, over a copy of the screen.
 
 use crate::config::VideoChoice;
-use crate::qol::{Qol, Scaling};
+use crate::qol::{self, Qol, Scaling};
 use crate::io::keys;
 use crate::soundpack::SoundMode;
 use crate::term::{Term, BLACK, BLUE, TEXT, WARN};
@@ -34,10 +34,46 @@ pub enum Row {
     Delay,
     Space,
     Timing,
+    Automap,
+    Minimap,
+    Character,
+    Help,
+    Hints,
+    Confirm,
+    Repeat,
+    RepeatDelay,
+    RepeatRate,
+    Gamepad,
+    Keys,
 }
 
-pub const ROWS: [Row; 11] =
-    [Row::Video, Row::Sound, Row::Fullscreen, Row::Scaling, Row::Crt, Row::Slots, Row::Log, Row::Turbo, Row::Delay, Row::Space, Row::Timing];
+pub const ROWS: [Row; 22] = [
+    Row::Video,
+    Row::Sound,
+    Row::Fullscreen,
+    Row::Scaling,
+    Row::Crt,
+    Row::Slots,
+    Row::Log,
+    Row::Turbo,
+    Row::Delay,
+    Row::Space,
+    Row::Timing,
+    Row::Automap,
+    Row::Minimap,
+    Row::Character,
+    Row::Help,
+    Row::Hints,
+    Row::Confirm,
+    Row::Repeat,
+    Row::RepeatDelay,
+    Row::RepeatRate,
+    Row::Gamepad,
+    Row::Keys,
+];
+
+/// How many rows the menu shows at once (it scrolls).
+pub const SHOWN: usize = 11;
 
 impl Row {
     pub fn label(self) -> &'static str {
@@ -53,6 +89,17 @@ impl Row {
             Row::Delay => "Msg delay",
             Row::Space => "Space speed",
             Row::Timing => "CPU timing",
+            Row::Automap => "Dungeon map",
+            Row::Minimap => "World map",
+            Row::Character => "Character",
+            Row::Help => "Help screen",
+            Row::Hints => "Hints",
+            Row::Confirm => "Confirm",
+            Row::Repeat => "Arrow repeat",
+            Row::RepeatDelay => "Repeat delay",
+            Row::RepeatRate => "Repeat rate",
+            Row::Gamepad => "Gamepad",
+            Row::Keys => "Keys",
         }
     }
 }
@@ -75,6 +122,8 @@ pub enum MenuKey {
     /// The video or sound value changed (apply it now).
     Changed,
     Close,
+    /// Open the key rebinding window.
+    Rebind,
 }
 
 /// The engine's own windows (options, save slots, message log): black
@@ -129,6 +178,19 @@ impl OptionsMenu {
             Row::Delay => format!("{}%", q.message_delay),
             Row::Space => if q.fast_space { "Fast" } else { "Original" }.into(),
             Row::Timing => if q.steady { "Steady" } else { "Original" }.into(),
+            Row::Automap => if q.automap { "On (Tab)" } else { "Off" }.into(),
+            Row::Minimap => if q.minimap { "On (Tab)" } else { "Off" }.into(),
+            Row::Character => if q.charsheet { "On (F6)" } else { "Off" }.into(),
+            Row::Help => if q.help { "On (F3)" } else { "Off" }.into(),
+            Row::Hints => on(q.hints),
+            Row::Confirm if q.confirm == 0 => "Off".into(),
+            Row::Confirm => format!("Worth {}+", q.confirm),
+            Row::Repeat => if q.repeat { "Own" } else { "System" }.into(),
+            Row::RepeatDelay => format!("{} ms", q.repeat_delay),
+            Row::RepeatRate if q.repeat_rate == 0 => "Game pace".to_string(),
+            Row::RepeatRate => format!("{} a second", q.repeat_rate),
+            Row::Gamepad => on(q.gamepad),
+            Row::Keys => "Enter: change".into(),
         }
     }
 
@@ -156,6 +218,17 @@ impl OptionsMenu {
                     Row::Delay => q.cycle_delay(k == keys::LEFT),
                     Row::Space => q.fast_space ^= true,
                     Row::Timing => q.steady ^= true,
+                    Row::Automap => q.automap ^= true,
+                    Row::Minimap => q.minimap ^= true,
+                    Row::Character => q.charsheet ^= true,
+                    Row::Help => q.help ^= true,
+                    Row::Hints => q.hints ^= true,
+                    Row::Confirm => q.confirm = qol::cycle(&qol::CONFIRM_VALUES, q.confirm, k == keys::LEFT),
+                    Row::Repeat => q.repeat ^= true,
+                    Row::RepeatDelay => q.repeat_delay = qol::cycle(&qol::REPEAT_DELAYS, q.repeat_delay, k == keys::LEFT),
+                    Row::RepeatRate => q.repeat_rate = qol::cycle(&qol::REPEAT_RATES, q.repeat_rate, k == keys::LEFT),
+                    Row::Gamepad => q.gamepad ^= true,
+                    Row::Keys => return MenuKey::Rebind,
                 }
                 if ROWS[self.row] == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);
@@ -176,17 +249,30 @@ impl OptionsMenu {
                     MenuKey::Changed
                 }
             }
+            keys::ENTER if ROWS[self.row] == Row::Keys => MenuKey::Rebind,
             keys::ENTER | keys::ESC => MenuKey::Close,
             _ => MenuKey::Stay,
         }
+    }
+
+    /// The first row shown (the menu scrolls to keep the choice in view).
+    pub fn top(&self) -> usize {
+        self.row.saturating_sub(SHOWN - 1)
     }
 
     /// Draw over `t` (a copy of the game's screen).
     pub fn draw(&self, t: &mut Term) {
         panel(t);
         center(t, 2, "Options  (the game is paused)", TEXT);
-        for (i, &r) in ROWS.iter().enumerate() {
-            let row = 4 + i;
+        let top = self.top();
+        if top > 0 {
+            t.print_at_attr(36, 4, "\u{18}", TEXT);
+        }
+        if top + SHOWN < ROWS.len() {
+            t.print_at_attr(36, 3 + SHOWN, "\u{19}", TEXT);
+        }
+        for (i, &r) in ROWS.iter().enumerate().skip(top).take(SHOWN) {
+            let row = 4 + i - top;
             let sel = i == self.row;
             t.print_at_attr(2, row, if sel { "\u{10}" } else { " " }, WARN);
             t.print_at_attr(3, row, &format!("{}:", r.label()), TEXT);
@@ -229,7 +315,10 @@ mod tests {
         let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
         assert_eq!(m.qol, Qol::default());
         m.key(keys::UP);
-        assert_eq!(ROWS[m.row], Row::Timing, "wraps to the last row");
+        assert_eq!(ROWS[m.row], Row::Keys, "wraps to the last row");
+        assert_eq!(m.key(keys::ENTER), MenuKey::Rebind);
+        assert_eq!(m.key(keys::RIGHT), MenuKey::Rebind);
+        m.row = 10;
         assert_eq!(m.key(keys::RIGHT), MenuKey::Changed);
         assert!(m.qol.steady);
         for _ in 0..3 {
@@ -269,5 +358,30 @@ mod tests {
         assert!(t.row_text(6).contains("Fullscreen:") && t.row_text(6).contains("<Off>"));
         assert!(t.row_text(14).contains("CPU timing:") && t.row_text(14).contains("<Original>"));
         assert_eq!(t.row_text(24)[..30].trim(), "", "the message window is untouched");
+    }
+
+    #[test]
+    fn second_group_rows_and_scrolling() {
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        for r in [Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::Repeat, Row::Gamepad] {
+            m.row = ROWS.iter().position(|&x| x == r).unwrap();
+            assert_eq!(m.key(b' '), MenuKey::Changed);
+        }
+        let q = m.qol;
+        assert!(q.automap && q.minimap && q.charsheet && q.help && q.hints && q.repeat && q.gamepad);
+        m.row = ROWS.iter().position(|&x| x == Row::Confirm).unwrap();
+        m.key(keys::RIGHT);
+        assert_eq!((m.qol.confirm, m.value(Row::Confirm)), (10, "Worth 10+".to_string()));
+        m.key(keys::LEFT);
+        m.key(keys::LEFT);
+        assert_eq!(m.qol.confirm, 500);
+        let mut t = Term::new();
+        m.draw(&mut t);
+        assert!(t.row_text(4 + m.row - m.top()).contains("Confirm:"));
+        assert!(!t.row_text(4).contains("Video:"), "scrolled");
+        m.row = 0;
+        let mut t = Term::new();
+        m.draw(&mut t);
+        assert!(t.row_text(4).contains("Video:") && !(4..15).any(|y| t.row_text(y).contains("Keys:")));
     }
 }

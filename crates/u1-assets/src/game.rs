@@ -156,6 +156,14 @@ pub struct Game {
     pub restarted: bool,
     /// Next blinking-cursor frame (`3a50`).
     pub cursor_phase: u8,
+    /// What the player has seen, for the automap and the mini-map (SPEC
+    /// §23.1); kept beside the save, never in the record.
+    pub explore: crate::explore::Explore,
+    /// A save slot was loaded: its explored map, for the next run.
+    pub reload_explore: Option<crate::explore::Explore>,
+    /// The mode the explored map was last written in (it is written again
+    /// on entering or leaving a town, castle or dungeon).
+    pub explore_mode: Option<u8>,
 }
 
 impl Game {
@@ -208,6 +216,9 @@ impl Game {
             space: None,
             mondain: None,
             restarted: false,
+            explore: Default::default(),
+            reload_explore: None,
+            explore_mode: None,
         };
         g.redraw();
         g
@@ -696,12 +707,34 @@ impl Game {
     // ------------------------------------------------------------ main loop
 
     /// Run until the key source halts (scripted runs) or the window closes.
+    /// However the run ends (the window closed, a script ran out, a slot
+    /// loaded, the game stopped) the explored map is written.
     pub fn run(&mut self, io: &mut dyn Io) -> IoResult<()> {
-        loop {
-            self.turn(io)?;
-            if self.stopped.is_some() {
-                return Ok(());
+        let r = loop {
+            if let Err(e) = self.turn(io) {
+                break Err(e);
             }
+            if self.stopped.is_some() {
+                break Ok(());
+            }
+        };
+        self.save_explore(io);
+        r
+    }
+
+    /// Write the explored map beside the save (SPEC §23.2) when a map is
+    /// on. Only ever the sidecar: the player record is written by Quit and
+    /// the save slots alone.
+    pub fn save_explore(&self, io: &dyn Io) {
+        let qol = io.features();
+        if !(qol.automap || qol.minimap) {
+            return;
+        }
+        if let Some(p) = &self.save_to {
+            if let Some(d) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
+                let _ = std::fs::create_dir_all(d);
+            }
+            let _ = self.explore.save(p);
         }
     }
 
@@ -715,9 +748,19 @@ impl Game {
         if self.mode == OUTDOORS {
             self.draw_world();
         }
+        let qol = io.features();
+        if qol.automap || qol.minimap {
+            self.note_explored();
+            // Into or out of a town, castle or dungeon: write it now.
+            if self.explore_mode.is_some_and(|m| m != self.mode) {
+                self.save_explore(io);
+            }
+            self.explore_mode = Some(self.mode);
+        }
         // `8eb9`: poll, count, animate the outdoors after every poll (the
         // one that brings the key too); 1500 polls without a key pass.
         let mut polls = 0u32;
+        io.command_prompt(true);
         let key = loop {
             let k = self.poll_key(io)?;
             if io.wants_log() {
@@ -737,6 +780,21 @@ impl Game {
             if self.mode == OUTDOORS {
                 self.world_tick(polls);
             }
+            if let Some(v) = k.and_then(crate::views::View::of_key) {
+                // The engine's screens (SPEC §23): no turn passes.
+                let on = match v {
+                    crate::views::View::Map if self.mode == crate::dgame::DUNGEON => qol.automap,
+                    crate::views::View::Map => qol.minimap,
+                    crate::views::View::Help => qol.help,
+                    crate::views::View::Character => qol.charsheet,
+                };
+                if on {
+                    io.command_prompt(false);
+                    self.show_view(io, v)?;
+                    io.command_prompt(true);
+                }
+                continue;
+            }
             if let Some(k) = k {
                 break k;
             }
@@ -744,7 +802,13 @@ impl Game {
                 break b' ';
             }
         };
-        self.command(io, key.to_ascii_uppercase())?;
+        io.command_prompt(false);
+        let key = key.to_ascii_uppercase();
+        if qol.hints {
+            // A line above the command's own prompt (SPEC §23.4).
+            self.show_hint(key);
+        }
+        self.command(io, key)?;
         if self.stopped.is_some() {
             return Ok(());
         }
@@ -1135,6 +1199,10 @@ impl Game {
             return Ok(());
         }
         self.sayln(m::ING);
+        let qol = io.features();
+        if qol.automap || qol.minimap {
+            self.explore.visit(p);
+        }
         self.water = 0;
         self.grass = 0;
         self.forest = 0;
@@ -1549,6 +1617,10 @@ impl Game {
                 if let Some(d) = p.parent() {
                     let _ = std::fs::create_dir_all(d);
                 }
+                let qol = io.features();
+                if qol.automap || qol.minimap {
+                    let _ = self.explore.save(&p);
+                }
                 match std::fs::write(&p, self.rec.as_bytes()) {
                     Ok(()) => io.save_done(&format!("Saved to {}", name(s))),
                     Err(_) => io.save_done(&format!("Could not save to {}", name(s))),
@@ -1559,6 +1631,7 @@ impl Game {
                 match std::fs::read(&p).ok().map(|b| PlayerRecord::parse(&b)) {
                     Some(Ok(rec)) => {
                         self.reload = Some(rec);
+                        self.reload_explore = Some(crate::explore::Explore::load(&p));
                         self.stopped = Some("load");
                         io.save_done(&format!("Loaded {}", name(s)));
                     }
@@ -1584,6 +1657,11 @@ impl Game {
             if std::fs::write(&p, self.rec.as_bytes()).is_err() {
                 self.term.println("");
                 return;
+            }
+            let qol = io.features();
+            if qol.automap || qol.minimap {
+                // Our own file beside the save (SPEC §23.1).
+                let _ = self.explore.save(&p);
             }
         }
         self.sayln(m::SAVED);

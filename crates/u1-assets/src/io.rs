@@ -39,6 +39,11 @@ pub mod keys {
     /// action at that poll (an idle poll otherwise), as F2/F5/F9 do.
     pub const SAVE_REQ: u8 = 0xD0;
     pub const LOAD_REQ: u8 = 0xD8;
+    /// The engine's screens (SPEC §23), sent only at the command prompt
+    /// (an extra key or a script's `{map}`, `{help}`, `{char}`).
+    pub const MAP: u8 = 0xC1;
+    pub const HELP: u8 = 0xC2;
+    pub const CHARSHEET: u8 = 0xC3;
 }
 
 pub trait Io {
@@ -149,6 +154,16 @@ pub trait Io {
     /// The result of a save-slot action, to show the player.
     fn save_done(&mut self, _msg: &str) {}
 
+    /// The optional features the game itself applies (the screens, hints,
+    /// confirmations, the explored map). All off by default.
+    fn features(&self) -> crate::qol::Qol {
+        crate::qol::Qol::default()
+    }
+
+    /// The game waits at its command prompt (`true`) or has left it: extra
+    /// keys mean their command only there.
+    fn command_prompt(&mut self, _on: bool) {}
+
     /// Whether the message log should be kept ([`crate::term::Term::log`]).
     fn wants_log(&self) -> bool {
         false
@@ -168,6 +183,8 @@ pub struct ScriptIo {
     pub done: Vec<String>,
     /// `wants_log`.
     pub log: bool,
+    /// `features`.
+    pub qol: crate::qol::Qol,
 }
 
 impl ScriptIo {
@@ -217,6 +234,9 @@ impl ScriptIo {
                         "bs" => keys::BACKSPACE,
                         "space" => b' ',
                         "p" => keys::STOP_AT_PAUSE,
+                        "map" => keys::MAP,
+                        "help" => keys::HELP,
+                        "char" => keys::CHARSHEET,
                         _ => b'?',
                     });
                 }
@@ -292,5 +312,9 @@ impl Io for ScriptIo {
 
     fn wants_log(&self) -> bool {
         self.log
+    }
+
+    fn features(&self) -> crate::qol::Qol {
+        self.qol
     }
 }

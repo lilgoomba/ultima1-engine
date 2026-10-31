@@ -176,7 +176,8 @@ The keys are the original's:
 
 | Key | Action |
 |---|---|
-| Arrow keys or keypad 8/2/4/6 | Move north/south/west/east (in a dungeon: forward, turn around, turn left, turn right) |
+| Arrow keys (the keypad's arrows too, NumLock on or off) | Move north/south/west/east (in a dungeon: forward, turn around, turn left, turn right) |
+| 8 / 2 / 4 / 6 (number row) | Attack north/south/west/east without asking for a direction |
 | Space | Pass |
 | A | Attack (then a direction) |
 | B / X | Board / exit a vehicle |
@@ -409,6 +410,59 @@ steady_timing = true
 Only settings that differ from the default are written. `--fullscreen` and
 `--crt` turn those on for one run; screenshots take `--crt`, `--slots` and
 `--log` (`--keys` may hold `{save1}`..`{save5}`, `{saveq}`, `{load1}`..).
+
+### More optional features (F1, all off by default; SPEC §23)
+
+| Setting | Keys | What it does |
+|---|---|---|
+| Dungeon map | Tab (in a dungeon) | An automap of the squares you have seen on this level (one map per level; unfound secret doors look like walls, traps never show). |
+| World map | Tab (elsewhere) | The overworld you have seen, the places you have entered and where you are. Opens zoomed in round you (4x); Z shows the whole world and back. |
+| Character | F6 | One read-only page: attributes, gear, spells, transport, gems, quests. |
+| Help screen | F3 | The commands and the engine's keys. |
+| Hints | | A one-line hint above a command's prompt ("(B buy, S sell)"). |
+| Confirm | | Ask "Sure? (Y/N)" before selling or dropping anything worth 10/50/100/250/500 or more. |
+| Arrow repeat | | Our own repeat for a held arrow: Repeat delay (250-800 ms, default 250) and Repeat rate (default "Game pace", one step each pass of the main loop as the original moves; or 4-16 a second, never faster than the game pace). Repeats come only at the command prompt, so they never answer a question. "System" is the old behaviour. |
+| Gamepad | | SDL game controllers: d-pad or left stick move; buttons as below. |
+| Keys | Enter | The rebind screen: give any command or screen one extra key. |
+
+The maps are kept in `PLAYER2.U1.map` beside the player file, only with a
+map on: written by Quit or a save slot, when the game ends any other way
+(closing the window included), and on entering or leaving a town, castle
+or dungeon. The record itself is never changed or written by any of these. The screens open only at the command prompt, take no turn, and
+any key closes them.
+
+**Extra keys.** The original's keys always work; a binding only adds a
+key, and only keys the original ignores at its prompt can be bound (J L M
+P W Y, 0 1 3 5 7 9, punctuation, Tab, F3 F6 F7 F8 F10-F12). In the rebind
+screen: Up/Down choose, Enter then a key binds, Backspace clears, Esc
+closes; changes are saved at once.
+
+**Gamepad.** D-pad and left stick are the arrows. Default buttons: A
+Space, B Esc, X Attack, Y Enter, Back map, Start options (F1), Guide help,
+LB Klimb, RB Fire, left stick press character, right stick press Ztats.
+The mapping is tested with synthetic SDL controller events; testing with
+a real controller is still to do.
+
+```toml
+automap = true
+minimap = true
+character_screen = true
+help_screen = true
+hints = true
+confirm_value = 100    # 0 | 10 | 50 | 100 | 250 | 500
+arrow_repeat = true
+repeat_delay = 250     # ms: 250 | 400 | 600 | 800
+repeat_rate = 0        # 0 = the game's pace (default) | 4 | 8 | 12 | 16 a second
+gamepad = true
+key_attack = "j"       # an extra key; "none" clears a default
+key_map = "m"
+pad_x = "r"            # a letter/digit, space, enter, esc, up/down/left/right,
+                       # options, map, help, character or none
+```
+
+Screenshots take `--features automap,minimap,character,help,hints,repeat,gamepad,all,confirm=N`
+(`--keys` may hold `{map}`, `{help}`, `{char}`), `--rebind` for the rebind
+screen and `--menu-row N` with `--options`.
 
 Tests that use your own files are skipped unless you point them at your
 install:

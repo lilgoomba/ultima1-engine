@@ -3,7 +3,12 @@
 Approved, **optional** features. Built (branch qol-review-1, SPEC §22):
 fullscreen, whole-number scaling, CRT filter, save slots, quicksave and
 quickload, the scrollback message log, turbo, adjustable message delay,
-faster space flight and steady timing. The rest are not built yet. The rule for every
+faster space flight and steady timing. Built (branch qol-review-2, SPEC
+§23): the dungeon automap, the overworld mini-map, extra keys with a rebind
+screen, gamepad support, arrow auto-repeat, the help screen and hints, the
+character screen and confirm-before-selling or dropping. Everything on
+this list is now built and merged. Still to do: testing the gamepad with a
+real controller (the mapping is tested with synthetic SDL events only). The rule for every
 one: the faithful behaviour stays the default. Each is off until the player
 turns it on (in the options menu, F1, or `config.toml`; see SPEC §21), never
 changes a save file's format, and never changes the game's rules or the

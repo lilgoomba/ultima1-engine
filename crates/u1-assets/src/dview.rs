@@ -612,16 +612,48 @@ pub fn sight(lv: &DungeonLevel, pa: i32, pb: i32, fa: i32, fb: i32) -> i32 {
     n.min(5)
 }
 
-/// Compass text between two ornaments under the view.
-pub fn compass(t: &mut Term, e: &Exe, facing: u16) {
-    t.ornament_left(16, 19);
-    let i = match facing {
+/// The squares the view at (pa, pb) facing `facing` shows: the corridor
+/// ahead up to where the sight stops, the squares beside it, and the
+/// square that stops it (for the automap, SPEC §23.1).
+pub fn visible(lv: &DungeonLevel, pa: i32, pb: i32, facing: u16) -> Vec<(i32, i32)> {
+    let (fa, fb) = forward(facing);
+    let ((la, lb), (ra, rb)) = sides(facing);
+    let mut out = vec![(pa, pb)];
+    let here = lv.cell(pa, pb);
+    if matches!(here, Cell::Wall | Cell::SecretDoor) {
+        return out;
+    }
+    if here == Cell::Door && matches!(lv.cell(pa + fa, pb + fb), Cell::Wall | Cell::Door | Cell::SecretDoor) {
+        out.push((pa + fa, pb + fb));
+        return out;
+    }
+    let dmax = sight(lv, pa, pb, fa, fb);
+    for k in 0..dmax {
+        let (a, b) = (pa + fa * k, pb + fb * k);
+        out.push((a, b));
+        out.push((a + la, b + lb));
+        out.push((a + ra, b + rb));
+    }
+    out.push((pa + fa * dmax, pb + fb * dmax));
+    out.dedup();
+    out
+}
+
+/// Which of the original's compass words (North, South, East, West) a
+/// facing is.
+pub fn compass_index(facing: u16) -> usize {
+    match facing {
         NORTH => 0,
         SOUTH => 1,
         EAST => 2,
         _ => 3,
-    };
-    t.print(&e.s(m::COMPASS[i]));
+    }
+}
+
+/// Compass text between two ornaments under the view.
+pub fn compass(t: &mut Term, e: &Exe, facing: u16) {
+    t.ornament_left(16, 19);
+    t.print(&e.s(m::COMPASS[compass_index(facing)]));
     t.ornament_right(24, 19);
     t.cursor(1, 24);
 }
@@ -779,5 +811,25 @@ fn side(w: &mut View, right: bool, d: i32, s: Cell) {
         Cell::Wall => w.note_side(right, dun::WALL, d),
         Cell::SecretDoor => w.note_side(right, dun::SECRET, d),
         _ => w.note_opening(right, d),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_squares() {
+        let mut lv = DungeonLevel { level: 1, cells: [[Cell::Wall; 11]; 11], items: [[Item::None; 11]; 11], monsters: [[-1; 11]; 11], hp: [[0; 11]; 11], used: [false; 5] };
+        // A corridor running south from (1,1) to (1,4), a wall at (1,5).
+        for b in 1..=4 {
+            lv.cells[1][b] = Cell::Empty;
+        }
+        let v = visible(&lv, 1, 1, SOUTH);
+        assert!(v.contains(&(1, 4)) && v.contains(&(1, 5)), "{v:?}");
+        assert!(v.contains(&(0, 3)) && v.contains(&(2, 3)), "the sides");
+        assert!(!v.contains(&(1, 6)), "nothing past the wall");
+        let v = visible(&lv, 1, 1, NORTH);
+        assert_eq!(v, [(1, 1), (0, 1), (2, 1), (1, 0)], "facing the wall: here, beside and it");
     }
 }

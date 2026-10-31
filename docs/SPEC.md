@@ -1649,6 +1649,116 @@ game no longer stops for it. The engine's other CPU-dependent timing
 there is nothing else for it to change. The idle Pass still comes after
 the same number of key polls, only sooner in turbo.
 
+## 23. More optional engine features (not original behaviour)
+
+The same rules as §22: every one is off by default and, off, changes
+nothing (the screens, the timing, the record, the random sequence; the
+tests type the new keys with everything off and compare the screen and
+the record with a run without them). None changes a rule, and none is
+stored in the 820-byte record. They are rows of the options menu (§21,
+scrolled: 22 rows, 11 shown) and keys in the config file. The screens
+open only where the original reads a command (its main-loop key poll):
+no turn passes, nothing moves, and the screen underneath comes back
+exactly as it was when any key closes them.
+
+### 23.1 Dungeon automap (Tab in a dungeon)
+
+* At every command poll in a dungeon the engine notes the squares the
+  first-person view is showing (§16): the player's square, the corridor
+  ahead up to the square that stops the sight, and the squares beside
+  each of those. Only those squares are ever known.
+* A square is remembered as it looked: wall, corridor, door, ladder up,
+  ladder down or force field. A secret door not yet seen as a door is a
+  wall; traps, monsters and chests are never shown. A door once seen
+  stays a door.
+* One map per level, keyed by the overworld square of the entrance and
+  the depth. The screen shows the 11x11 grid (unseen squares blank), the
+  player as an arrow pointing the way they face, "Facing" with the
+  original's own compass word (the one under the dungeon view), a key and
+  "Seen n of 121". On CGA, where corridors and force fields share a
+  colour, a force field is a lattice of crossing diagonals on black.
+
+### 23.2 Overworld mini-map (Tab outdoors, in towns and castles)
+
+* At every outdoor command poll the 19x9 squares on screen are marked
+  seen. The map opens zoomed in: 42x39 squares round the player, four
+  pixels a square, the world wrapping as it does to walk. Z switches to
+  the whole 168x156 world, one pixel a square, and back; any other key
+  closes it. Seen squares only, in four colours by terrain (water, grass, forest, mountains);
+  places look like the land around them until entered.
+* Entering a place (E) marks it visited. Visited places get a mark by
+  kind (town, castle, signpost, dungeon) and are listed by name as
+  "Places entered"; the player is a cross.
+
+**The sidecar.** Both maps are kept in a text file of our own beside the
+player file, `<save>.map` (for example `PLAYER2.U1.map`): a header line,
+`version 1`, `visited <ids>`, one `world <y> <hex bits>` line per row with
+anything seen, and one `level <x> <y> <depth> <11 rows>` line per level.
+It is written only when one of the maps is on: when the record is written
+(Quit, or a save slot of §22.2, beside that slot's file), when the run
+ends any other way (the window closed), and on entering or leaving a
+town, castle or dungeon. It goes to a temporary file first and is then
+renamed over the old one; the record itself is never written by any of
+these. It is read at start and with a loaded slot. Lines that make no sense are
+skipped. Deleting it forgets the maps and nothing else.
+
+### 23.3 Controls
+
+* **Extra keys.** Each command (the four directions, Space and the
+  letters A-Z the original reads) and each engine screen can have one
+  extra key. The original's own keys always work and cannot be unbound.
+  Only keys the original does nothing with at its command prompt can be
+  bound: J L M P W Y, the digits 0 1 3 5 7 9, ; ' , . / [ ] \ - = `, Tab,
+  F3 F6 F7 F8 F10 F11 F12. An extra key means its command only at the
+  command prompt; inside a question, a shop list or a number every key
+  types what it always did. Defaults: Tab map, F3 help, F6 character.
+  Config: `key_<command> = "<key>"` (`key_attack = "j"`, `key_map =
+  "none"`), keys named in lower case as SDL names them.
+* **Rebind screen** (F1, Keys): the commands with their own key and their
+  extra one. Up/Down choose, Enter/Right/Space then a key binds it (a key
+  bound elsewhere moves; an original or unusable key is refused with the
+  reason), Backspace/Delete clears, Esc closes. Changes are saved at once.
+* **Gamepad** (SDL game controllers, opened when the setting is on and
+  when one is plugged in, with a note naming it). The d-pad and the left
+  stick (past a quarter of its travel; one step each time it is pushed)
+  are the arrows. The other buttons follow `pad_<button>` lines: a, b, x,
+  y, back, start, guide, leftshoulder, rightshoulder, leftstick,
+  rightstick. (The mapping is tested with synthetic SDL controller
+  events; testing with a real controller is pending.) Defaults: a Space, b Esc, x A, y E, back map, start
+  options, guide help, leftshoulder K, rightshoulder F, leftstick
+  character, rightstick Z. A value is a letter or digit, space, enter,
+  esc, up/down/left/right, options, map, help, character or none.
+* **Arrow auto-repeat**: off, the system's key repeat is used, as before.
+  On, the engine's own: a held arrow (or d-pad/stick direction) moves
+  again after the delay (250 by default, 400, 600 or 800 ms) and then at
+  the rate: by default the game's pace, one step per pass of the main
+  loop (the original's 130 ms key poll), or 4, 8, 12 or 16 steps a
+  second, never faster than that pace. A repeat is delivered only at the
+  command prompt with no key waiting and no menu open, and the next one is
+  timed from when it is delivered (no catching up), so a slow command is
+  never overrun and a question is never answered by a held arrow.
+
+### 23.4 Help, hints and the character screen
+
+* **Help (F3)**: the commands and the engine's keys on one screen.
+* **Hints**: when a command that asks for more is typed, one line above
+  its own prompt says what it wants (for example "(W weapon, A armour, S
+  spell)" for Ready, "(B buy, S sell)" for Transact in a town). Only for
+  commands that prompt; the prompt itself is unchanged.
+* **Character screen (F6)**: read only. Name, level, sex, race and class,
+  hit points, food, experience, coin, the six attributes, weapons and
+  armour owned (the readied ones marked), spells, transport, gems and the
+  quests in plain words. It shows nothing the Z-stats pages do not.
+
+### 23.5 Confirm before selling or dropping
+
+A threshold (off, 10, 50, 100, 250 or 500). When on, selling an item in a
+shop, dropping a weapon or armour in a town, or dropping coin, worth at
+least the threshold (the item's sell price for the player's Charisma, or
+the coin dropped) first asks "Sure? (Y/N)" in a box over the view. Y goes
+on exactly as the original; anything else leaves everything as it was and
+the command ends as if nothing was chosen.
+
 ## Sources
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.

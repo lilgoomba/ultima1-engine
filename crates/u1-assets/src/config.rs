@@ -11,7 +11,8 @@
 //! back unchanged when the menu saves.
 
 use crate::gamedir::VideoMode;
-use crate::qol::{Qol, Scaling, MESSAGE_DELAYS};
+use crate::keymap::{KeyMap, PadMap};
+use crate::qol::{Qol, Scaling, CONFIRM_VALUES, MESSAGE_DELAYS, REPEAT_DELAYS, REPEAT_RATES};
 use crate::soundpack::SoundMode;
 use std::path::{Path, PathBuf};
 
@@ -89,6 +90,10 @@ pub struct Config {
     pub sound: Option<SoundMode>,
     /// The optional engine features; the default is all off.
     pub qol: Qol,
+    /// Extra keys for the commands and screens (SPEC §23.3).
+    pub keys: KeyMap,
+    /// Gamepad buttons.
+    pub pad: PadMap,
     /// Lines that could not be used (reported, never fatal).
     pub warnings: Vec<String>,
     /// The file's other lines, kept as they were for saving: top-level
@@ -144,6 +149,16 @@ impl Config {
                     Some(x) => c.sound = Some(x),
                     None => c.warnings.push(format!("line {}: sound wants original, enhanced or mute", n + 1)),
                 },
+                k if k.starts_with("key_") => match c.keys.config_key(k, &v) {
+                    Some(Ok(())) => {}
+                    Some(Err(e)) => c.warnings.push(format!("line {}: {e}", n + 1)),
+                    None => c.kept.top.push(line.to_string()),
+                },
+                k if k.starts_with("pad_") => match c.pad.config_key(k, &v) {
+                    Some(Ok(())) => {}
+                    Some(Err(e)) => c.warnings.push(format!("line {}: {e}", n + 1)),
+                    None => c.kept.top.push(line.to_string()),
+                },
                 k => match qol_key(&mut c.qol, k, &v) {
                     Some(Ok(())) => {}
                     Some(Err(want)) => c.warnings.push(format!("line {}: {k} wants {want}", n + 1)),
@@ -179,11 +194,31 @@ impl Config {
         flag(q.turbo, d.turbo, "turbo", "also F4");
         flag(q.fast_space, d.fast_space, "fast_space", "space flight and combat wait half as long");
         flag(q.steady, d.steady, "steady_timing", "speaker effects no longer hold the game");
+        flag(q.automap, d.automap, "automap", "Tab in a dungeon");
+        flag(q.minimap, d.minimap, "minimap", "Tab outdoors");
+        flag(q.charsheet, d.charsheet, "character_screen", "F6");
+        flag(q.help, d.help, "help_screen", "F3");
+        flag(q.hints, d.hints, "hints", "a line on what a command asks for");
+        flag(q.repeat, d.repeat, "arrow_repeat", "our own repeat for held arrows");
+        flag(q.gamepad, d.gamepad, "gamepad", "SDL game controllers");
         if q.scaling != d.scaling {
             s += &format!("scaling = \"{}\"   # whole | fill\n", q.scaling.as_str());
         }
         if q.message_delay != d.message_delay {
             s += &format!("message_delay = {}   # per cent of the original: 100 | 50 | 25 | 0\n", q.message_delay);
+        }
+        if q.confirm != d.confirm {
+            s += &format!("confirm_value = {}   # ask before selling or dropping things worth this much (0 never)\n", q.confirm);
+        }
+        if q.repeat_delay != d.repeat_delay {
+            s += &format!("repeat_delay = {}   # ms: 250 | 400 | 600 | 800\n", q.repeat_delay);
+        }
+        if q.repeat_rate != d.repeat_rate {
+            s += &format!("repeat_rate = {}   # steps a second: 0 (the game's pace) | 4 | 8 | 12 | 16\n", q.repeat_rate);
+        }
+        for l in self.keys.config_lines().into_iter().chain(self.pad.config_lines()) {
+            s += &l;
+            s.push('\n');
         }
         for l in self.kept.top.iter().chain(&self.kept.tables) {
             s += l;
@@ -229,6 +264,34 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "turbo" => flag(v).map(|b| q.turbo = b),
         "fast_space" => flag(v).map(|b| q.fast_space = b),
         "steady_timing" => flag(v).map(|b| q.steady = b),
+        "automap" => flag(v).map(|b| q.automap = b),
+        "minimap" => flag(v).map(|b| q.minimap = b),
+        "character_screen" => flag(v).map(|b| q.charsheet = b),
+        "help_screen" => flag(v).map(|b| q.help = b),
+        "hints" => flag(v).map(|b| q.hints = b),
+        "arrow_repeat" => flag(v).map(|b| q.repeat = b),
+        "gamepad" => flag(v).map(|b| q.gamepad = b),
+        "confirm_value" => match v.parse::<u16>() {
+            Ok(d) if CONFIRM_VALUES.contains(&d) => {
+                q.confirm = d;
+                Ok(())
+            }
+            _ => Err("0, 10, 50, 100, 250 or 500"),
+        },
+        "repeat_delay" => match v.parse::<u16>() {
+            Ok(d) if REPEAT_DELAYS.contains(&d) => {
+                q.repeat_delay = d;
+                Ok(())
+            }
+            _ => Err("250, 400, 600 or 800"),
+        },
+        "repeat_rate" => match v.parse::<u8>() {
+            Ok(d) if REPEAT_RATES.contains(&d) => {
+                q.repeat_rate = d;
+                Ok(())
+            }
+            _ => Err("0, 4, 8, 12 or 16"),
+        },
         "scaling" => Scaling::parse(v).map(|x| q.scaling = x).ok_or("whole or fill"),
         "message_delay" => match v.trim_end_matches('%').parse::<u8>() {
             Ok(d) if MESSAGE_DELAYS.contains(&d) => {
@@ -405,10 +468,33 @@ mod tests {
     }
 
     #[test]
+    fn second_group_and_keys_round_trip() {
+        assert!(Config::default().keys.config_lines().is_empty() && Config::default().pad.config_lines().is_empty());
+        let q = Qol { automap: true, minimap: true, charsheet: true, help: true, hints: true, confirm: 100, repeat: true, repeat_delay: 250, repeat_rate: 16, gamepad: true, ..Default::default() };
+        let mut c = Config { qol: q, ..Default::default() };
+        c.keys.bind(5, "j").unwrap();
+        c.keys.bind(26, "\\").unwrap();
+        c.keys.unbind(27);
+        c.keys.bind(25, "m").unwrap();
+        c.pad.config_key("pad_y", "z").unwrap().unwrap();
+        let text = c.to_toml();
+        assert!(text.contains("key_attack = \"j\"") && text.contains("key_character = \"none\"") && text.contains("pad_y = \"z\""), "{text}");
+        let back = Config::parse(&text);
+        assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+        assert_eq!(back, c);
+        assert_eq!(back.keys.code_for("j"), Some(b'A'));
+        assert_eq!(back.keys.code_for("\\"), Some(crate::io::keys::HELP));
+        assert_eq!(back.keys.code_for("f6"), None);
+        let bad = Config::parse("key_attack = \"k\"\nconfirm_value = 7\nrepeat_rate = 99\npad_a = \"jump\"\n");
+        assert_eq!(bad.warnings.len(), 4, "{:?}", bad.warnings);
+        assert_eq!(bad.keys, KeyMap::default());
+    }
+
+    #[test]
     fn qol_keys() {
         assert_eq!(Config::default().qol, Qol::default(), "all off without a file");
         assert!(!Config::default().to_toml().contains("turbo"), "defaults are not written");
-        let q = Qol { fullscreen: true, scaling: Scaling::Fill, crt: true, slots: true, log: true, turbo: true, message_delay: 25, fast_space: true, steady: true };
+        let q = Qol { fullscreen: true, scaling: Scaling::Fill, crt: true, slots: true, log: true, turbo: true, message_delay: 25, fast_space: true, steady: true, ..Default::default() };
         let c = Config { qol: q, ..Default::default() };
         let back = Config::parse(&c.to_toml());
         assert_eq!(back, c);

@@ -193,6 +193,8 @@ pub struct ScriptIo {
     pub log: bool,
     /// `features`.
     pub qol: crate::qol::Qol,
+    /// The music asked for, a repeat of the last one left out.
+    pub music: Vec<crate::music::Track>,
 }
 
 impl ScriptIo {
@@ -256,6 +258,12 @@ impl ScriptIo {
 }
 
 impl Io for ScriptIo {
+    fn music(&mut self, t: crate::music::Track) {
+        if self.music.last() != Some(&t) {
+            self.music.push(t);
+        }
+    }
+
     fn poll(&mut self, _t: &Term) -> IoResult<Option<u8>> {
         loop {
             match self.keys.pop_front() {

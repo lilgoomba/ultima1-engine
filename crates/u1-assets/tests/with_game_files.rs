@@ -1394,3 +1394,30 @@ fn selling_asks_first_when_set_and_no_keeps_the_item() {
     assert_eq!(daggers(&no), before);
     assert_eq!(yes.rec.as_bytes(), plain.rec.as_bytes());
 }
+
+/// The area music follows the game: towns, dungeons, space and back, the
+/// lair, and the death sting before the resurrection.
+#[test]
+fn area_music_follows_the_game() {
+    use u1_assets::music::Track::*;
+    let run = |x, y, keys: &str, adjust: &dyn Fn(&mut PlayerRecord)| {
+        let mut io = ScriptIo::from_text(keys);
+        play_io(x, y, &mut io, 1, &[], adjust)?;
+        Some(io.music)
+    };
+    let Some(m) = run(66, 41, "e{up}", &|_| {}) else { return };
+    assert_eq!(m, vec![Overworld, Town]);
+    assert_eq!(run(32, 27, "e", &|_| {}).unwrap(), vec![Overworld, Castle]);
+    assert_eq!(run(39, 60, "ek ", &|_| {}).unwrap(), vec![Overworld, Dungeon, Overworld]);
+    let m = run(40, 40, "B{w12}{up}{w300} ", &on_shuttle).unwrap();
+    assert_eq!(m, vec![Overworld, Space, Overworld]);
+    let m = run(40, 40, "B{w12}    ", &|r| {
+        on_shuttle(r);
+        r.set_u16(off::SHUTTLE_0, 0);
+        r.set_u16(off::SHUTTLE_1, 0);
+    })
+    .unwrap();
+    assert!(m.windows(2).any(|w| w == [Space, Death]) || m.contains(&Death), "{m:?}");
+    let m = run(40, 40, "B{w12}", &at_time_machine).unwrap();
+    assert_eq!(&m[..2], &[Overworld, Lair]);
+}

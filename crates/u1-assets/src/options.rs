@@ -82,6 +82,9 @@ pub const ROWS: [Row; 27] = [
     Row::Keys,
 ];
 
+/// Where the values start: one blank after the longest label.
+const VALUE_COL: usize = 17;
+
 /// How many rows the menu shows at once (it scrolls).
 pub const SHOWN: usize = 11;
 
@@ -316,7 +319,7 @@ impl OptionsMenu {
             let sel = i == self.row;
             t.print_at_attr(2, row, if sel { "\u{10}" } else { " " }, WARN);
             t.print_at_attr(3, row, &format!("{}:", r.label()), TEXT);
-            t.print_at_attr(16, row, &format!("<{}>", self.value(r)), if sel { WARN } else { TEXT });
+            t.print_at_attr(VALUE_COL, row, &format!("<{}>", self.value(r)), if sel { WARN } else { TEXT });
         }
         center(t, 16, "Up/Down: choose  Left/Right: change", TEXT);
         center(t, 17, "F1 or Enter: resume", TEXT);
@@ -327,6 +330,13 @@ impl OptionsMenu {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn labels_and_values_never_touch() {
+        for r in ROWS {
+            assert!(3 + r.label().len() + 1 < VALUE_COL, "{r:?}");
+        }
+    }
 
     #[test]
     fn cycles_skip_missing_displays() {

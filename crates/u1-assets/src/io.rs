@@ -162,6 +162,10 @@ pub trait Io {
 
     /// The game waits at its command prompt (`true`) or has left it: extra
     /// keys mean their command only there.
+    /// An engine screen (map, help, character) is up: its own key should
+    /// reach it so the same key closes it.
+    fn view_open(&mut self, _key: Option<u8>) {}
+
     fn command_prompt(&mut self, _on: bool) {}
 
     /// Whether the message log should be kept ([`crate::term::Term::log`]).

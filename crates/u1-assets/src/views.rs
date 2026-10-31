@@ -32,6 +32,15 @@ pub enum View {
 }
 
 impl View {
+    /// The engine key that opens (and closes) this screen.
+    pub fn key(self) -> u8 {
+        match self {
+            View::Map => keys::MAP,
+            View::Help => keys::HELP,
+            View::Character => keys::CHARSHEET,
+        }
+    }
+
     pub fn of_key(k: u8) -> Option<View> {
         match k {
             keys::MAP => Some(View::Map),
@@ -113,7 +122,10 @@ impl Game {
             View::Help => self.draw_help(),
             View::Character => self.draw_character(),
         }
-        io.key(&self.term)?;
+        io.view_open(Some(v.key()));
+        let r = io.key(&self.term);
+        io.view_open(None);
+        r?;
         self.term = saved;
         Ok(())
     }
@@ -242,14 +254,20 @@ impl Game {
     /// that and the whole world, any other key goes back.
     fn show_minimap(&mut self, io: &mut dyn Io, saved: crate::term::Term) -> IoResult<()> {
         let mut whole = false;
+        io.view_open(Some(keys::MAP));
         loop {
             self.draw_minimap(whole);
-            match io.key(&self.term)? {
+            let k = io.key(&self.term);
+            if k.is_err() {
+                io.view_open(None);
+            }
+            match k? {
                 b'z' | b'Z' => whole = !whole,
                 _ => break,
             }
             self.term = saved.clone();
         }
+        io.view_open(None);
         self.term = saved;
         Ok(())
     }

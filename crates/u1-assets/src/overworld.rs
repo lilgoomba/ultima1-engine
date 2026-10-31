@@ -71,6 +71,11 @@ pub struct Overworld {
     pub armour: u16,
     pub moves: u32,
     pub food_clock: FoodClock,
+    /// The food-use setting (engine option; original by default).
+    pub food_use: crate::qol::FoodUse,
+    /// With half food use: a half unit already eaten (engine state only,
+    /// never written to the character record).
+    pub food_half: bool,
     /// Vehicles and monsters (object slots other than the player).
     pub entities: Vec<Entity>,
     pub messages: VecDeque<String>,
@@ -98,6 +103,8 @@ impl Overworld {
             armour: 0,
             moves: 0,
             food_clock: FoodClock::default(),
+            food_use: crate::qol::FoodUse::Original,
+            food_half: false,
             entities: Vec::new(),
             messages: VecDeque::new(),
             rng: U1Rng::new(seed),
@@ -217,10 +224,25 @@ impl Overworld {
         }
         self.moves = self.moves.wrapping_add(1);
         self.monsters_act(map, t);
-        if self.food_clock.tick(&t.food_rate, self.transport) {
+        if self.food_clock.tick(&t.food_rate, self.transport) && self.eats_unit() {
             self.food = self.food.saturating_sub(1);
             if self.food == 0 {
                 self.dead = true;
+            }
+        }
+    }
+
+    /// The food clock ate a unit: whether it really goes, as the food-use
+    /// setting says. The original's clock and record are untouched; only
+    /// the decrement is skipped.
+    pub fn eats_unit(&mut self) -> bool {
+        use crate::qol::FoodUse;
+        match self.food_use {
+            FoodUse::Original => true,
+            FoodUse::Off => false,
+            FoodUse::Half => {
+                self.food_half = !self.food_half;
+                !self.food_half
             }
         }
     }
@@ -388,6 +410,38 @@ mod tests {
         // synthetic food rate on foot is 2: counter starts at 1, eats on move 2.
         assert_eq!(o.food, 199);
         assert_eq!(o.messages.back().unwrap(), ">N");
+    }
+
+    #[test]
+    fn food_use_original_half_off() {
+        use crate::qol::FoodUse;
+        let (mut t, _) = setup();
+        t.spawn_chance = [0; 10];
+        let map = world(1);
+        let run = |mode: FoodUse, start: u16| {
+            let mut o = Overworld::new_at(10, 10, 1);
+            o.food = start;
+            o.food_use = mode;
+            for _ in 0..40 {
+                o.pass(&map, &t);
+            }
+            o
+        };
+        // Synthetic rate on foot is 2: 20 units in 40 turns.
+        let orig = run(FoodUse::Original, 200);
+        let half = run(FoodUse::Half, 200);
+        let off = run(FoodUse::Off, 200);
+        assert_eq!(orig.food, 180);
+        assert_eq!(half.food, 190);
+        assert_eq!(off.food, 200);
+        // The clock, the turn count and the random sequence are the same
+        // whatever the setting: only the decrement differs.
+        assert_eq!((orig.food_clock, orig.moves, orig.rng.clone().range(0, 999)), (half.food_clock, half.moves, half.rng.clone().range(0, 999)));
+        assert_eq!(orig.food_clock, off.food_clock);
+        // Off never starves; original does.
+        assert!(run(FoodUse::Original, 3).dead);
+        assert!(!run(FoodUse::Off, 1).dead);
+        assert_eq!(run(FoodUse::Off, 1).food, 1);
     }
 
     #[test]

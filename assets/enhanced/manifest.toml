@@ -50,6 +50,101 @@ file = "world/dungeon.png"
 [world.0x0A] # the player on foot (transparent background)
 file = "world/player.png"
 
+# --- Playtest 1: overworld monsters (tiles 0x13-0x30, two frames per
+# kind as in the original: kind k is 0x13+2k and 0x14+2k). Transparent
+# backgrounds, drawn over the pack's terrain. Monsters the original hides
+# stay hidden.
+
+[world.0x13] # Ness creature, frame 1
+file = "world/mon_ness0.png"
+
+[world.0x14] # Ness creature, frame 2
+file = "world/mon_ness1.png"
+
+[world.0x15] # Giant squid, frame 1
+file = "world/mon_squid0.png"
+
+[world.0x16] # Giant squid, frame 2
+file = "world/mon_squid1.png"
+
+[world.0x17] # Dragon turtle, frame 1
+file = "world/mon_turtle0.png"
+
+[world.0x18] # Dragon turtle, frame 2
+file = "world/mon_turtle1.png"
+
+[world.0x19] # Pirate ship, frame 1
+file = "world/mon_pirate0.png"
+
+[world.0x1A] # Pirate ship, frame 2
+file = "world/mon_pirate1.png"
+
+[world.0x1B] # Hood, frame 1
+file = "world/mon_hood0.png"
+
+[world.0x1C] # Hood, frame 2
+file = "world/mon_hood1.png"
+
+[world.0x1D] # Bear, frame 1
+file = "world/mon_bear0.png"
+
+[world.0x1E] # Bear, frame 2
+file = "world/mon_bear1.png"
+
+[world.0x1F] # Hidden archer (still looks like bushes), frame 1
+file = "world/mon_archer0.png"
+
+[world.0x20] # Hidden archer (still looks like bushes), frame 2
+file = "world/mon_archer1.png"
+
+[world.0x21] # Dark knight, frame 1
+file = "world/mon_darkknight0.png"
+
+[world.0x22] # Dark knight, frame 2
+file = "world/mon_darkknight1.png"
+
+[world.0x23] # Evil trent (still looks like bushes), frame 1
+file = "world/mon_trent0.png"
+
+[world.0x24] # Evil trent (still looks like bushes), frame 2
+file = "world/mon_trent1.png"
+
+[world.0x25] # Thief, frame 1
+file = "world/mon_thief0.png"
+
+[world.0x26] # Thief, frame 2
+file = "world/mon_thief1.png"
+
+[world.0x27] # Orc, frame 1
+file = "world/mon_orc0.png"
+
+[world.0x28] # Orc, frame 2
+file = "world/mon_orc1.png"
+
+[world.0x29] # Knight, frame 1
+file = "world/mon_knight0.png"
+
+[world.0x2A] # Knight, frame 2
+file = "world/mon_knight1.png"
+
+[world.0x2B] # Necromancer, frame 1
+file = "world/mon_necro0.png"
+
+[world.0x2C] # Necromancer, frame 2
+file = "world/mon_necro1.png"
+
+[world.0x2D] # Evil ranger, frame 1
+file = "world/mon_ranger0.png"
+
+[world.0x2E] # Evil ranger, frame 2
+file = "world/mon_ranger1.png"
+
+[world.0x2F] # Wandering warlock, frame 1
+file = "world/mon_warlock0.png"
+
+[world.0x30] # Wandering warlock, frame 2
+file = "world/mon_warlock1.png"
+
 # --- Batch 2: towns and castles. 16x16 pictures (town tiles are 8x8 in
 # the original). Letters (0x18-0x31) stay original. The palette is batch
 # 1's plus 15 colours (purples, pinks, stone and skin tones).

@@ -283,6 +283,12 @@ tiles as input), then cut to the pixel grid, made seamless, given a
 shared palette and hand-finished (pennants, smoke, tufts, the
 hand-placed town cottages) with Python/Pillow.
 
+The overworld monsters (all 15 kinds, two frames each like the
+original) were added the same way: generated from text descriptions
+only, cut out at 30 pixels on a 32×32 transparent tile and drawn over
+the pack's terrain. The hidden archer and the evil trent still look
+like bushes. Vehicles are not drawn yet (original tiles).
+
 Batch 2 covers towns and castles: the castle wall, the
 cobbled floor, water and its six shore shapes, bush, tree, the six
 counter pieces, the grey brick wall and the people (guard, player,
@@ -464,6 +470,10 @@ arrow_repeat = true
 repeat_delay = 250     # ms: 250 | 400 | 600 | 800
 repeat_rate = 0        # 0 = the game's pace (default) | 4 | 8 | 12 | 16 a second
 gamepad = true
+food_use = "original"  # original (default) | half | off: how fast food goes
+                       # outdoors; buying and eating work in every mode. Half
+                       # keeps its half unit in the engine, not the save.
+footsteps = true       # overworld footsteps (enhanced sound only; default on)
 key_attack = "j"       # an extra key; "none" clears a default
 key_map = "m"
 pad_x = "r"            # a letter/digit, space, enter, esc, up/down/left/right,

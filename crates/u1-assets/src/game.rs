@@ -874,6 +874,7 @@ impl Game {
             self.ow.messages.clear();
             self.ow.attacks.clear();
             self.ow.dead = false;
+            self.ow.food_use = io.features().food_use;
             self.ow.end_turn(&self.a.map, &self.a.t);
             let msgs: Vec<String> = self.ow.messages.drain(..).collect();
             for s in msgs {
@@ -948,6 +949,10 @@ impl Game {
         }
         if (self.ow.x, self.ow.y) == (x0, y0) {
             self.snd(io, 1);
+        } else if io.features().footsteps {
+            // Enhanced sound only (a cue the original has no sound for).
+            let terrain = self.a.map.cell(self.ow.x as usize, self.ow.y as usize);
+            self.cue(io, crate::sound::Sfx::footstep(self.ow.transport, terrain));
         }
         self.from_ow();
         Ok(())

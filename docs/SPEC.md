@@ -1770,8 +1770,10 @@ default 50), F1 rows Music and Music volume. One track per game mode
 creation), space (space flight), lair (Mondain's lair), and two one-shot
 stings: victory (Mondain defeated) and death. Area changes crossfade over
 one second; a sting replaces the loop and ends in silence until the next
-area. The music pauses while the F1 menu is open and is silent with sound
-Mute. Tracks are our own compositions stored as compact score parameters
+area. The music pauses while the F1 menu is open. It is independent of the
+effects mode: it plays with Original beeps and with Enhanced sound,
+following only its own switch and volume; Mute silences everything,
+music included. Tracks are our own compositions stored as compact score parameters
 and rendered at start-up on a background thread (first the one needed);
 music only mixes into the effects stream, it never delays the game.
 

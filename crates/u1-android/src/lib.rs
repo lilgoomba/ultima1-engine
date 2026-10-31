@@ -36,6 +36,8 @@ pub unsafe extern "C" fn SDL_main(argc: c_int, argv: *const *const c_char) -> c_
         }
     }
     std::env::set_var("U1_TOUCH", "1");
+    // Landscape only; without this SDL picks the orientation from the window flags.
+    sdl2::hint::set("SDL_IOS_ORIENTATIONS", "LandscapeLeft LandscapeRight");
     let code = app::run(args);
     if code == std::process::ExitCode::SUCCESS {
         0

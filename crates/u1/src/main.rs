@@ -811,7 +811,7 @@ impl SdlIo {
     /// renderer the first time it is needed, then play, crossfade or stop.
     fn sync_music(&mut self) {
         let Some((dev, rate)) = &mut self.audio else { return };
-        let want = self.area.filter(|_| u1_assets::qol::music_plays(&self.qol, self.sound));
+        let want = self.area.filter(|_| self.qol.music && self.sound != SoundMode::Mute);
         let vol = f32::from(self.qol.music_volume) / 100.0;
         let have = dev.lock().music.current();
         if want.is_some() && !self.rendering {

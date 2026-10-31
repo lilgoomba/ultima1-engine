@@ -232,6 +232,122 @@ impl PadMap {
     }
 }
 
+/// The key rebinding window (F1, Keys): every command with the
+/// original's key and its extra key. Enter waits for the new key,
+/// Backspace or Delete clears it, Esc closes. Keys arrive by their SDL
+/// names (`name`) as well as their game codes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RebindScreen {
+    pub row: usize,
+    pub map: KeyMap,
+    /// Waiting for the key to bind to `row`.
+    pub waiting: bool,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RebindKey {
+    Stay,
+    /// The map changed (save it).
+    Changed,
+    Close,
+}
+
+/// Rows shown at once.
+const SHOWN: usize = 10;
+
+impl RebindScreen {
+    pub fn new(map: KeyMap) -> Self {
+        RebindScreen { row: 0, map, waiting: false, note: String::new() }
+    }
+
+    /// A key: its game code (0 if it has none) and its SDL name.
+    pub fn key(&mut self, code: u8, name: &str) -> RebindKey {
+        if self.waiting {
+            self.waiting = false;
+            if code == keys::ESC || name == "escape" {
+                self.note = "Not changed".into();
+                return RebindKey::Stay;
+            }
+            return match self.map.bind(self.row, name) {
+                Ok(n) => {
+                    self.note = n;
+                    RebindKey::Changed
+                }
+                Err(e) => {
+                    self.note = e;
+                    RebindKey::Stay
+                }
+            };
+        }
+        let n = ACTIONS.len();
+        match code {
+            keys::UP => self.row = (self.row + n - 1) % n,
+            keys::DOWN => self.row = (self.row + 1) % n,
+            keys::ENTER | keys::RIGHT | b' ' => {
+                self.waiting = true;
+                self.note = format!("Press a key for {} (Esc: cancel)", short(ACTIONS[self.row].label));
+            }
+            keys::BACKSPACE => {
+                self.map.unbind(self.row);
+                self.note = format!("{}: no extra key", short(ACTIONS[self.row].label));
+                return RebindKey::Changed;
+            }
+            keys::ESC => return RebindKey::Close,
+            _ if name == "delete" => return self.key(keys::BACKSPACE, ""),
+            _ => {}
+        }
+        RebindKey::Stay
+    }
+
+    /// The first of the rows shown.
+    pub fn top(&self) -> usize {
+        self.row.saturating_sub(SHOWN / 2).min(ACTIONS.len() - SHOWN)
+    }
+
+    /// Draw over `t` in the engine's panel.
+    pub fn draw(&self, t: &mut crate::term::Term) {
+        use crate::options::{center, panel};
+        use crate::term::{TEXT, WARN};
+        panel(t);
+        center(t, 2, "Keys  (extra keys for the commands)", TEXT);
+        t.print_at_attr(3, 3, "Command", TEXT);
+        t.print_at_attr(21, 3, "Own", TEXT);
+        t.print_at_attr(28, 3, "Extra", TEXT);
+        let top = self.top();
+        for (i, a) in ACTIONS.iter().enumerate().skip(top).take(SHOWN) {
+            let row = 4 + i - top;
+            let sel = i == self.row;
+            t.print_at_attr(2, row, if sel { "\u{10}" } else { " " }, WARN);
+            let label: String = short(a.label).chars().take(17).collect();
+            t.print_at_attr(3, row, &label, TEXT);
+            t.print_at_attr(21, row, if a.own.is_empty() { "-" } else { a.own }, TEXT);
+            let extra = if sel && self.waiting { "?".to_string() } else { show(&self.extra(i)) };
+            t.print_at_attr(28, row, &extra, if sel { WARN } else { TEXT });
+        }
+        if top > 0 {
+            t.print_at_attr(36, 4, "\u{18}", TEXT);
+        }
+        if top + SHOWN < ACTIONS.len() {
+            t.print_at_attr(36, 3 + SHOWN, "\u{19}", TEXT);
+        }
+        let note: String = self.note.chars().take(36).collect();
+        center(t, 15, &note, WARN);
+        center(t, 16, "Enter: set  Bksp: clear  Esc: done", TEXT);
+        center(t, 17, "Own keys always work too", TEXT);
+        t.cursor(1, 24);
+    }
+
+    fn extra(&self, i: usize) -> String {
+        self.map.extra[i].clone()
+    }
+}
+
+/// A label without its bracketed detail.
+fn short(l: &str) -> &str {
+    l.split(" (").next().unwrap_or(l)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,5 +399,29 @@ mod tests {
         assert_eq!(p.out("x"), PadOut::Key(b'Q'));
         assert!(matches!(p.config_key("pad_x", "jump"), Some(Err(_))));
         assert_eq!(p.config_lines(), ["pad_x = \"q\""]);
+    }
+
+    #[test]
+    fn rebind_screen_sets_clears_and_refuses() {
+        let mut r = RebindScreen::new(KeyMap::default());
+        assert_eq!(r.key(keys::ENTER, "return"), RebindKey::Stay);
+        assert!(r.waiting);
+        assert_eq!(r.key(0, "j"), RebindKey::Changed);
+        assert_eq!(r.map.code_for("j"), Some(keys::UP));
+        r.key(keys::ENTER, "return");
+        assert_eq!(r.key(b'a', "a"), RebindKey::Stay, "the original's key is refused");
+        assert_eq!(r.map.code_for("j"), Some(keys::UP));
+        r.key(keys::UP, "up");
+        assert_eq!(r.row, ACTIONS.len() - 1);
+        assert_eq!(r.key(keys::BACKSPACE, "backspace"), RebindKey::Changed);
+        assert_eq!(r.map.code_for("f6"), None);
+        r.key(keys::ENTER, "return");
+        assert_eq!(r.key(keys::ESC, "escape"), RebindKey::Stay);
+        assert!(!r.waiting);
+        assert_eq!(r.key(keys::ESC, "escape"), RebindKey::Close);
+        let mut t = crate::term::Term::new();
+        r.draw(&mut t);
+        assert!(t.row_text(2).contains("Keys"));
+        assert!((4..14).any(|y| t.row_text(y).contains("Character screen")));
     }
 }

@@ -326,7 +326,8 @@ impl Game {
         ];
         for (i, (k, v)) in pairs.iter().enumerate() {
             let (col, row) = (2 + 19 * (i % 2), 6 + i / 2);
-            self.term.print_at_attr(col, row, &format!("{k:<11}{v}"), w);
+            let text = if i % 2 == 0 { format!("{k:<11}{v}") } else { format!("{k:<6}{v}") };
+            self.term.print_at_attr(col, row, &text, w);
         }
         for i in 1..=6 {
             let n = self.ptr(m::STAT_NAMES, i);
@@ -420,50 +421,51 @@ impl Game {
     pub fn draw_help(&mut self) {
         self.view_frame("Commands", "F3 or any key: back");
         let (w, t) = (self.vc(WHITE, 3), self.vc(TEXT, 1));
+        // Each entry fits 18 columns so the two columns never run together.
         let cmds: [(&str, &str); 24] = [
-            ("Arrows", "move (or turn)"),
-            ("Space", "pass a turn"),
+            ("Arrows", "move/turn"),
+            ("Space", "pass"),
             ("A", "attack"),
-            ("8 2 4 6", "attack N S W E"),
-            ("B", "board a vehicle"),
-            ("C", "cast ready spell"),
-            ("D", "drop (in town)"),
-            ("E", "enter a place"),
-            ("F", "fire vehicle guns"),
-            ("G", "get (a chest)"),
-            ("H", "hyperjump (space)"),
-            ("I", "inform / search"),
-            ("K", "klimb a ladder"),
+            ("8246", "attack NSWE"),
+            ("B", "board"),
+            ("C", "cast spell"),
+            ("D", "drop (town)"),
+            ("E", "enter"),
+            ("F", "fire guns"),
+            ("G", "get chest"),
+            ("H", "hyperjump"),
+            ("I", "inform/search"),
+            ("K", "klimb"),
             ("N", "noise on/off"),
-            ("O", "open a chest"),
-            ("Q", "quit and save"),
-            ("R", "ready an item"),
+            ("O", "open chest"),
+            ("Q", "quit & save"),
+            ("R", "ready"),
             ("S", "steal"),
-            ("T", "transact (shops)"),
-            ("U", "unlock a cell"),
-            ("V", "view (in space)"),
-            ("X", "x-it a vehicle"),
-            ("Z", "ztats (status)"),
+            ("T", "transact"),
+            ("U", "unlock cell"),
+            ("V", "view (space)"),
+            ("X", "x-it vehicle"),
+            ("Z", "ztats"),
             ("", ""),
         ];
         for (i, (k, d)) in cmds.iter().enumerate() {
-            let (col, row) = (1 + 19 * (i / 12), 3 + i % 12);
+            let (col, row) = (1 + 20 * (i / 12), 3 + i % 12);
             self.term.print_at_attr(col, row, k, w);
-            self.term.print_at_attr(col + if k.len() > 1 { k.len() + 1 } else { 2 }, row, d, t);
+            self.term.print_at_attr(col + k.len() + 1, row, d, t);
         }
         self.term.print_at_attr(1, 16, "Engine keys", w);
         let eng = [
             ("F1", "options"),
             ("F2", "save slots"),
-            ("F5/F9", "quick save/load"),
+            ("F5/F9", "qsave/qload"),
             ("PgUp", "message log"),
-            ("Tab", "map, if on"),
-            ("F6", "character, if on"),
+            ("Tab", "map (if on)"),
+            ("F6", "character"),
             ("F3", "this help"),
-            ("Alt+Ent", "full screen"),
+            ("Alt+Ent", "fullscreen"),
         ];
         for (i, (k, d)) in eng.iter().enumerate() {
-            let (col, row) = (1 + 19 * (i % 2), 17 + i / 2);
+            let (col, row) = (1 + 20 * (i % 2), 17 + i / 2);
             self.term.print_at_attr(col, row, k, w);
             self.term.print_at_attr(col + k.len() + 1, row, d, t);
         }

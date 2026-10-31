@@ -28,6 +28,8 @@ use u1_assets::config::{self, Config, VideoChoice};
 use u1_assets::enhanced::{self, Pack};
 use u1_assets::msglog::{self, LogView};
 use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
+use u1_assets::explore::Explore;
+use u1_assets::keymap::{KeyMap, PadMap, PadOut, RebindKey, RebindScreen};
 use u1_assets::qol::{self, Qol, Scaling, Wait};
 use u1_assets::slots::{SaveReq, Slot, SlotKey, SlotScreen};
 use u1_assets::exe::Exe;
@@ -86,7 +88,15 @@ the character's own file, every slot an original 820-byte record), a
 message log (PgUp, PgDn), turbo (F4), shorter message delays, faster space
 flight and steady timing. --fullscreen and --crt turn those on for one run;
 in screenshots --crt applies the filter, --slots and --log draw those
-windows (--keys may hold {saveN} / {loadN}, N 1-5 or q).";
+windows (--keys may hold {saveN} / {loadN}, N 1-5 or q).
+More optional features (SPEC §23), also off by default: a dungeon automap
+and a world mini-map (Tab), a character screen (F6), a command help screen
+(F3), short hints at command prompts, a confirmation before selling or
+dropping things worth a set amount, extra keys for the commands (F1, Keys),
+a gamepad and the engine's own arrow repeat. --features LIST turns some on
+for one run (automap, minimap, character, help, hints, confirm=N, repeat,
+gamepad); in screenshots --keys may hold {map} {help} {char}, and --rebind
+draws the key window.";
 
 struct Args {
     game_dir: PathBuf,
@@ -120,6 +130,12 @@ struct Args {
     /// `--crt`, `--fullscreen`: on for this run.
     crt: bool,
     fullscreen: bool,
+    /// `--features`: the §23 features on for this run.
+    features: Qol,
+    /// Screenshots: the key rebinding window.
+    rebind_shot: bool,
+    /// Screenshots: the options menu's chosen row.
+    menu_row: usize,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -150,6 +166,9 @@ fn parse_args() -> Result<Args, String> {
         log_shot: false,
         crt: false,
         fullscreen: false,
+        features: Qol::default(),
+        rebind_shot: false,
+        menu_row: 0,
     };
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
@@ -214,6 +233,9 @@ fn parse_args() -> Result<Args, String> {
             "--log" => a.log_shot = true,
             "--crt" => a.crt = true,
             "--fullscreen" => a.fullscreen = true,
+            "--features" => features(&mut a.features, &v()?)?,
+            "--rebind" => a.rebind_shot = true,
+            "--menu-row" => a.menu_row = v()?.parse().map_err(|_| "bad --menu-row")?,
             "--pack" => a.pack = Some(v()?.into()),
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
@@ -234,6 +256,29 @@ fn parse_args() -> Result<Args, String> {
         return Err("--pack needs --video enhanced or --sound enhanced".into());
     }
     Ok(a)
+}
+
+/// `--features LIST`: turn the named §23 features on in `q`.
+fn features(q: &mut Qol, list: &str) -> Result<(), String> {
+    for f in list.split(',').map(str::trim).filter(|f| !f.is_empty()) {
+        match f {
+            "automap" => q.automap = true,
+            "minimap" => q.minimap = true,
+            "character" => q.charsheet = true,
+            "help" => q.help = true,
+            "hints" => q.hints = true,
+            "repeat" => q.repeat = true,
+            "gamepad" => q.gamepad = true,
+            "all" => {
+                let c = q.confirm;
+                *q = Qol { automap: true, minimap: true, charsheet: true, help: true, hints: true, ..*q };
+                q.confirm = c;
+            }
+            c if c.starts_with("confirm=") => q.confirm = c[8..].parse().map_err(|_| "--features confirm=N wants a number")?,
+            other => return Err(format!("unknown feature {other} (automap, minimap, character, help, hints, confirm=N, repeat, gamepad, all)")),
+        }
+    }
+    Ok(())
 }
 
 /// The enhanced mode's pack: `--pack`, else `assets/enhanced` in the
@@ -451,6 +496,8 @@ fn load(a: &Args, mode: VideoMode, chosen: Option<&Path>, reload: Option<PlayerR
     if same_dir(dir, &a.game_dir) {
         return Err("--save-to must not point into the game directory (originals are never overwritten)".into());
     }
+    // The explored map beside the save (SPEC §23.1), if there is one.
+    game.explore = Explore::load(&save_to);
     game.save_to = Some(save_to);
     Ok((game, palette))
 }
@@ -468,6 +515,7 @@ fn write_png(path: &Path, w: u32, h: u32, rgb: &[u8]) -> Result<(), String> {
 fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
     let mut io = ScriptIo::from_text(&a.keys);
     io.log = a.log_shot;
+    io.qol = a.features;
     let scale = 2; // the size of a 640x400 DOSBox capture
     let mode = video_mode(a)?;
     let pack = load_pack(a)?;
@@ -501,14 +549,28 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
     }
     if let Some(r) = g.reload.take() {
         // A loaded slot: the game as the window would start it again.
+        let carried = g.reload_explore.take();
         let (g2, _) = load(a, g.a.video, chosen.as_deref(), Some(r))?;
         g = g2;
+        if let Some(e) = carried {
+            g.explore = e;
+        }
     }
     let window = if a.options_shot {
         let avail = available(a);
         let mut c = g.term.clone();
-        let q = Qol { crt: a.crt, fullscreen: a.fullscreen, ..Default::default() };
-        OptionsMenu::new(VideoChoice::from_parts(a.enhanced, mode), a.sound, avail).with_qol(q).draw(&mut c);
+        let q = Qol { crt: a.crt, fullscreen: a.fullscreen, ..a.features };
+        let mut m = OptionsMenu::new(VideoChoice::from_parts(a.enhanced, mode), a.sound, avail).with_qol(q);
+        m.row = a.menu_row.min(opts::ROWS.len() - 1);
+        m.draw(&mut c);
+        Some(c)
+    } else if a.rebind_shot {
+        let mut c = g.term.clone();
+        let mut r = RebindScreen::new(KeyMap::default());
+        r.key(keys::DOWN, "down");
+        r.key(keys::ENTER, "return");
+        r.key(0, "j");
+        r.draw(&mut c);
         Some(c)
     } else if a.slots_shot {
         let mut c = g.term.clone();
@@ -551,7 +613,22 @@ struct SdlIo {
     events: sdl2::EventPump,
     palette: [Rgb; 16],
     next: Instant,
-    pending: std::collections::VecDeque<u8>,
+    /// Keys for the game: what each types anywhere, and what it means at
+    /// the command prompt if that differs (an extra key, SPEC §23.4).
+    pending: std::collections::VecDeque<(Option<u8>, Option<u8>)>,
+    /// The game is at its command prompt (`Io::command_prompt`).
+    at_prompt: bool,
+    /// The extra keys and the gamepad's buttons.
+    keymap: KeyMap,
+    pad: PadMap,
+    /// The engine's arrow repeat: the arrow held (and what holds it: a
+    /// keycode, or a negative number for the pad) and when it next repeats.
+    held: Option<(u8, i32, Instant)>,
+    /// The gamepad subsystem and the pads open.
+    gc: Option<sdl2::GameControllerSubsystem>,
+    pads: Vec<sdl2::controller::GameController>,
+    /// The left stick's direction (an arrow code, or 0).
+    stick: u8,
     /// The sound output (none without an audio device).
     audio: Option<(sdl2::audio::AudioDevice<Mixer>, u32)>,
     sound: SoundMode,
@@ -580,7 +657,8 @@ struct SdlIo {
     modal_wanted: Option<Modal>,
     /// Keys go to the open window (`menu_keys`), not the game.
     in_menu: bool,
-    menu_keys: std::collections::VecDeque<u8>,
+    /// The window's keys: the game's code (0 for none) and SDL's name.
+    menu_keys: std::collections::VecDeque<(u8, String)>,
     cfg_path: Option<PathBuf>,
     /// On the title or character screens (until the game starts).
     front: bool,
@@ -607,6 +685,7 @@ enum Modal {
     Options,
     Slots,
     Log,
+    Rebind,
 }
 
 /// How long a note shows, and where.
@@ -670,7 +749,7 @@ impl SdlIo {
     /// Open one of the engine's windows (a second press closes it).
     fn open(&mut self, m: Modal) {
         if self.in_menu {
-            self.menu_keys.push_back(keys::ESC);
+            self.menu_keys.push_back((keys::ESC, "escape".into()));
         } else {
             self.modal_wanted = Some(m);
             self.in_menu = true;
@@ -706,7 +785,7 @@ impl SdlIo {
         for ev in evs {
             match ev {
                 Event::Quit { .. } => return Err(Halt),
-                Event::KeyDown { keycode: Some(k), keymod, .. } => {
+                Event::KeyDown { keycode: Some(k), keymod, repeat, .. } => {
                     let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::CAPSMOD);
                     let alt = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
                     let c = match k {
@@ -715,7 +794,7 @@ impl SdlIo {
                             let q = Qol { fullscreen: !self.qol.fullscreen, ..self.qol };
                             self.apply_qol(q);
                             self.save_config(false);
-                            None
+                            continue;
                         }
                         Keycode::Left | Keycode::Kp4 => Some(keys::LEFT),
                         Keycode::Right | Keycode::Kp6 => Some(keys::RIGHT),
@@ -727,26 +806,26 @@ impl SdlIo {
                         // The engine's own keys: none of them the original's.
                         Keycode::F1 => {
                             self.open(Modal::Options);
-                            None
+                            continue;
                         }
                         Keycode::F2 if self.qol.slots && (self.in_menu || !self.front) => {
                             self.open(Modal::Slots);
-                            None
+                            continue;
                         }
                         Keycode::F5 if self.qol.slots && !self.in_menu => {
                             self.request(SaveReq::Save(Slot::Quick));
-                            None
+                            continue;
                         }
                         Keycode::F9 if self.qol.slots && !self.in_menu => {
                             self.request(SaveReq::Load(Slot::Quick));
-                            None
+                            continue;
                         }
                         Keycode::F4 if !self.in_menu => {
                             let q = Qol { turbo: !self.qol.turbo, ..self.qol };
                             self.apply_qol(q);
                             self.note(if q.turbo { "Turbo on (F4)" } else { "Turbo off (F4)" });
                             self.save_config(false);
-                            None
+                            continue;
                         }
                         Keycode::PageUp if self.in_menu => Some(msglog::keys::PGUP),
                         Keycode::PageDown if self.in_menu => Some(msglog::keys::PGDN),
@@ -754,7 +833,7 @@ impl SdlIo {
                         Keycode::End if self.in_menu => Some(msglog::keys::END),
                         Keycode::PageUp if self.qol.log && !self.front => {
                             self.open(Modal::Log);
-                            None
+                            continue;
                         }
                         _ => {
                             let n = k.into_i32();
@@ -766,19 +845,185 @@ impl SdlIo {
                             }
                         }
                     };
-                    if let Some(c) = c {
-                        // Keys typed while a window is up are the window's.
-                        if self.in_menu {
-                            self.menu_keys.push_back(c);
-                        } else {
-                            self.pending.push_back(c);
+                    let name = k.name().to_lowercase();
+                    // Keys typed while a window is up are the window's.
+                    if self.in_menu {
+                        self.menu_keys.push_back((c.unwrap_or(0), name));
+                        continue;
+                    }
+                    if let Some(a) = c.filter(|&c| is_arrow(c) && self.qol.repeat) {
+                        // The engine's repeat replaces the system's.
+                        if repeat {
+                            continue;
                         }
+                        self.hold_arrow(a, k.into_i32());
+                    }
+                    let extra = self.keymap.code_for(&name).filter(|&x| self.wanted_code(x));
+                    if c.is_some() || extra.is_some() {
+                        self.pending.push_back((c, extra));
                     }
                 }
+                Event::KeyUp { keycode: Some(k), .. } => {
+                    if self.held.map_or(false, |(_, by, _)| by == k.into_i32()) {
+                        self.held = None;
+                    }
+                }
+                Event::ControllerDeviceAdded { which, .. } if self.qol.gamepad => self.open_pad(which),
+                Event::ControllerButtonDown { button, .. } if self.qol.gamepad => self.pad_button(button, true),
+                Event::ControllerButtonUp { button, .. } if self.qol.gamepad => self.pad_button(button, false),
+                Event::ControllerAxisMotion { axis, value, .. } if self.qol.gamepad => self.pad_axis(axis, value),
                 _ => {}
             }
         }
         Ok(())
+    }
+
+    /// An engine code the game should get: a screen whose feature is off
+    /// leaves the key as it always was.
+    fn wanted_code(&self, code: u8) -> bool {
+        match code {
+            keys::MAP => self.qol.automap || self.qol.minimap,
+            keys::HELP => self.qol.help,
+            keys::CHARSHEET => self.qol.charsheet,
+            _ => true,
+        }
+    }
+
+    /// Start the engine's repeat for arrow `a`, held by `by`.
+    fn hold_arrow(&mut self, a: u8, by: i32) {
+        let (delay, _) = self.qol.repeat_timing();
+        self.held = Some((a, by, Instant::now() + delay));
+    }
+
+    /// A key from the pad: to the open window, or to the game.
+    fn pad_key(&mut self, c: u8, name: &str) {
+        if self.in_menu {
+            self.menu_keys.push_back((c, name.to_string()));
+        } else {
+            self.pending.push_back((Some(c), None));
+        }
+    }
+
+    /// Open the pads already plugged in (the gamepad setting turned on).
+    fn open_pads(&mut self) {
+        let n = self.gc.as_ref().and_then(|g| g.num_joysticks().ok()).unwrap_or(0);
+        for i in 0..n {
+            self.open_pad(i);
+        }
+    }
+
+    fn open_pad(&mut self, which: u32) {
+        let Some(gc) = &self.gc else { return };
+        if !gc.is_game_controller(which) {
+            return;
+        }
+        match gc.open(which) {
+            Ok(p) => {
+                if self.pads.iter().all(|q| q.instance_id() != p.instance_id()) {
+                    self.note(&format!("Gamepad: {}", p.name()));
+                    self.pads.push(p);
+                }
+            }
+            Err(e) => eprintln!("gamepad: {e}"),
+        }
+    }
+
+    /// A pad button: the d-pad is the arrows, the rest as the config says
+    /// (SPEC §23.4).
+    fn pad_button(&mut self, b: sdl2::controller::Button, down: bool) {
+        use sdl2::controller::Button;
+        let arrow = match b {
+            Button::DPadUp => Some(keys::UP),
+            Button::DPadDown => Some(keys::DOWN),
+            Button::DPadLeft => Some(keys::LEFT),
+            Button::DPadRight => Some(keys::RIGHT),
+            _ => None,
+        };
+        let by = -1 - b as i32;
+        if !down {
+            if self.held.map_or(false, |(_, h, _)| h == by) {
+                self.held = None;
+            }
+            return;
+        }
+        if let Some(a) = arrow {
+            self.pad_key(a, "");
+            if self.qol.repeat && !self.in_menu {
+                self.hold_arrow(a, by);
+            }
+            return;
+        }
+        match self.pad.out(&b.string()) {
+            PadOut::Key(k) => {
+                let name = match k {
+                    keys::ESC => "escape".to_string(),
+                    keys::ENTER => "return".to_string(),
+                    b' ' => "space".to_string(),
+                    k => (k as char).to_ascii_lowercase().to_string(),
+                };
+                self.pad_key(k, &name);
+            }
+            PadOut::Command(c) if !self.in_menu && self.wanted_code(c) => self.pending.push_back((None, Some(c))),
+            PadOut::Options => self.open(Modal::Options),
+            _ => {}
+        }
+    }
+
+    /// The left stick: past a third of its travel it is an arrow.
+    fn pad_axis(&mut self, axis: sdl2::controller::Axis, v: i16) {
+        use sdl2::controller::Axis;
+        const DEAD: i16 = 12_000;
+        let a = match axis {
+            Axis::LeftX if v < -DEAD => keys::LEFT,
+            Axis::LeftX if v > DEAD => keys::RIGHT,
+            Axis::LeftY if v < -DEAD => keys::UP,
+            Axis::LeftY if v > DEAD => keys::DOWN,
+            Axis::LeftX | Axis::LeftY => 0,
+            _ => return,
+        };
+        let horiz = matches!(axis, Axis::LeftX);
+        let same_axis = |s: u8| if horiz { matches!(s, keys::LEFT | keys::RIGHT) } else { matches!(s, keys::UP | keys::DOWN) };
+        if a == 0 {
+            if same_axis(self.stick) {
+                self.stick = 0;
+                if self.held.map_or(false, |(_, by, _)| by == -100) {
+                    self.held = None;
+                }
+            }
+            return;
+        }
+        if a == self.stick {
+            return;
+        }
+        self.stick = a;
+        self.pad_key(a, "");
+        if self.qol.repeat && !self.in_menu {
+            self.hold_arrow(a, -100);
+        }
+    }
+
+    /// The next key for the game: an extra key means its command only at
+    /// the command prompt, and nothing elsewhere.
+    fn next_key(&mut self) -> Option<u8> {
+        while let Some((plain, cmd)) = self.pending.pop_front() {
+            let k = if self.at_prompt { cmd.or(plain) } else { plain };
+            if k.is_some() {
+                return k;
+            }
+        }
+        None
+    }
+
+    /// A held arrow due to repeat.
+    fn repeat_due(&mut self) {
+        if let Some((a, by, at)) = self.held {
+            let now = Instant::now();
+            if now >= at && self.pending.is_empty() && !self.in_menu {
+                let (_, every) = self.qol.repeat_timing();
+                self.held = Some((a, by, (at + every).max(now)));
+                self.pending.push_back((Some(a), None));
+            }
+        }
     }
 
     /// Wait `d`, with the windows and restarts handled (time in a window
@@ -815,7 +1060,8 @@ impl Io for SdlIo {
             self.menu(t)?;
             self.restarting()?;
             let poll = self.scaled(POLL, Wait::Poll);
-            if let Some(k) = self.pending.pop_front() {
+            self.repeat_due();
+            if let Some(k) = self.next_key() {
                 self.next = Instant::now() + poll;
                 return Ok(Some(k));
             }
@@ -845,7 +1091,7 @@ impl Io for SdlIo {
         self.pump()?;
         self.menu(t)?;
         self.restarting()?;
-        Ok(self.pending.pop_front())
+        Ok(self.next_key())
     }
 
     fn retrace(&mut self, t: &Term, n: u32) -> IoResult<()> {
@@ -949,6 +1195,18 @@ impl Io for SdlIo {
     fn wants_log(&self) -> bool {
         self.qol.log
     }
+
+    fn features(&self) -> Qol {
+        self.qol
+    }
+
+    fn command_prompt(&mut self, on: bool) {
+        self.at_prompt = on;
+    }
+}
+
+fn is_arrow(c: u8) -> bool {
+    matches!(c, keys::UP | keys::DOWN | keys::LEFT | keys::RIGHT)
 }
 
 impl SdlIo {
@@ -956,27 +1214,61 @@ impl SdlIo {
     /// `t` and run with the game paused until it closes. Returns how long
     /// it was open (timed waits resume where they were).
     fn menu(&mut self, t: &Term) -> IoResult<Duration> {
-        let Some(which) = self.modal_wanted.take() else { return Ok(Duration::ZERO) };
+        if self.modal_wanted.is_none() {
+            return Ok(Duration::ZERO);
+        }
         let opened = Instant::now();
-        let r = match which {
+        // One window can open the next (Options, then Keys).
+        while let Some(which) = self.modal_wanted.take() {
+            self.in_menu = true;
+            let r = self.run_one(t, which);
+            self.in_menu = false;
+            self.menu_keys.clear();
+            r?;
+        }
+        let paused = opened.elapsed();
+        self.next = Instant::now() + POLL;
+        self.held = None;
+        self.present(t)?;
+        Ok(paused)
+    }
+
+    fn run_one(&mut self, t: &Term, which: Modal) -> IoResult<()> {
+        match which {
             Modal::Options => {
                 let video = VideoChoice::from_parts(self.enhanced, self.wanted);
                 let mut m = OptionsMenu::new(video, self.sound, self.avail).with_qol(self.qol);
-                self.run_modal(t, &mut m, |m, c| m.draw(c), |io, m, k| match m.key(k) {
+                self.run_modal(t, &mut m, |m, c| m.draw(c), |io, m, k, _| match m.key(k) {
                     MenuKey::Changed => {
                         io.choose(m.video, m.sound);
                         io.apply_qol(m.qol);
                         io.save_config(true);
                         true
                     }
+                    MenuKey::Rebind => {
+                        io.modal_wanted = Some(Modal::Rebind);
+                        false
+                    }
                     MenuKey::Close => false,
                     MenuKey::Stay => true,
+                })
+            }
+            Modal::Rebind => {
+                let mut r = RebindScreen::new(self.keymap.clone());
+                self.run_modal(t, &mut r, |r, c| r.draw(c), |io, r, k, name| match r.key(k, name) {
+                    RebindKey::Changed => {
+                        io.keymap = r.map.clone();
+                        io.save_config(false);
+                        true
+                    }
+                    RebindKey::Close => false,
+                    RebindKey::Stay => true,
                 })
             }
             Modal::Slots => {
                 let base = self.save_base.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1"));
                 let mut s = SlotScreen::new(&base);
-                self.run_modal(t, &mut s, |s, c| s.draw(c), |io, s, k| match s.key(k) {
+                self.run_modal(t, &mut s, |s, c| s.draw(c), |io, s, k, _| match s.key(k) {
                     SlotKey::Do(r) => {
                         io.request(r);
                         false
@@ -987,27 +1279,20 @@ impl SdlIo {
             }
             Modal::Log => {
                 let mut v = LogView::new(t);
-                self.run_modal(t, &mut v, |v, c| v.draw(c), |_, v, k| v.key(k))
+                self.run_modal(t, &mut v, |v, c| v.draw(c), |_, v, k, _| v.key(k))
             }
-        };
-        self.in_menu = false;
-        self.menu_keys.clear();
-        r?;
-        let paused = opened.elapsed();
-        self.next = Instant::now() + POLL;
-        self.present(t)?;
-        Ok(paused)
+        }
     }
 
     /// Run one window until `key` says it closes (false).
-    fn run_modal<S>(&mut self, t: &Term, st: &mut S, draw: fn(&S, &mut Term), key: fn(&mut SdlIo, &mut S, u8) -> bool) -> IoResult<()> {
+    fn run_modal<S>(&mut self, t: &Term, st: &mut S, draw: fn(&S, &mut Term), key: fn(&mut SdlIo, &mut S, u8, &str) -> bool) -> IoResult<()> {
         loop {
             let mut c = t.clone();
             draw(st, &mut c);
             self.present_over(t, Some((&c, PANEL)))?;
             self.pump()?;
-            while let Some(k) = self.menu_keys.pop_front() {
-                if !key(self, st, k) {
+            while let Some((k, name)) = self.menu_keys.pop_front() {
+                if !key(self, st, k, &name) {
                     return Ok(());
                 }
             }
@@ -1046,6 +1331,14 @@ impl SdlIo {
         if !q.slots {
             self.save_req = None;
         }
+        if !q.repeat {
+            self.held = None;
+        }
+        if q.gamepad && !old.gamepad {
+            self.open_pads();
+        } else if !q.gamepad {
+            self.pads.clear();
+        }
     }
 
     fn apply_window(&mut self) {
@@ -1075,6 +1368,8 @@ impl SdlIo {
             c.sound = Some(self.sound);
         }
         c.qol = self.qol;
+        c.keys = self.keymap.clone();
+        c.pad = self.pad.clone();
         c.warnings.clear();
         if let Err(e) = c.save(p) {
             eprintln!("{}: {e}", p.display());
@@ -1258,6 +1553,15 @@ fn play(a: &Args) -> Result<(), String> {
         palette,
         next: Instant::now(),
         pending: Default::default(),
+        at_prompt: false,
+        keymap: cfg.keys.clone(),
+        pad: cfg.pad.clone(),
+        held: None,
+        // Opened even with the setting off (it reads nothing until a pad
+        // is opened), so the menu can turn the gamepad on.
+        gc: sdl.game_controller().map_err(|e| eprintln!("no gamepad support: {e}")).ok(),
+        pads: Vec::new(),
+        stick: 0,
         audio,
         sound: set.sound,
         sounds: None,
@@ -1289,6 +1593,17 @@ fn play(a: &Args) -> Result<(), String> {
     let mut q = cfg.qol;
     q.crt |= a.crt;
     q.fullscreen |= a.fullscreen;
+    let f = a.features;
+    q.automap |= f.automap;
+    q.minimap |= f.minimap;
+    q.charsheet |= f.charsheet;
+    q.help |= f.help;
+    q.hints |= f.hints;
+    q.repeat |= f.repeat;
+    q.gamepad |= f.gamepad;
+    if f.confirm > 0 {
+        q.confirm = f.confirm;
+    }
     io.apply_qol(q);
     if q != Qol::default() {
         // apply_qol only touches the window for a change.
@@ -1304,16 +1619,22 @@ fn play(a: &Args) -> Result<(), String> {
     io.front = false;
     io.restart = false;
     let mut reload = None;
+    let mut carried: Option<Explore> = None;
     loop {
         let mode = io.wanted;
         io.video_shown(mode);
         let (mut g, _) = load(a, mode, chosen.as_deref(), reload.take())?;
+        if let Some(e) = carried.take() {
+            g.explore = e;
+        }
         io.save_base = g.save_to.clone();
         io.in_space = false;
+        io.at_prompt = false;
         let _ = g.run(&mut io);
         // A save slot was loaded: the game starts again from it.
         if let Some(r) = g.reload.take() {
             reload = Some(r);
+            carried = g.reload_explore.take();
             continue;
         }
         if let Some(s) = g.stopped {

@@ -1673,14 +1673,18 @@ exactly as it was when any key closes them.
   stays a door.
 * One map per level, keyed by the overworld square of the entrance and
   the depth. The screen shows the 11x11 grid (unseen squares blank), the
-  player as an arrow pointing the way they face, a key and "Seen n of
-  121".
+  player as an arrow pointing the way they face, "Facing" with the
+  original's own compass word (the one under the dungeon view), a key and
+  "Seen n of 121". On CGA, where corridors and force fields share a
+  colour, a force field is a lattice of crossing diagonals on black.
 
 ### 23.2 Overworld mini-map (Tab outdoors, in towns and castles)
 
 * At every outdoor command poll the 19x9 squares on screen are marked
-  seen. The map draws the 168x156 world one pixel a square, seen squares
-  only, in four colours by terrain (water, grass, forest, mountains);
+  seen. The map opens zoomed in: 42x39 squares round the player, four
+  pixels a square, the world wrapping as it does to walk. Z switches to
+  the whole 168x156 world, one pixel a square, and back; any other key
+  closes it. Seen squares only, in four colours by terrain (water, grass, forest, mountains);
   places look like the land around them until entered.
 * Entering a place (E) marks it visited. Visited places get a mark by
   kind (town, castle, signpost, dungeon) and are listed by name as
@@ -1690,9 +1694,12 @@ exactly as it was when any key closes them.
 player file, `<save>.map` (for example `PLAYER2.U1.map`): a header line,
 `version 1`, `visited <ids>`, one `world <y> <hex bits>` line per row with
 anything seen, and one `level <x> <y> <depth> <11 rows>` line per level.
-It is written only when one of the maps is on, and only when the record is
-written (Quit, or a save slot of §22.2, beside that slot's file); it is
-read at start and with a loaded slot. Lines that make no sense are
+It is written only when one of the maps is on: when the record is written
+(Quit, or a save slot of §22.2, beside that slot's file), when the run
+ends any other way (the window closed), and on entering or leaving a
+town, castle or dungeon. It goes to a temporary file first and is then
+renamed over the old one; the record itself is never written by any of
+these. It is read at start and with a loaded slot. Lines that make no sense are
 skipped. Deleting it forgets the maps and nothing else.
 
 ### 23.3 Controls
@@ -1716,15 +1723,20 @@ skipped. Deleting it forgets the maps and nothing else.
   stick (past a quarter of its travel; one step each time it is pushed)
   are the arrows. The other buttons follow `pad_<button>` lines: a, b, x,
   y, back, start, guide, leftshoulder, rightshoulder, leftstick,
-  rightstick. Defaults: a Space, b Esc, x A, y E, back map, start
+  rightstick. (The mapping is tested with synthetic SDL controller
+  events; testing with a real controller is pending.) Defaults: a Space, b Esc, x A, y E, back map, start
   options, guide help, leftshoulder K, rightshoulder F, leftstick
   character, rightstick Z. A value is a letter or digit, space, enter,
   esc, up/down/left/right, options, map, help, character or none.
 * **Arrow auto-repeat**: off, the system's key repeat is used, as before.
   On, the engine's own: a held arrow (or d-pad/stick direction) moves
-  again after the delay (250, 400, 600 or 800 ms) and then at the rate (4,
-  8, 12 or 16 steps a second), only when nothing else is waiting, so a
-  slow command is never overrun by repeats.
+  again after the delay (250 by default, 400, 600 or 800 ms) and then at
+  the rate: by default the game's pace, one step per pass of the main
+  loop (the original's 130 ms key poll), or 4, 8, 12 or 16 steps a
+  second, never faster than that pace. A repeat is delivered only at the
+  command prompt with no key waiting and no menu open, and the next one is
+  timed from when it is delivered (no catching up), so a slow command is
+  never overrun and a question is never answered by a held arrow.
 
 ### 23.4 Help, hints and the character screen
 

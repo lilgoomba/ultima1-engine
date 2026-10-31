@@ -1759,7 +1759,32 @@ the coin dropped) first asks "Sure? (Y/N)" in a box over the view. Y goes
 on exactly as the original; anything else leaves everything as it was and
 the command ends as if nothing was chosen.
 
-## Sources
+## 24. Music and smoothing (engine features, not original behaviour)
+
+The original has no music and draws square pixels; both features below are
+off by default and change nothing when off.
+
+**Music.** Config `music` (default false) and `music_volume` (10-100,
+default 50), F1 rows Music and Music volume. One track per game mode
+(outdoors, town, castle, dungeon), plus title (intro and character
+creation), space (space flight), lair (Mondain's lair), and two one-shot
+stings: victory (Mondain defeated) and death. Area changes crossfade over
+one second; a sting replaces the loop and ends in silence until the next
+area. The music pauses while the F1 menu is open and is silent with sound
+Mute. Tracks are our own compositions stored as compact score parameters
+and rendered at start-up on a background thread (first the one needed);
+music only mixes into the effects stream, it never delays the game.
+
+**Smoothing.** Config `smoothing = off | linear | pixel-art`, F1 row
+Smoothing. Off: nearest-neighbour stretch. Linear: the stretched texture
+is filtered bilinearly. Pixel art: the frame (320x200 EGA or the enhanced
+size) is doubled with the Scale2x/EPX rule (a pixel's quarter takes a
+neighbour's colour where two adjacent neighbours agree and the other two
+differ), repeated until at least 1280 wide, then stretched bilinearly.
+The window fit (whole multiples or fill) is computed on the unsmoothed
+size. With the CRT filter the smoothing runs first and the scanlines are
+applied to its result.
+
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.
 

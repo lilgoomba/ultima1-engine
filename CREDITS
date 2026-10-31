@@ -33,3 +33,8 @@ Music (crates/u1-assets/src/music.rs)
     lair        "Mondain's Lair"         B harmonic minor, 144 bpm, loops
     victory     "The Gem Shattered"      sting, once
     death       "Fallen"                 sting, once
+
+Pixel-art smoothing (crates/u1-assets/src/qol.rs, scale2x / pixel_art)
+  Our own implementation of the published Scale2x/EPX rule (Andrea
+  Mazzoleni / Eric Johnston's algorithm description); no third-party code.
+  GPL-3.0-or-later as the rest of the engine.

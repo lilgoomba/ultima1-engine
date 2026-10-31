@@ -83,16 +83,15 @@ the tests keep the original behaviour.
   vehicles, gems and similar above a value threshold), as a yes/no prompt
   in the message window.
 
+## Built on features-review-1
+
+* **Enhanced art for vehicles.** Pack pictures for overworld tiles
+  0x0B-0x12 (CC-BY-SA); the original tiles stay the fallback.
+* **Area music** (F1, off by default; SPEC §24). Nine original chiptune
+  scores rendered at run time; plays with Original or Enhanced sound,
+  never with Mute.
+* **Smoothing** (F1, off by default; SPEC §24): linear, or our own
+  Scale2x pixel-art scaler.
+
 ## Future ideas (not built)
 
-* **Area music, toggle on/off.** Music for the different areas (towns,
-  castles, overworld, dungeons, space), off by default; never in
-  original-beeps mode.
-* **Smoothing filter.** An optional anti-aliasing / smoothing filter for
-  the scaled picture (plain linear filtering, or xBR/HQx-style pixel-art
-  scalers), off by default; the sharp whole-pixel picture stays the
-  default.
-* **Enhanced art for vehicles (planned).** Pack pictures for the
-  overworld vehicle tiles 0x0B-0x12 (horse, cart, raft, frigate, aircar,
-  shuttle, time machine on the map, etc.), in the same 16-bit style and
-  CC-BY-SA licence as the monsters; the original tiles stay the fallback.

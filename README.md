@@ -427,7 +427,7 @@ steady_timing = true
 
 Only settings that differ from the default are written. `--fullscreen` and
 `--crt` turn those on for one run; screenshots take `--crt`, `--slots` and
-`--log` (`--keys` may hold `{save1}`..`{save5}`, `{saveq}`, `{load1}`..).
+`--log` (`--smoothing off|pixel-art` for the scaler; `--keys` may hold `{save1}`..`{save5}`, `{saveq}`, `{load1}`..).
 
 ### More optional features (F1, all off by default; SPEC §23)
 
@@ -441,6 +441,8 @@ Only settings that differ from the default are written. `--fullscreen` and
 | Confirm | | Ask "Sure? (Y/N)" before selling or dropping anything worth 10/50/100/250/500 or more. |
 | Arrow repeat | | Our own repeat for a held arrow: Repeat delay (250-800 ms, default 250) and Repeat rate (default "Game pace", one step each pass of the main loop as the original moves; or 4-16 a second, never faster than the game pace). Repeats come only at the command prompt, so they never answer a question. "System" is the old behaviour. |
 | Gamepad | | SDL game controllers: d-pad or left stick move; buttons as below. |
+| Music | | Original chiptune music per area (title, overworld, town, castle, dungeon, space, Mondain's lair; victory and death stings), crossfaded on area changes and paused in the F1 menu. Music volume (10-100%, default 50%) is separate from the effects. Silent when sound is Mute. See CREDITS. |
+| Smoothing | | How the picture is enlarged: Off (square pixels, as the original), Linear (bilinear filtering) or Pixel art (our own Scale2x/EPX edge-rounding scaler to at least 1280 wide, then a short linear stretch). Works in both EGA and enhanced video, and with whole-pixel scaling (the fit is still whole multiples of the original size). With CRT on, the pixel-art scaler runs first and the scanlines are drawn on its output; any smoothing also filters the CRT texture. |
 | Keys | Enter | The rebind screen: give any command or screen one extra key. |
 
 The maps are kept in `PLAYER2.U1.map` beside the player file, only with a
@@ -476,6 +478,9 @@ food_use = "original"  # original (default) | half | off: how fast food goes
                        # outdoors; buying and eating work in every mode. Half
                        # keeps its half unit in the engine, not the save.
 footsteps = true       # overworld footsteps (enhanced sound only; default on)
+music = true           # area music (default off)
+music_volume = 50      # 10..100, separate from the effects
+smoothing = "off"      # off (default) | linear | pixel-art
 key_attack = "j"       # an extra key; "none" clears a default
 key_map = "m"
 pad_x = "r"            # a letter/digit, space, enter, esc, up/down/left/right,
@@ -494,6 +499,9 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 ```
 
 ### Developer helpers
+
+`u1 --music-demo out.wav` writes about 20 s of each music track (no game files needed).
+
 
 ```sh
 # ASCII overview of a map (demo or real file)

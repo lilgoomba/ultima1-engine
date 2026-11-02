@@ -1510,3 +1510,25 @@ fn every_kings_quest_reads_from_the_game_data() {
         assert_eq!((got[k].0.as_str(), got[k].1.as_str()), (*w, *t), "castle {}", k + 1);
     }
 }
+
+/// Playtest report: G on a dungeon chest picked nothing up. As in the
+/// original (Get `5550` only acts in castles; elsewhere it prints "?"),
+/// G does nothing in a dungeon; a chest is opened with U (Unlock, `7b63`),
+/// standing on its square. A chest one square ahead is not "here".
+#[test]
+fn dungeon_chest_is_unlocked_not_got() {
+    use u1_assets::dungeon::Item;
+    let Some(mut g) = play(39, 60, "e") else { return };
+    let (a, b) = {
+        let d = g.dungeon.as_ref().unwrap();
+        (d.a as usize, d.b as usize)
+    };
+    g.dungeon.as_mut().unwrap().level.items[a][b] = Item::Chest;
+    let mut io = ScriptIo::from_text("");
+    let _ = g.command(&mut io, b'G');
+    assert!(said(&g, "Get?"), "{:?}", g.term.messages());
+    assert_eq!(g.dungeon.as_ref().unwrap().level.items[a][b], Item::Chest, "Get leaves the chest");
+    let _ = g.command(&mut io, b'U');
+    let gone = g.dungeon.as_ref().unwrap().level.items[a][b] == Item::None;
+    assert!(gone && said(&g, "Thou dost find") || said(&g, "trap") || said(&g, "Trap"), "{:?}", g.term.messages());
+}

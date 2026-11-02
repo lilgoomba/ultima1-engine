@@ -82,6 +82,11 @@ The game also pauses when its window loses focus. Closing the window with
 progress not yet saved asks first (F1, Interface: Confirm quit). The
 window's size and place are remembered.
 
+In dungeons, as in the original, G (Get) does nothing (it answers "Get?").
+Step onto a chest's square and press U (Unlock) to open it (it may be
+trapped); a coffin is opened with O. The name of what you can see ahead
+("Chest") is printed in the message window each time the view is drawn.
+
 The enhanced mode (F1, Video: Enhanced) draws our own CC-BY-SA art over
 the same game; the original EGA picture is the default.
 

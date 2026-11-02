@@ -98,5 +98,18 @@ the tests keep the original behaviour.
 * **Smoothing** (F1, off by default; SPEC §24): linear, or our own
   Scale2x pixel-art scaler.
 
+## Polish (polish-1, SPEC §25)
+
+* **Options in five pages** (Video, Sound, Gameplay, Controls, Interface)
+  with a description of each setting and resets per page or for all.
+* **Pause** while any engine window is open and when the window loses focus.
+* **Master and effects volumes** beside the music volume.
+* **Save details**: date, name, level, place and a thumbnail on the slot
+  screen, kept in a `.info` file beside the save (the save is unchanged).
+* **Screenshot key** (F12, configurable) to `~/Pictures/ultima1-engine`.
+* **Window place and size remembered.**
+* **Confirm quit** when closing the window with unsaved progress.
+* **AppImage desktop entry and a new 16-bit style icon** (our own art).
+
 ## Future ideas (not built)
 

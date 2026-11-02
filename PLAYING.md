@@ -67,15 +67,20 @@ never reads:
 
 | Key | What it does |
 |---|---|
-| F1 | Options: display (Enhanced, EGA, CGA, Tandy), sound (original beeps, enhanced, mute), and the optional features. Everything optional is **off** by default. |
+| F1 | Options, in five pages (Video, Sound, Gameplay, Controls, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default. The game is paused while it is open. |
 | F2 | Save slots (turn on "Save slots" in F1) |
 | F3 | Command help screen (turn on "Help screen" in F1) |
 | F4 | Turbo: every wait 4x shorter (always available) |
 | F5 / F9 | Quicksave / quickload (with save slots on) |
-| F6 | Character page (turn on "Character" in F1) |
 | Tab | Dungeon automap / world map (turn on the maps in F1) |
 | PgUp / PgDn | Message log (turn on "Message log" in F1) |
+| Z | Character screen instead of the original Ztats (turn on "Character" in F1) |
+| F12 | Screenshot, saved to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`); change the key with `screenshot_key = "f11"` in the config |
 | Alt+Enter | Fullscreen on/off |
+
+The game also pauses when its window loses focus. Closing the window with
+progress not yet saved asks first (F1, Interface: Confirm quit). The
+window's size and place are remembered.
 
 The enhanced mode (F1, Video: Enhanced) draws our own CC-BY-SA art over
 the same game; the original EGA picture is the default.
@@ -85,7 +90,9 @@ the same game; the original EGA picture is the default.
 * **Saves and characters**: `~/.local/share/ultima1-engine/saves/`
   (`$XDG_DATA_HOME/ultima1-engine/saves`). The roster files
   (`PLAYER1.U1` ... `PLAYER4.U1`) are original 820-byte records; save slots
-  and maps sit beside them. The first time, the characters that came with
+  and maps sit beside them, and each save made in the engine gets a small
+  `.info` file (date, place, thumbnail for the slot screen) - the save itself
+  stays an original record. The first time, the characters that came with
   the game are copied there. Saves never go into the game folder, so your
   original files are never changed and a read-only game folder (a CD) is
   fine. `--save-to FILE` or `--roster DIR` choose another place.

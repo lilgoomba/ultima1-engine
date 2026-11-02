@@ -1805,6 +1805,63 @@ The window fit (whole multiples or fill) is computed on the unsmoothed
 size. With the CRT filter the smoothing runs first and the scanlines are
 applied to its result.
 
+## 25. Desktop polish (engine features, not original behaviour)
+
+None of these changes what the game does; the original has no menus,
+windows or extra files, so each is engine-side only.
+
+**Options pages.** F1 groups its rows in five pages: Video (display,
+fullscreen, scaling, smoothing, CRT), Sound (sound mode, master volume,
+effects volume, music, music volume, footsteps), Gameplay (turbo, delays,
+fast space, timing, food warning, confirm before selling), Controls (arrow
+repeat and its delay and rate, gamepad, keys) and Interface (save slots,
+message log, maps, character screen, help, hints, confirm quit). Tab, PgDn
+or `]` turn to the next page, PgUp or `[` to the one before, 1-5 jump to a
+page. Under the rows, two lines say what the selected setting does. R puts
+the page's settings back to their defaults, O puts back every setting
+(display: the original's picture in the same EGA/CGA/Tandy mode; sound:
+original beeps); remapped keys are kept. Every change applies at once,
+nothing needs a restart (a display chosen on the title or character
+screen restarts only those screens, §21).
+
+**Pause.** Any engine window (options, slots, log, keys, the questions
+below) suspends the game inside its screen update, as §21: no turn, no
+monster move, no timed wait advances, and the music pauses. The same
+happens when the window loses focus: a "Paused" box shows until the window
+is active again or a key is pressed.
+
+**Volumes.** Config `master_volume` and `sfx_volume` (0-100 in steps of
+10, default 100), F1 Sound rows. Effects (original beeps and enhanced
+sounds) are scaled by effects x master, music by music volume x master. At
+100 the samples are passed unchanged. Mute still silences everything.
+
+**Save details.** After the game writes a save (Quit outdoors, or a save
+slot), the front end writes `<save>.info` beside it: a small text file
+with the local date and time, the character's name, level (1 per 1000
+experience), place (outdoors x,y) and an 80x50 thumbnail of the screen
+(each 4x4 block's commonest non-black colour, one hex digit per pixel).
+The 820-byte record is never changed and the original never sees the
+file. The slot screen lists each slot's name and level and shows the
+selected slot's date, place and thumbnail; a save without the file shows
+what its record says.
+
+**Screenshot key.** Config `screenshot_key` (an SDL key name, default
+`f12`). It writes the frame on screen (menus included) as a PNG,
+`u1-YYYYMMDD-HHMMSS.png`, to `~/Pictures/ultima1-engine/` when
+`~/Pictures` exists, else `$XDG_DATA_HOME/ultima1-engine/screenshots/`
+(`~/.local/share/...`). A note over the map gives the folder and name.
+
+**Window memory.** Config `window = "x,y,width,height"`: the window's
+place and size outside fullscreen, saved when the game ends if it changed,
+used at the next start (otherwise centred at the `--scale` size).
+Fullscreen is the existing `fullscreen` setting.
+
+**Confirm quit.** Config `confirm_quit` (default on), F1 Interface row.
+Closing the window after keys reached the game since its last save asks
+"Quit the game?" (Y quits, N or Esc goes back). The title and character
+screens, and a game just saved, close at once. This only guards the
+window's close button; the game's own Q works exactly as the original.
+
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.
 

@@ -108,6 +108,8 @@ the tests keep the original behaviour.
   screen, kept in a `.info` file beside the save (the save is unchanged).
 * **Screenshot key** (F12, configurable) to `~/Pictures/ultima1-engine`.
 * **Window place and size remembered.**
+* **Save slots on by default** (slot 1 is the original player file; turn
+  off in F1 for the single save).
 * **Confirm quit** when closing the window with unsaved progress.
 * **AppImage desktop entry and a new 16-bit style icon** (our own art).
 

@@ -1590,7 +1590,7 @@ listed in [ROADMAP.md](ROADMAP.md).
 
 ## 22. Optional engine features (not original behaviour)
 
-Every one is off by default. Off, the engine behaves exactly as without
+Every one is off by default except save slots (on since polish-1, §25). Off, the engine behaves exactly as without
 it: the same screens, the same timing, the same records, the same random
 sequence (the tests check the screen and the saved record with all of
 them off). None changes a rule. They are rows of the options menu (§21),
@@ -1615,6 +1615,11 @@ keys in the config file, and use only keys the original never reads
   Slots 2-5 and the quicksave are files beside it, `<name>-slot<n>.<ext>`
   and `<name>-quick.<ext>`; each is an ordinary 820-byte player record
   the original can load if renamed.
+* On by default (config `save_slots`, default true; §25). Being on changes
+  nothing until F2, F5 or F9 is pressed: Quit still writes the
+  character's own file exactly as the original, so a player who never
+  touches the slots gets the same single save. A config that says
+  `save_slots = false` keeps them off.
 * A save or load is asked for by the front end (F2 window, F5, F9) and
   taken by the game at its next main-loop key poll, so it happens only
   where the original would read a command (outdoors, in a town or castle,
@@ -1855,6 +1860,15 @@ what its record says.
 place and size outside fullscreen, saved when the game ends if it changed,
 used at the next start (otherwise centred at the `--scale` size).
 Fullscreen is the existing `fullscreen` setting.
+
+**Save slots on by default.** `save_slots` now defaults to true (§22.2).
+Existing players need nothing: their `PLAYERn.U1` is slot 1 and loads as
+before, Quit still writes it in the original 820-byte format, and slots
+2-5 and the quicksave appear only when used. Configs are written with
+only non-default keys, so an old config without the key gets slots; one
+with `save_slots = false` keeps the single save. R on the Interface page
+and O (all settings) reset to the engine defaults, so slots come back on;
+to play with only the original's single save, set Save slots to Off.
 
 **Confirm quit.** Config `confirm_quit` (default on), F1 Interface row.
 Closing the window after keys reached the game since its last save asks

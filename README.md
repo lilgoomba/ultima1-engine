@@ -394,14 +394,14 @@ Comments, other keys and tables in the file are kept when the menu saves.
 one run. Screenshots (`--screenshot`) ignore it; `--options` draws the menu
 over a screenshot.
 
-### Optional features (F1, all off by default)
+### Optional features (F1, all off by default except save slots)
 
 | Setting | Keys | What it does |
 |---|---|---|
 | Fullscreen | Alt+Enter | Fullscreen at the desktop's size. |
 | Scaling | | Whole pixels (largest whole multiple, letterboxed) or fill the window. |
 | CRT filter | | Scanlines and a slight glow, drawn after the frame. |
-| Save slots | F2, F5, F9 | F2 opens five slots plus the quicksave (Up/Down or 1-5/Q, S save, L or Enter load, Esc back); F5 quicksaves and F9 quickloads. Slot 1 is the character's own file, the one Quit writes; the others sit beside it (`PLAYER2-slot2.U1`, `PLAYER2-quick.U1`) and every one is an original 820-byte record. Saving works outdoors only, as Quit does; loading restarts the game from the record. |
+| Save slots | F2, F5, F9 | **On by default.** F2 opens five slots plus the quicksave (Up/Down or 1-5/Q, S save, L or Enter load, Esc back); F5 quicksaves and F9 quickloads. Slot 1 is the character's own file, the one Quit writes; the others sit beside it (`PLAYER2-slot2.U1`, `PLAYER2-quick.U1`) and every one is an original 820-byte record. Saving works outdoors only, as Quit does; loading restarts the game from the record. |
 | Message log | PgUp, PgDn, Home, End | PgUp shows the last 500 lines of the message window, 12 at a time; PgDn at the newest page, Esc or Enter closes it. The message window itself is unchanged. |
 | Turbo | F4 | Every wait 4x shorter. F4 works whether or not the menu turned it on. |
 | Msg delay | | The pauses after messages: original, 50%, 25% or none. |

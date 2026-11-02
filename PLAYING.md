@@ -67,11 +67,11 @@ never reads:
 
 | Key | What it does |
 |---|---|
-| F1 | Options, in five pages (Video, Sound, Gameplay, Controls, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default. The game is paused while it is open. |
-| F2 | Save slots (turn on "Save slots" in F1) |
+| F1 | Options, in five pages (Video, Sound, Gameplay, Controls, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default, except save slots and the quit confirmation. The game is paused while it is open. |
+| F2 | Save slots (on by default; slot 1 is your character's own file, the one Q writes) |
 | F3 | Command help screen (turn on "Help screen" in F1) |
 | F4 | Turbo: every wait 4x shorter (always available) |
-| F5 / F9 | Quicksave / quickload (with save slots on) |
+| F5 / F9 | Quicksave / quickload |
 | Tab | Dungeon automap / world map (turn on the maps in F1) |
 | PgUp / PgDn | Message log (turn on "Message log" in F1) |
 | Z | Character screen instead of the original Ztats (turn on "Character" in F1) |

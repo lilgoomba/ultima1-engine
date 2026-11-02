@@ -198,6 +198,7 @@ impl Config {
         flag(q.hints, d.hints, "hints", "a line on what a command asks for");
         flag(q.repeat, d.repeat, "arrow_repeat", "our own repeat for held arrows");
         flag(q.gamepad, d.gamepad, "gamepad", "SDL game controllers");
+        flag(q.tap, d.tap, "tap_actions", "a tap on the picture moves or acts");
         flag(q.footsteps, d.footsteps, "footsteps", "overworld footsteps in enhanced sound");
         flag(q.music, d.music, "music", "our own area music (F1)");
         if q.food_use != d.food_use {
@@ -279,6 +280,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "hints" => flag(v).map(|b| q.hints = b),
         "arrow_repeat" => flag(v).map(|b| q.repeat = b),
         "gamepad" => flag(v).map(|b| q.gamepad = b),
+        "tap_actions" => flag(v).map(|b| q.tap = b),
         "footsteps" => flag(v).map(|b| q.footsteps = b),
         "music" => flag(v).map(|b| q.music = b),
         "music_volume" => match v.trim_end_matches('%').parse::<u8>() {

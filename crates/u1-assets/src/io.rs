@@ -172,6 +172,10 @@ pub trait Io {
 
     fn command_prompt(&mut self, _on: bool) {}
 
+    /// At the command prompt with tap actions on: what a tap would find
+    /// (SPEC §24). Front ends without taps ignore it.
+    fn tap_scene(&mut self, _s: crate::tap::Scene) {}
+
     /// Whether the message log should be kept ([`crate::term::Term::log`]).
     fn wants_log(&self) -> bool {
         false

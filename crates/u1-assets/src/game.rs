@@ -762,6 +762,9 @@ impl Game {
         // one that brings the key too); 1500 polls without a key pass.
         let mut polls = 0u32;
         io.command_prompt(true);
+        if qol.tap {
+            io.tap_scene(self.tap_scene());
+        }
         let key = loop {
             let k = self.poll_key(io)?;
             if io.wants_log() {

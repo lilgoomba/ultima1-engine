@@ -162,6 +162,18 @@ impl Game {
         (d.a + fa * k, d.b + fb * k)
     }
 
+    /// What the dungeon view offers taps (SPEC §24).
+    pub(crate) fn tap_dungeon(&self) -> crate::tap::Dungeon {
+        let (a, b) = self.ahead(1);
+        let here = self.here();
+        crate::tap::Dungeon {
+            foe_ahead: self.ds().level.monster(a, b) != -1,
+            ladder: matches!(here, Cell::LadderUp | Cell::LadderDown),
+            coffin: self.item_here() == Item::Coffin,
+            chest: self.item_here() == Item::Chest,
+        }
+    }
+
     fn item_here(&self) -> Item {
         let d = self.ds();
         d.level.items[d.a as usize][d.b as usize]

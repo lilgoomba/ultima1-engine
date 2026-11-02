@@ -149,6 +149,10 @@ pub struct Qol {
     pub repeat_rate: u8,
     /// Gamepads (SDL game controllers).
     pub gamepad: bool,
+    /// Tap actions: a tap (or click) on the game picture moves or does
+    /// the usual command for what is there (SPEC §24). On by default on
+    /// Android only.
+    pub tap: bool,
     /// How fast food goes (rule change; original by default).
     pub food_use: FoodUse,
     /// Footsteps on the overworld (enhanced sound only; never with the
@@ -185,6 +189,7 @@ impl Default for Qol {
             repeat_delay: 250,
             repeat_rate: 0,
             gamepad: false,
+            tap: cfg!(target_os = "android"),
             food_use: FoodUse::Original,
             footsteps: true,
             music: false,

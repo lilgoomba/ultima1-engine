@@ -44,6 +44,8 @@ pub enum Row {
     RepeatDelay,
     RepeatRate,
     Gamepad,
+    /// Taps (and, with it on, mouse clicks) on the game picture.
+    Tap,
     Food,
     Footsteps,
     Music,
@@ -54,7 +56,7 @@ pub enum Row {
     Import,
 }
 
-pub const ROWS: [Row; 27] = [
+pub const ROWS: [Row; 28] = [
     Row::Video,
     Row::Sound,
     Row::Fullscreen,
@@ -76,6 +78,7 @@ pub const ROWS: [Row; 27] = [
     Row::RepeatDelay,
     Row::RepeatRate,
     Row::Gamepad,
+    Row::Tap,
     Row::Food,
     Row::Footsteps,
     Row::Music,
@@ -85,8 +88,8 @@ pub const ROWS: [Row; 27] = [
 ];
 
 /// The rows on Android, where the game files are imported into the app.
-pub const ROWS_IMPORT: [Row; 28] = {
-    let mut r = [Row::Import; 28];
+pub const ROWS_IMPORT: [Row; 29] = {
+    let mut r = [Row::Import; 29];
     let mut i = 0;
     while i < ROWS.len() {
         r[i] = ROWS[i];
@@ -125,6 +128,7 @@ impl Row {
             Row::RepeatDelay => "Repeat delay",
             Row::RepeatRate => "Repeat rate",
             Row::Gamepad => "Gamepad",
+            Row::Tap => "Tap actions",
             Row::Food => "Food use",
             Row::Footsteps => "Footsteps",
             Row::Music => "Music",
@@ -235,6 +239,7 @@ impl OptionsMenu {
             Row::RepeatRate if q.repeat_rate == 0 => "Game pace".to_string(),
             Row::RepeatRate => format!("{} a second", q.repeat_rate),
             Row::Gamepad => on(q.gamepad),
+            Row::Tap => on(q.tap),
             Row::Food => match q.food_use {
                 qol::FoodUse::Original => "Original",
                 qol::FoodUse::Half => "Half",
@@ -291,6 +296,7 @@ impl OptionsMenu {
                     Row::RepeatDelay => q.repeat_delay = qol::cycle(&qol::REPEAT_DELAYS, q.repeat_delay, k == keys::LEFT),
                     Row::RepeatRate => q.repeat_rate = qol::cycle(&qol::REPEAT_RATES, q.repeat_rate, k == keys::LEFT),
                     Row::Gamepad => q.gamepad ^= true,
+                    Row::Tap => q.tap ^= true,
                     Row::Food => q.food_use = qol::cycle(&qol::FoodUse::ALL, q.food_use, k == keys::LEFT),
                     Row::Footsteps => q.footsteps ^= true,
                     Row::Music => q.music ^= true,

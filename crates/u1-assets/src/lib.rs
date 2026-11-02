@@ -42,6 +42,7 @@ pub mod slots;
 pub mod sound;
 pub mod soundpack;
 pub mod space;
+pub mod tap;
 pub mod tcd;
 pub mod term;
 pub mod tiles;

@@ -155,6 +155,11 @@ pub trait Io {
         None
     }
 
+    /// The game wrote `rec` to `path` (Quit or a save slot); `t` is the
+    /// screen. The front end may keep its own details beside it (the save
+    /// itself is never changed).
+    fn saved(&mut self, _path: &std::path::Path, _rec: &crate::save::PlayerRecord, _t: &Term) {}
+
     /// The result of a save-slot action, to show the player.
     fn save_done(&mut self, _msg: &str) {}
 

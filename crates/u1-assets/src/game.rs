@@ -1617,7 +1617,10 @@ impl Game {
                     let _ = self.explore.save(&p);
                 }
                 match std::fs::write(&p, self.rec.as_bytes()) {
-                    Ok(()) => io.save_done(&format!("Saved to {}", name(s))),
+                    Ok(()) => {
+                        io.saved(&p, &self.rec, &self.term);
+                        io.save_done(&format!("Saved to {}", name(s)))
+                    }
                     Err(_) => io.save_done(&format!("Could not save to {}", name(s))),
                 }
             }
@@ -1653,6 +1656,7 @@ impl Game {
                 self.term.println("");
                 return;
             }
+            io.saved(&p, &self.rec, &self.term);
             let qol = io.features();
             if qol.automap || qol.minimap {
                 // Our own file beside the save (SPEC §23.1).

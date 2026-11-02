@@ -1891,9 +1891,11 @@ the aircar facing left; the shuttle (upright on its pad) and the
 time machine never turn, nor does the player on foot, monsters or
 terrain under a vehicle. A new game, a loaded save, and boarding a
 vehicle parked by the map face right. X-iting parks the vehicle with
-its facing, kept by map cell in the running engine only (never in the
-820-byte record or any file), so B on it again faces the same way; after
-a reload parked vehicles face right. The EGA, CGA and Tandy pictures
+its facing, kept by map cell, so B on it again faces the same way. The
+facing is kept with the explored map in the `.map` sidecar beside the
+save (lines `facing left` and `parked_left X Y`; never in the 820-byte
+record), written whenever that file is, and also when some vehicle faces
+left; a save without them (or an older sidecar) faces everything right. The EGA, CGA and Tandy pictures
 are never mirrored (the original has a single picture per vehicle), so
 the option changes nothing there.
 

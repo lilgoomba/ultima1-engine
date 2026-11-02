@@ -91,7 +91,7 @@ The enhanced mode (F1, Video: Enhanced) draws our own CC-BY-SA art over
 the same game; the original EGA picture is the default. There, vehicles
 face left or right the way they last moved sideways (F1, Video: Vehicle
 turn; up and down keep the facing, and a vehicle you leave keeps its
-facing until you quit).
+facing, saved beside your save in its `.map` file).
 
 ## 5. Where saves and settings live
 

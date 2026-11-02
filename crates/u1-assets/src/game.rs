@@ -164,12 +164,6 @@ pub struct Game {
     /// The mode the explored map was last written in (it is written again
     /// on entering or leaving a town, castle or dungeon).
     pub explore_mode: Option<u8>,
-    /// Enhanced video only: the vehicle the player is in faces left (it
-    /// last moved west); up and down keep the facing (SPEC §25).
-    pub face_left: bool,
-    /// Parked vehicles left facing left, by map cell (engine-side; never
-    /// in the record; a reload parks them facing right).
-    pub parked_left: std::collections::HashSet<(i32, i32)>,
     /// The vehicle facing option (taken from the front end's options at
     /// each prompt).
     pub vehicle_facing: bool,
@@ -228,8 +222,6 @@ impl Game {
             explore: Default::default(),
             reload_explore: None,
             explore_mode: None,
-            face_left: false,
-            parked_left: Default::default(),
             vehicle_facing: true,
         };
         g.redraw();
@@ -536,7 +528,7 @@ impl Game {
         let under = (t > 9).then(|| ArtId::World(Terrain::from_cell(self.a.map.cell(mx as usize, my as usize)).tile().0 as u16));
         let pos = (mx >= 0 && my >= 0).then_some((mx as u16, my as u16));
         self.tile_over(false, t, under, pos, sx, sy, shift);
-        let left = if col == rules::PLAYER_COL && row == rules::PLAYER_ROW { self.face_left } else { self.parked_left.contains(&(mx, my)) };
+        let left = if col == rules::PLAYER_COL && row == rules::PLAYER_ROW { self.explore.face_left } else { self.explore.parked_left.contains(&(mx, my)) };
         self.term.art_flip(self.vehicle_facing && vehicle_flip(t, left));
     }
 
@@ -748,7 +740,7 @@ impl Game {
     /// the save slots alone.
     pub fn save_explore(&self, io: &dyn Io) {
         let qol = io.features();
-        if !(qol.automap || qol.minimap) {
+        if !(qol.automap || qol.minimap || (qol.vehicle_facing && self.explore.has_facing())) {
             return;
         }
         if let Some(p) = &self.save_to {
@@ -967,8 +959,8 @@ impl Game {
         self.to_ow();
         self.ow.messages.clear();
         match d {
-            Dir::West => self.face_left = true,
-            Dir::East => self.face_left = false,
+            Dir::West => self.explore.face_left = true,
+            Dir::East => self.explore.face_left = false,
             _ => {}
         }
         let (x0, y0) = (self.ow.x, self.ow.y);
@@ -1004,7 +996,7 @@ impl Game {
         };
         let t = self.ow.entities[i].tile;
         self.ow.entities.remove(i);
-        self.face_left = self.parked_left.remove(&(self.ow.x, self.ow.y));
+        self.explore.face_left = self.explore.parked_left.remove(&(self.ow.x, self.ow.y));
         let mut tr = u16::from(t - 0x0B) + 1;
         if tr > 4 {
             tr -= 1;
@@ -1114,11 +1106,11 @@ impl Game {
         let old = tile_for_transport(self.transport());
         if self.ow.entities.len() < 39 {
             self.ow.entities.push(Entity { tile: old, x, y, hp: 0, aux: u16::from(old) });
-            if self.face_left {
-                self.parked_left.insert((x, y));
+            if self.explore.face_left {
+                self.explore.parked_left.insert((x, y));
             }
         }
-        self.face_left = false;
+        self.explore.face_left = false;
         self.rec.set_u16(off::TRANSPORT, 0);
         self.player_aux = u16::from(old);
         self.sayln(m::XIT);
@@ -1644,7 +1636,7 @@ impl Game {
                     let _ = std::fs::create_dir_all(d);
                 }
                 let qol = io.features();
-                if qol.automap || qol.minimap {
+                if qol.automap || qol.minimap || (qol.vehicle_facing && self.explore.has_facing()) {
                     let _ = self.explore.save(&p);
                 }
                 match std::fs::write(&p, self.rec.as_bytes()) {
@@ -1689,7 +1681,7 @@ impl Game {
             }
             io.saved(&p, &self.rec, &self.term);
             let qol = io.features();
-            if qol.automap || qol.minimap {
+            if qol.automap || qol.minimap || (qol.vehicle_facing && self.explore.has_facing()) {
                 // Our own file beside the save (SPEC §23.1).
                 let _ = self.explore.save(&p);
             }

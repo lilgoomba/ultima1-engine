@@ -104,12 +104,21 @@ pub fn level(r: &PlayerRecord) -> u16 {
     r.experience() / 1000 + 1
 }
 
-/// Every fourth pixel of the screen.
+/// The screen at a quarter size: each 4x4 block becomes its commonest
+/// colour other than black, if at least two of its pixels have it (so
+/// dotted grass and thin lines survive), else black.
 pub fn thumbnail(t: &Term) -> Vec<u8> {
     let mut v = Vec::with_capacity(THUMB_W * THUMB_H);
     for y in 0..THUMB_H {
         for x in 0..THUMB_W {
-            v.push(t.at(x * 4, y * 4) & 15);
+            let mut n = [0u8; 16];
+            for dy in 0..4 {
+                for dx in 0..4 {
+                    n[usize::from(t.at(x * 4 + dx, y * 4 + dy) & 15)] += 1;
+                }
+            }
+            let (c, k) = (1..16).map(|c| (c as u8, n[c])).max_by_key(|&(c, k)| (k, std::cmp::Reverse(c))).unwrap_or((0, 0));
+            v.push(if k >= 2 { c } else { 0 });
         }
     }
     v
@@ -308,7 +317,7 @@ mod tests {
         let i = SaveInfo::of(&r, &t, "2026-11-02 14:50");
         assert_eq!(i.level, 3);
         assert_eq!(i.thumb.len(), THUMB_W * THUMB_H);
-        assert_eq!((i.thumb[0], i.thumb[1], i.thumb[2]), (4, 4, t.at(8, 0)));
+        assert_eq!((i.thumb[0], i.thumb[1]), (4, 4));
         i.write(&base).unwrap();
         assert_eq!(info_path(&base), dir.join("PLAYER1.U1.info"));
         assert_eq!(SaveInfo::load(&base).unwrap(), i);

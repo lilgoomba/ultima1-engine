@@ -867,9 +867,14 @@ impl SdlIo {
         match self.toast.as_ref().filter(|(_, at)| at.elapsed() < TOAST) {
             Some((msg, _)) => {
                 let mut c = t.clone();
-                c.fill(TOAST_BOX.0, TOAST_BOX.1, TOAST_BOX.2, TOAST_BOX.3, u1_assets::term::BLACK);
-                opts::center(&mut c, 1, &msg.clone(), u1_assets::term::WARN);
-                self.present_over(t, Some((&c, TOAST_BOX)))
+                // One row per line of the note.
+                let lines: Vec<String> = msg.lines().map(String::from).collect();
+                let b = (TOAST_BOX.0, TOAST_BOX.1, TOAST_BOX.2, TOAST_BOX.3 + 8 * (lines.len().max(1) - 1));
+                c.fill(b.0, b.1, b.2, b.3, u1_assets::term::BLACK);
+                for (i, l) in lines.iter().enumerate() {
+                    opts::center(&mut c, 1 + i, l, u1_assets::term::WARN);
+                }
+                self.present_over(t, Some((&c, b)))
             }
             None => {
                 self.toast = None;
@@ -960,7 +965,9 @@ impl SdlIo {
         match r {
             Ok(()) => {
                 eprintln!("screenshot: {}", path.display());
-                self.note(&format!("Saved {}", short_path(&path)));
+                let dir = short_path(path.parent().unwrap_or(&dir));
+                let file = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+                self.note(&format!("Screenshot saved:\n{dir}/\n{file}"));
             }
             Err(e) => {
                 eprintln!("screenshot: {e}");
@@ -1611,7 +1618,7 @@ impl SdlIo {
                     opts::center(c, 7, "What you did since the last save", u1_assets::term::TEXT);
                     opts::center(c, 8, "will be lost.", u1_assets::term::TEXT);
                     opts::center(c, 10, "To save: Q (Quit) outdoors,", u1_assets::term::TEXT);
-                    opts::center(c, 11, "or a save slot (F2).", u1_assets::term::TEXT);
+                    opts::center(c, 11, "or F2 (with save slots on).", u1_assets::term::TEXT);
                     opts::center(c, 14, "Y: quit now   N: keep playing", u1_assets::term::TEXT);
                 },
                 |io, _, k, name| match k.to_ascii_lowercase() {

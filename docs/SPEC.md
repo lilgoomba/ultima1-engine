@@ -1590,7 +1590,7 @@ listed in [ROADMAP.md](ROADMAP.md).
 
 ## 22. Optional engine features (not original behaviour)
 
-Every one is off by default except save slots (on since polish-1, §25). Off, the engine behaves exactly as without
+Every one is off by default except save slots (on since polish-1, §25) and, in the enhanced video mode only, vehicle turning (§25). Off, the engine behaves exactly as without
 it: the same screens, the same timing, the same records, the same random
 sequence (the tests check the screen and the saved record with all of
 them off). None changes a rule. They are rows of the options menu (§21),
@@ -1816,7 +1816,7 @@ None of these changes what the game does; the original has no menus,
 windows or extra files, so each is engine-side only.
 
 **Options pages.** F1 groups its rows in five pages: Video (display,
-fullscreen, scaling, smoothing, CRT), Sound (sound mode, master volume,
+fullscreen, scaling, smoothing, CRT, vehicle turn), Sound (sound mode, master volume,
 effects volume, music, music volume, footsteps), Gameplay (turbo, delays,
 fast space, timing, food warning, confirm before selling), Controls (arrow
 repeat and its delay and rate, gamepad, keys) and Interface (save slots,
@@ -1875,6 +1875,23 @@ Closing the window after keys reached the game since its last save asks
 "Quit the game?" (Y quits, N or Esc goes back). The title and character
 screens, and a game just saved, close at once. This only guards the
 window's close button; the game's own Q works exactly as the original.
+
+**Vehicles turn.** Config `vehicle_facing` (default on), F1 Video row
+"Vehicle turn". In the enhanced video mode only, the vehicle the player
+rides faces the way it last moved sideways: a move (or a blocked try)
+west faces it left, east faces it right, north and south keep the
+facing. This is done by mirroring the existing enhanced picture left to
+right; no new art. The pictures' own direction decides when to mirror:
+horse, cart and raft are drawn facing right; the frigate (both frames)
+and the aircar facing left; the shuttle (upright on its pad) and the
+time machine never turn, nor does the player on foot, monsters or
+terrain under a vehicle. A new game, a loaded save, and boarding a
+vehicle parked by the map face right. X-iting parks the vehicle with
+its facing, kept by map cell in the running engine only (never in the
+820-byte record or any file), so B on it again faces the same way; after
+a reload parked vehicles face right. The EGA, CGA and Tandy pictures
+are never mirrored (the original has a single picture per vehicle), so
+the option changes nothing there.
 
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.

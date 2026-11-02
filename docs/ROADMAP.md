@@ -110,6 +110,8 @@ the tests keep the original behaviour.
 * **Window place and size remembered.**
 * **Save slots on by default** (slot 1 is the original player file; turn
   off in F1 for the single save).
+* **Vehicles turn** left or right with the last sideways move (enhanced
+  video only, the art mirrored; F1 Video "Vehicle turn", on by default).
 * **Confirm quit** when closing the window with unsaved progress.
 * **AppImage desktop entry and a new 16-bit style icon** (our own art).
 

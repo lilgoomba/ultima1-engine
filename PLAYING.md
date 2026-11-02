@@ -67,7 +67,7 @@ never reads:
 
 | Key | What it does |
 |---|---|
-| F1 | Options, in five pages (Video, Sound, Gameplay, Controls, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default, except save slots and the quit confirmation. The game is paused while it is open. |
+| F1 | Options, in five pages (Video, Sound, Gameplay, Controls, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default, except save slots, the quit confirmation and (enhanced video only) vehicle turning. The game is paused while it is open. |
 | F2 | Save slots (on by default; slot 1 is your character's own file, the one Q writes) |
 | F3 | Command help screen (turn on "Help screen" in F1) |
 | F4 | Turbo: every wait 4x shorter (always available) |
@@ -88,7 +88,10 @@ trapped); a coffin is opened with O. The name of what you can see ahead
 ("Chest") is printed in the message window each time the view is drawn.
 
 The enhanced mode (F1, Video: Enhanced) draws our own CC-BY-SA art over
-the same game; the original EGA picture is the default.
+the same game; the original EGA picture is the default. There, vehicles
+face left or right the way they last moved sideways (F1, Video: Vehicle
+turn; up and down keep the facing, and a vehicle you leave keeps its
+facing until you quit).
 
 ## 5. Where saves and settings live
 

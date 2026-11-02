@@ -394,7 +394,7 @@ Comments, other keys and tables in the file are kept when the menu saves.
 one run. Screenshots (`--screenshot`) ignore it; `--options` draws the menu
 over a screenshot.
 
-### Optional features (F1, all off by default except save slots)
+### Optional features (F1, all off by default except save slots and enhanced-video vehicle turning)
 
 | Setting | Keys | What it does |
 |---|---|---|

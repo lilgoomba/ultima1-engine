@@ -804,7 +804,6 @@ struct SdlIo {
     geom: Option<(i32, i32, u32, u32)>,
     geom_moved: bool,
     /// The screenshot key's SDL name, and the last frame shown.
-    shot_key: String,
     last_rgb: Option<(usize, usize, Vec<u8>)>,
 }
 
@@ -1125,7 +1124,10 @@ impl SdlIo {
                         }
                     };
                     let name = k.name().to_lowercase();
-                    if name == self.shot_key && !repeat {
+                    // The screenshot key (except while the Keys window waits
+                    // for a key to bind, so it can be bound itself).
+                    let binding = self.current == Some(Modal::Rebind);
+                    if !binding && !name.is_empty() && name == self.keymap.screenshot() && !repeat {
                         self.snap();
                         continue;
                     }
@@ -1978,7 +1980,6 @@ fn play(a: &Args) -> Result<(), String> {
         halt: false,
         geom: cfg.window,
         geom_moved: false,
-        shot_key: cfg.screenshot_key.clone().unwrap_or_else(|| "f12".into()),
         last_rgb: None,
     };
     // The optional features: the file's, and --crt / --fullscreen.

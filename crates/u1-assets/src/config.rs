@@ -97,8 +97,6 @@ pub struct Config {
     /// The window's last place and size (x, y, width, height), restored
     /// at start; fullscreen is kept in `qol`.
     pub window: Option<(i32, i32, u32, u32)>,
-    /// The key that saves a screenshot (an SDL key name, e.g. "f12").
-    pub screenshot_key: Option<String>,
     /// Lines that could not be used (reported, never fatal).
     pub warnings: Vec<String>,
     /// The file's other lines, kept as they were for saving: top-level
@@ -155,7 +153,10 @@ impl Config {
                     Some(w) => c.window = Some(w),
                     None => c.warnings.push(format!("line {}: window wants \"x,y,width,height\"", n + 1)),
                 },
-                "screenshot_key" if !v.is_empty() => c.screenshot_key = Some(v.to_ascii_lowercase()),
+                // The older name of key_screenshot.
+                "screenshot_key" if !v.is_empty() => {
+                    let _ = c.keys.config_key("key_screenshot", &v);
+                }
                 k if k.starts_with("key_") => match c.keys.config_key(k, &v) {
                     Some(Ok(())) => {}
                     Some(Err(e)) => c.warnings.push(format!("line {}: {e}", n + 1)),
@@ -241,9 +242,6 @@ impl Config {
         }
         if q.repeat_rate != d.repeat_rate {
             s += &format!("repeat_rate = {}   # steps a second: 0 (the game's pace) | 4 | 8 | 12 | 16\n", q.repeat_rate);
-        }
-        if let Some(k) = &self.screenshot_key {
-            s += &format!("screenshot_key = \"{k}\"   # an SDL key name\n");
         }
         if let Some((x, y, w, h)) = self.window {
             s += &format!("window = \"{x},{y},{w},{h}\"   # x, y, width, height (remembered)\n");
@@ -451,7 +449,9 @@ mod tests {
 
     #[test]
     fn polish_keys_round_trip() {
-        let mut c = Config { window: Some((-5, 40, 1280, 800)), screenshot_key: Some("f11".into()), ..Default::default() };
+        let mut c = Config { window: Some((-5, 40, 1280, 800)), ..Default::default() };
+        assert_eq!(c.keys.config_key("key_screenshot", "f11"), Some(Ok(())));
+        assert_eq!(Config::parse("screenshot_key = \"f11\"\n").keys.screenshot(), "f11", "the older name is read");
         c.qol.master_volume = 70;
         c.qol.sfx_volume = 0;
         c.qol.confirm_quit = false;

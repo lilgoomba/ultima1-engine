@@ -29,7 +29,7 @@ const fn act(id: &'static str, label: &'static str, code: u8, own: &'static str)
     Action { id, label, code, own, default: "" }
 }
 
-pub const ACTIONS: [Action; 27] = [
+pub const ACTIONS: [Action; 28] = [
     act("north", "North (dungeon: forward)", keys::UP, "Up"),
     act("south", "South (dungeon: turn round)", keys::DOWN, "Down"),
     act("west", "West (dungeon: turn left)", keys::LEFT, "Left"),
@@ -57,7 +57,12 @@ pub const ACTIONS: [Action; 27] = [
     act("ztats", "Ztats", b'Z', "Z"),
     Action { id: "map", label: "Map", code: keys::MAP, own: "", default: "tab" },
     Action { id: "help", label: "Command help", code: keys::HELP, own: "", default: "f3" },
+    // Not a game key (code 0): the front end saves a screenshot.
+    Action { id: "screenshot", label: "Screenshot", code: 0, own: "", default: "f12" },
 ];
+
+/// The row of [`ACTIONS`] that is the screenshot key.
+pub const SCREENSHOT: usize = ACTIONS.len() - 1;
 
 /// Keys the original does nothing with at its command prompt, so they
 /// can be bound without clashing with any of its controls.
@@ -97,7 +102,12 @@ impl KeyMap {
         if name.is_empty() {
             return None;
         }
-        self.extra.iter().position(|k| k == name).map(|i| ACTIONS[i].code)
+        self.extra.iter().position(|k| k == name).map(|i| ACTIONS[i].code).filter(|&c| c != 0)
+    }
+
+    /// The screenshot key's name ("" for none).
+    pub fn screenshot(&self) -> &str {
+        &self.extra[SCREENSHOT]
     }
 
     /// Bind `name` to action `i`. A key the original uses is refused (with
@@ -132,6 +142,20 @@ impl KeyMap {
             return Some(Ok(()));
         }
         let i = ACTIONS.iter().position(|a| k.strip_prefix("key_") == Some(a.id))?;
+        if i == SCREENSHOT && !v.trim().is_empty() && !v.trim().eq_ignore_ascii_case("none") {
+            // Any SDL key name, as the older `screenshot_key` took.
+            let v = v.trim().to_ascii_lowercase();
+            if ACTIONS.iter().any(|a| a.own.eq_ignore_ascii_case(&v)) {
+                return Some(Err("a key the original does not use, or none"));
+            }
+            for k in self.extra.iter_mut() {
+                if *k == v {
+                    k.clear();
+                }
+            }
+            self.extra[SCREENSHOT] = v;
+            return Some(Ok(()));
+        }
         let v = v.trim().to_ascii_lowercase();
         Some(if v.is_empty() || v == "none" {
             self.unbind(i);
@@ -410,7 +434,8 @@ mod tests {
         assert_eq!(r.key(b'a', "a"), RebindKey::Stay, "the original's key is refused");
         assert_eq!(r.map.code_for("j"), Some(keys::UP));
         r.key(keys::UP, "up");
-        assert_eq!(r.row, ACTIONS.len() - 1);
+        assert_eq!(r.row, SCREENSHOT, "up wraps to the screenshot row");
+        r.key(keys::UP, "up");
         assert_eq!(r.key(keys::BACKSPACE, "backspace"), RebindKey::Changed);
         assert_eq!(r.map.code_for("f3"), None);
         r.key(keys::ENTER, "return");
@@ -421,5 +446,28 @@ mod tests {
         r.draw(&mut t);
         assert!(t.row_text(2).contains("Keys"));
         assert!((4..20).any(|y| t.row_text(y).contains("Ztats")));
+    }
+
+    #[test]
+    fn screenshot_key_rebinds() {
+        let mut k = KeyMap::default();
+        assert_eq!(k.screenshot(), "f12");
+        assert_eq!(k.code_for("f12"), None, "not a game key");
+        assert!(k.config_lines().is_empty());
+        let mut r = RebindScreen::new(k.clone());
+        r.row = SCREENSHOT;
+        r.key(keys::ENTER, "return");
+        assert_eq!(r.key(0, "f11"), RebindKey::Changed);
+        assert_eq!(r.map.screenshot(), "f11");
+        assert_eq!(r.map.config_lines(), ["key_screenshot = \"f11\""]);
+        // Moving the map's Tab to the screenshot clears it there.
+        assert!(k.bind(SCREENSHOT, "tab").unwrap().contains("moved"));
+        assert_eq!(k.code_for("tab"), None);
+        // The config takes any SDL name the original does not use.
+        assert_eq!(k.config_key("key_screenshot", "PrintScreen"), Some(Ok(())));
+        assert_eq!(k.screenshot(), "printscreen");
+        assert!(matches!(k.config_key("key_screenshot", "a"), Some(Err(_))));
+        assert_eq!(k.config_key("key_screenshot", "none"), Some(Ok(())));
+        assert_eq!(k.screenshot(), "");
     }
 }

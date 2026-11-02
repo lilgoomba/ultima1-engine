@@ -1850,8 +1850,12 @@ file. The slot screen lists each slot's name and level and shows the
 selected slot's date, place and thumbnail; a save without the file shows
 what its record says.
 
-**Screenshot key.** Config `screenshot_key` (an SDL key name, default
-`f12`). It writes the frame on screen (menus included) as a PNG,
+**Screenshot key.** F12 by default; the last row of the Keys window
+(F1, Controls, Keys) changes it to any free key, and config
+`key_screenshot` takes any SDL key name the original does not use (or
+`none`; the older `screenshot_key` line is still read). While the Keys
+window waits for a key, the screenshot key is passed to it, so it can be
+bound itself. It writes the frame on screen (menus included) as a PNG,
 `u1-YYYYMMDD-HHMMSS.png`, to `~/Pictures/ultima1-engine/` when
 `~/Pictures` exists, else `$XDG_DATA_HOME/ultima1-engine/screenshots/`
 (`~/.local/share/...`). A note over the map gives the folder and name.

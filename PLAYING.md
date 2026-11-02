@@ -75,7 +75,7 @@ never reads:
 | Tab | Dungeon automap / world map (turn on the maps in F1) |
 | PgUp / PgDn | Message log (turn on "Message log" in F1) |
 | Z | Character screen instead of the original Ztats (turn on "Character" in F1) |
-| F12 | Screenshot, saved to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`); change the key with `screenshot_key = "f11"` in the config |
+| F12 | Screenshot, saved to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`); change the key in F1 → Controls → Keys (last row) |
 | Alt+Enter | Fullscreen on/off |
 
 The game also pauses when its window loses focus. Closing the window with

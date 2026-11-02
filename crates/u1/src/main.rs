@@ -1589,6 +1589,16 @@ impl SdlIo {
             Modal::Slots => {
                 let base = self.save_base.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1"));
                 let mut s = SlotScreen::new(&base);
+                // A save with no details file (the character menu's, or an
+                // older one): the file's own time.
+                for (i, (slot, _)) in s.info.iter_mut().zip(&s.slots) {
+                    if let Some(i) = i.as_mut().filter(|i| i.when.is_empty()) {
+                        let mt = std::fs::metadata(u1_assets::slots::slot_path(&base, *slot)).and_then(|m| m.modified());
+                        if let Ok(t) = mt {
+                            i.when = stamp_of(t).chars().take(16).collect();
+                        }
+                    }
+                }
                 self.run_modal(
                     t,
                     &mut s,
@@ -2111,7 +2121,12 @@ fn wrap_text(text: &str, width: usize) -> String {
 
 /// The local date and time, "YYYY-MM-DD HH:MM:SS".
 fn local_stamp() -> String {
-    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as libc::time_t;
+    stamp_of(std::time::SystemTime::now())
+}
+
+/// `when`, local, as "YYYY-MM-DD HH:MM:SS".
+fn stamp_of(when: std::time::SystemTime) -> String {
+    let t = when.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as libc::time_t;
     // SAFETY: localtime_r / localtime_s write only into the zeroed `tm` we pass.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     #[cfg(unix)]

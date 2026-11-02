@@ -1124,8 +1124,7 @@ impl SdlIo {
             self.tap_fire(x, y, true);
             return;
         }
-        let step = a.keys.len() == 1 && (keys::LEFT..=keys::DOWN).contains(&a.keys[0]) && a.then.is_none();
-        if !step || own {
+        if !a.walk || own {
             self.tap_press = None;
             return;
         }

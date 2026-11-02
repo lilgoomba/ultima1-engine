@@ -123,6 +123,9 @@ pub struct Action {
     pub then: Option<(Thing, u8)>,
     /// The tapped cell, for the highlight.
     pub cell: Option<(i32, i32)>,
+    /// A plain step on a known way to the tapped cell, with no foe next to
+    /// the player: a held press may keep walking.
+    pub walk: bool,
 }
 
 impl Action {
@@ -179,7 +182,13 @@ fn dungeon(d: &Dungeon, x: i32, y: i32, long: bool) -> Action {
 }
 
 fn grid(g: &Grid, x: i32, y: i32, long: bool) -> Action {
-    let Some((c, r)) = g.cell_of(x, y) else { return Action::default() };
+    let Some((c, r)) = g.cell_of(x, y) else {
+        // On the border just past the map, next to the player: a step that
+        // way (out of a town, as with the arrow key).
+        let (c, r) = ((x - g.x0).div_euclid(g.cw.max(1)), (y - g.y0).div_euclid(g.ch.max(1)));
+        let (dx, dy) = (c - g.px, r - g.py);
+        return if dx.abs() + dy.abs() == 1 { Action::keys(&[arrow(dx, dy)]) } else { Action::default() };
+    };
     let (dx, dy) = (c - g.px, r - g.py);
     let mut a = if (dx, dy) == (0, 0) {
         own(g, long)
@@ -213,7 +222,7 @@ fn next_to(g: &Grid, t: Thing, dx: i32, dy: i32) -> Action {
         Thing::Foe => Action::keys(&[b'A', k]),
         Thing::Person if g.town => Action::keys(b"T"),
         Thing::Vehicle if g.here.riding => Action::keys(&[k]),
-        Thing::Vehicle | Thing::Entrance => Action { keys: vec![k], then: arrive_key(t).map(|b| (t, b)), cell: None },
+        Thing::Vehicle | Thing::Entrance => Action { keys: vec![k], then: arrive_key(t).map(|b| (t, b)), cell: None, walk: false },
         _ => Action::keys(&[k]),
     }
 }
@@ -227,18 +236,78 @@ fn clear_line(g: &Grid, dx: i32, dy: i32) -> bool {
 /// One step toward a far cell: along the longer way first, the other
 /// way if that cell is blocked or taken.
 fn step_toward(g: &Grid, dx: i32, dy: i32) -> Action {
-    let h = (dx.signum(), 0);
-    let v = (0, dy.signum());
-    let (first, second) = if dx.abs() >= dy.abs() { (h, v) } else { (v, h) };
-    let free = |(sx, sy): (i32, i32)| (sx, sy) != (0, 0) && matches!(g.at(g.px + sx, g.py + sy), Thing::Open | Thing::Entrance | Thing::Vehicle);
-    let pick = if free(first) {
-        first
-    } else if free(second) {
-        second
-    } else {
-        first
+    // The first step of a shortest way over the open cells seen (a
+    // breadth-first search back from the target); with none, the free
+    // neighbour nearest the target; with no free neighbour, nothing.
+    let free = |c: i32, r: i32| matches!(g.at(c, r), Thing::Open | Thing::Entrance | Thing::Vehicle);
+    let (tx, ty) = (g.px + dx, g.py + dy);
+    let n = (g.cols * g.rows).max(0) as usize;
+    let mut dist = vec![u32::MAX; n];
+    let idx = |c: i32, r: i32| (r * g.cols + c) as usize;
+    let dirs = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+    if (0..g.cols).contains(&tx) && (0..g.rows).contains(&ty) {
+        let mut q = std::collections::VecDeque::from([(tx, ty)]);
+        dist[idx(tx, ty)] = 0;
+        while let Some((c, r)) = q.pop_front() {
+            for (sx, sy) in dirs {
+                let (nc, nr) = (c + sx, r + sy);
+                if (nc, nr) == (g.px, g.py) || !free(nc, nr) || dist[idx(nc, nr)] != u32::MAX {
+                    continue;
+                }
+                dist[idx(nc, nr)] = dist[idx(c, r)] + 1;
+                q.push_back((nc, nr));
+            }
+        }
+    }
+    let score = |(sx, sy): (i32, i32)| {
+        let (c, r) = (g.px + sx, g.py + sy);
+        if (c, r) != (tx, ty) && !free(c, r) {
+            return None;
+        }
+        let d = if (c, r) == (tx, ty) { 0 } else { dist[idx(c, r)] };
+        let far = (tx - c).abs() + (ty - r).abs();
+        // Ties: along the longer way first.
+        let along = if (sx != 0) == (dx.abs() >= dy.abs()) { 0 } else { 1 };
+        Some((d, far, along))
     };
-    Action::keys(&[arrow(pick.0, pick.1)])
+    let foe_near = (-1..=1).any(|sy| (-1..=1).any(|sx| g.at(g.px + sx, g.py + sy) == Thing::Foe));
+    match dirs.iter().filter_map(|&d| score(d).map(|s| (s, d))).min_by_key(|x| x.0) {
+        Some((s, (sx, sy))) => Action { walk: s.0 != u32::MAX && !foe_near && g.at(g.px + sx, g.py + sy) == Thing::Open, ..Action::keys(&[arrow(sx, sy)]) },
+        None => Action::default(),
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn a_tap_on_the_border_next_to_the_player_steps_off() {
+        let g = Grid { x0: 8, y0: 8, cw: 16, ch: 16, cols: 5, rows: 3, px: 0, py: 1, cells: vec![Thing::Open; 15], here: Here::default(), town: true };
+        assert_eq!(resolve(&Scene::Grid(g.clone()), 2, 30, false).keys, vec![keys::LEFT]);
+        assert!(resolve(&Scene::Grid(g), 2, 2, false).keys.is_empty());
+    }
+
+    #[test]
+    fn a_far_tap_walks_around_a_wall() {
+        // A wall right of the player with a gap below it.
+        let (cols, rows) = (5, 3);
+        let mut cells = vec![Thing::Open; 15];
+        cells[2] = Thing::Blocked;
+        cells[7] = Thing::Blocked;
+        let g = Grid { x0: 0, y0: 0, cw: 16, ch: 16, cols, rows, px: 1, py: 1, cells, here: Here::default(), town: true };
+        assert_eq!(step_toward(&g, 3, 0).keys, vec![arrow(0, 1)]);
+        assert!(step_toward(&g, 3, 0).walk);
+        // A foe next to the player stops a held walk.
+        let mut f = g.clone();
+        f.cells[0] = Thing::Foe;
+        assert!(!step_toward(&f, 3, 0).walk);
+        // Boxed in: no step at all.
+        let mut cells = vec![Thing::Blocked; 15];
+        cells[6] = Thing::Open;
+        let g = Grid { cells, ..g };
+        assert!(step_toward(&g, 3, 0).keys.is_empty());
+    }
 }
 
 impl crate::game::Game {

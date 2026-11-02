@@ -72,5 +72,9 @@ works on a debug build).
 - *Import again* (an options row only on Android) leaves a `reimport`
   marker and ends the game; the activity sees it and opens the import
   screen.
+- Tap actions (SPEC §24): the game hands the front end a description of
+  the view at each command prompt (`u1_assets::tap::Scene`); a tap or
+  click is turned into keys by `tap::resolve` and queued like any other
+  key. On by default only when built for Android (`qol.tap`).
 - Notches and camera holes: the window keeps out of them
   (`windowLayoutInDisplayCutoutMode=never`).

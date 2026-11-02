@@ -106,7 +106,11 @@ the tests keep the original behaviour.
 * Engine-drawn touch controls (d-pad with hold-to-repeat, command
   letters, number pad, F1/map/log/quicksave/quickload, system keyboard),
   hideable; also on the desktop with U1_TOUCH=1.
-* Still to do: movable/resizable buttons, a lasting release key in CI,
+* Tap actions (on by default on Android, an F1 option elsewhere): tapping
+  the map attacks, boards, enters, transacts or steps toward the spot;
+  hold to keep walking; dungeon taps turn, go forward or climb; the
+  touch panel's tap-covered letters move to a "More" panel.
+* Still to do: tap actions in space flight, movable/resizable buttons, a lasting release key in CI,
   testing on real devices.
 
 ## Future ideas (not built)

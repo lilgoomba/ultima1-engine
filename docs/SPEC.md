@@ -1805,6 +1805,43 @@ The window fit (whole multiples or fill) is computed on the unsmoothed
 size. With the CRT filter the smoothing runs first and the scanlines are
 applied to its result.
 
+**Tap actions.** Config `tap_actions`, F1 row Tap actions; on by default
+only in the Android build, off on the desktop (where it makes left clicks
+on the picture taps and right clicks long presses). A tap types only the
+keys the keyboard would, so the rules, prompts and messages are unchanged.
+At each command prompt the game publishes what a tap would find (the
+cells of the view around the player and what is on the player's cell);
+the front end maps the window point into the 320x200 picture and then to
+a cell.
+
+* Overworld, town and castle (a grid of cells):
+  * the player's cell: E on an entrance (town, castle, dungeon, signpost),
+    B on a vehicle when on foot, otherwise Space (Pass); a long press is
+    X (X-it) when riding;
+  * a neighbouring cell: a monster is A and the arrow; a person in a town
+    or castle is T (Transact; a king in a castle); a vehicle or entrance
+    is the arrow, then B or E at the next prompt only if the step landed
+    on it; anything else is the arrow (a wall gives the usual Blocked);
+  * a far monster in a straight clear line: A and the arrow (the weapon's
+    reach decides, as with the keys);
+  * any other far cell: one step on a shortest way over the open cells
+    in view (the free neighbour nearest the target when there is none);
+    a held press keeps stepping, one normal turn each, and stops when the
+    next step is not onto open ground, a foe stands next to the player, or
+    no way is known;
+  * the border just outside the map, next to the player: that arrow
+    (leaving a town).
+* Dungeon (first person): the left and right thirds of the view turn,
+  the bottom band turns around, the middle band does what is underfoot
+  (K on a ladder, O on a coffin, U on a chest), anywhere else is A with a
+  foe ahead, otherwise forward; a long press does what is underfoot.
+* Space flight and the other screens: no tap actions.
+
+Keys a tap still had to give are dropped at the next command prompt (a
+command that ends early never sees them). The tapped cell is outlined for
+a quarter second. With tap actions on, the touch panel's letters are
+slimmed: A, B, E, K, O, T and X (and Pass) move to a "More" panel.
+
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.
 

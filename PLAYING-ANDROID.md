@@ -60,9 +60,38 @@ Left side, bottom: the arrows. Hold one to keep going (the engine's key
 repeat, at the speed set in the options). The middle button is Space
 (pass a turn).
 
-Right side: the command letters (A, B, C ... Z, as on the keyboard). *123*
-swaps them for a number pad (0-9, backspace, Enter) for amounts and
-directions that want numbers; *ABC* swaps back.
+Right side: the command letters. With *Tap actions* on (the default on
+Android) the main panel has C, D, F, G, H, I, M, N, P, Q, R, S, U, V, W, Y
+and Z (Cast, Ready, Inventory/Ztats, Fire, Quit, Hyperjump, Noise, View...)
+and a *More* button; *More* shows Attack, Board, Enter, Klimb, Open,
+Transact, X-it and Pass, and *Back* returns. With *Tap actions* off all
+the letters are on one panel. *123* swaps the letters for a number pad
+(0-9, backspace, Enter) for amounts and directions that want numbers;
+*ABC* swaps back.
+
+### Tapping the picture
+
+With *Tap actions* on (F1), tapping the map does what you would most
+likely type:
+
+| Tap on | Does |
+|---|---|
+| a monster next to you | Attack it |
+| a monster further away in a straight line | Attack that way (if your weapon reaches) |
+| a horse, cart, raft, ship... next to you | step onto it, then Board |
+| a town, castle, dungeon or landmark next to you | step onto it, then Enter |
+| a person in a town or castle | Transact (the king in a castle) |
+| yourself | Enter or Board what you stand on, otherwise Pass |
+| yourself, long press, when riding | X-it |
+| anywhere else | one step toward it (around walls); hold to keep walking |
+
+A held walk stops on its own when a monster comes next to you, or when
+the next step would board or enter something (tap again to do that).
+In a dungeon: tap the left or right of the view to turn, the bottom to
+turn around, the middle (or long press) to Klimb a ladder or Open a
+coffin or chest underfoot, and elsewhere to go forward (or attack a
+monster ahead). Taps only type keys, so every prompt and message is the
+original's. Space flight uses the buttons.
 
 Android's Back button is Esc.
 

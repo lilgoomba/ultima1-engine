@@ -157,6 +157,9 @@ pub struct Qol {
     /// Footsteps on the overworld (enhanced sound only; never with the
     /// original's beeps).
     pub footsteps: bool,
+    /// Enhanced video: vehicles face the way they last moved, left or
+    /// right (their pictures mirrored; SPEC §25).
+    pub vehicle_facing: bool,
     /// Our own area music (never with the original's beeps' silence
     /// changed: it is a separate layer, off by default).
     pub music: bool,
@@ -198,6 +201,7 @@ impl Default for Qol {
             gamepad: false,
             food_use: FoodUse::Original,
             footsteps: true,
+            vehicle_facing: true,
             music: false,
             music_volume: 50,
             smoothing: Smoothing::Off,

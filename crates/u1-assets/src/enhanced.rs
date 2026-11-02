@@ -60,6 +60,18 @@ pub struct Rgba {
 }
 
 impl Rgba {
+    /// The picture mirrored left to right.
+    pub fn mirrored(&self) -> Rgba {
+        let mut m = self.clone();
+        for y in 0..self.h {
+            for x in 0..self.w {
+                let (d, s) = ((y * self.w + x) * 4, (y * self.w + self.w - 1 - x) * 4);
+                m.px[d..d + 4].copy_from_slice(&self.px[s..s + 4]);
+            }
+        }
+        m
+    }
+
     pub fn new(w: usize, h: usize) -> Self {
         Rgba { w, h, px: vec![0; w * h * 4] }
     }
@@ -820,7 +832,7 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
     }
     if let Some((id, x, y, w, h)) = t.backdrop {
         if let Some(e) = pack.entries.get(&id) {
-            let op = crate::term::ArtOp { id, under: None, shift: 0, pos: None, x, y, w, h, px: Vec::new() };
+            let op = crate::term::ArtOp { id, under: None, shift: 0, pos: None, flip: false, x, y, w, h, px: Vec::new() };
             backdrop(&mut out, s, t, &op, Pack::frame(e, 0, 1, ms));
         }
     }
@@ -881,13 +893,38 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
             }
         }
         let sx = if e.scroll { op.shift as usize * s } else { 0 };
-        put(&mut out, f, x0, y0, sx);
+        if op.flip {
+            put(&mut out, &f.mirrored(), x0, y0, sx);
+        } else {
+            put(&mut out, f, x0, y0, sx);
+        }
     }
     out
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mirrored_flips_left_to_right() {
+        let img = Rgba { w: 2, h: 1, px: vec![1, 2, 3, 4, 5, 6, 7, 8] };
+        assert_eq!(img.mirrored().px, vec![5, 6, 7, 8, 1, 2, 3, 4]);
+        assert_eq!(img.mirrored().mirrored().px, img.px);
+    }
+
+    #[test]
+    fn vehicle_flip_by_base_orientation() {
+        use crate::game::vehicle_flip;
+        for t in [0x0B, 0x0C, 0x0D] {
+            assert!(vehicle_flip(t, true) && !vehicle_flip(t, false), "{t:#x} drawn facing right");
+        }
+        for t in [0x0E, 0x0F, 0x10] {
+            assert!(!vehicle_flip(t, true) && vehicle_flip(t, false), "{t:#x} drawn facing left");
+        }
+        for t in [0x00, 0x0A, 0x11, 0x12, 0x13] {
+            assert!(!vehicle_flip(t, true) && !vehicle_flip(t, false));
+        }
+    }
+
     use super::*;
     use crate::palette::EGA_PALETTE;
 

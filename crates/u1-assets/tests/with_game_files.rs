@@ -1532,3 +1532,37 @@ fn dungeon_chest_is_unlocked_not_got() {
     let gone = g.dungeon.as_ref().unwrap().level.items[a][b] == Item::None;
     assert!(gone && said(&g, "Thou dost find") || said(&g, "trap") || said(&g, "Trap"), "{:?}", g.term.messages());
 }
+
+/// Enhanced video: a vehicle faces the way it last moved sideways, keeps it
+/// going up or down, and parks with that facing (SPEC §25).
+#[test]
+fn vehicle_faces_last_sideways_move() {
+    use u1_assets::overworld::Entity;
+    let Some(mut g) = play(66, 41, "") else { return };
+    let (x, y) = (g.ow.x, g.ow.y);
+    g.ow.entities.push(Entity { tile: 0x0B, x, y, hp: 0, aux: 0 });
+    let mut io = ScriptIo::from_text("");
+    let _ = g.command(&mut io, b'B');
+    assert!(!g.face_left, "a horse starts facing right");
+    let flipped = |g: &Game| g.term.art.iter().any(|o| o.flip);
+    let _ = g.command(&mut io, keys::LEFT);
+    assert!(g.face_left);
+    g.draw_world();
+    assert!(flipped(&g), "the horse picture is mirrored");
+    let _ = g.command(&mut io, keys::UP);
+    let _ = g.command(&mut io, keys::DOWN);
+    assert!(g.face_left, "up and down keep the facing");
+    let p = (g.ow.x, g.ow.y);
+    let _ = g.command(&mut io, b'X');
+    assert!(g.parked_left.contains(&p), "parked facing left");
+    let _ = g.command(&mut io, b'B');
+    assert!(g.face_left && g.parked_left.is_empty(), "boarding again keeps it");
+    let _ = g.command(&mut io, keys::RIGHT);
+    assert!(!g.face_left);
+    g.draw_world();
+    assert!(!flipped(&g), "facing right draws the art as it is");
+    g.vehicle_facing = false;
+    let _ = g.command(&mut io, keys::LEFT);
+    g.draw_world();
+    assert!(!flipped(&g), "the option off never mirrors");
+}

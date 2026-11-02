@@ -209,6 +209,7 @@ impl Config {
         flag(q.repeat, d.repeat, "arrow_repeat", "our own repeat for held arrows");
         flag(q.gamepad, d.gamepad, "gamepad", "SDL game controllers");
         flag(q.footsteps, d.footsteps, "footsteps", "overworld footsteps in enhanced sound");
+        flag(q.vehicle_facing, d.vehicle_facing, "vehicle_facing", "enhanced video: vehicles face left or right");
         flag(q.music, d.music, "music", "our own area music (F1)");
         flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "ask before closing with unsaved progress");
         if q.food_use != d.food_use {
@@ -303,6 +304,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "arrow_repeat" => flag(v).map(|b| q.repeat = b),
         "gamepad" => flag(v).map(|b| q.gamepad = b),
         "footsteps" => flag(v).map(|b| q.footsteps = b),
+        "vehicle_facing" => flag(v).map(|b| q.vehicle_facing = b),
         "music" => flag(v).map(|b| q.music = b),
         "music_volume" => match v.trim_end_matches('%').parse::<u8>() {
             Ok(d) if crate::qol::MUSIC_VOLUMES.contains(&d) => {

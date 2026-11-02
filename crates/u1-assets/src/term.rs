@@ -125,6 +125,9 @@ pub struct ArtOp {
     /// Map cell the tile shows (outdoors: world map x,y; in towns: the
     /// town map cell), which picks among a picture's `variants`.
     pub pos: Option<(u16, u16)>,
+    /// Draw the enhanced picture mirrored left to right (a vehicle facing
+    /// the other way, SPEC §25); the original pixels are never mirrored.
+    pub flip: bool,
     pub x: usize,
     pub y: usize,
     pub w: usize,
@@ -604,13 +607,20 @@ impl Term {
         for r in y..y + h {
             px.extend_from_slice(&self.px[r * W + x..r * W + x + w]);
         }
-        self.art.push(ArtOp { id, under, shift: shift as u16, pos: None, x, y, w, h, px });
+        self.art.push(ArtOp { id, under, shift: shift as u16, pos: None, flip: false, x, y, w, h, px });
     }
 
     /// Note the map cell shown by the newest region (see [`ArtOp::pos`]).
     pub fn art_pos(&mut self, pos: (u16, u16)) {
         if let Some(o) = self.art.last_mut() {
             o.pos = Some(pos);
+        }
+    }
+
+    /// Mirror the newest region's enhanced picture (see [`ArtOp::flip`]).
+    pub fn art_flip(&mut self, flip: bool) {
+        if let Some(o) = self.art.last_mut() {
+            o.flip = flip;
         }
     }
 
@@ -621,7 +631,7 @@ impl Term {
         for r in y..y + h {
             px.extend_from_slice(&self.px[r * W + x..r * W + x + w]);
         }
-        let frame = ArtOp { id: ArtId::Space(space_part::FRAME), under: None, shift: 0, pos: None, x, y, w, h, px };
+        let frame = ArtOp { id: ArtId::Space(space_part::FRAME), under: None, shift: 0, pos: None, flip: false, x, y, w, h, px };
         self.sscene = Some(Box::new(SScene { fp, frame, objs: Vec::new() }));
     }
 

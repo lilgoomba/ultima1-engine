@@ -46,6 +46,7 @@ pub enum Row {
     Gamepad,
     Food,
     Footsteps,
+    Facing,
     Music,
     MusicVolume,
     Smoothing,
@@ -81,7 +82,7 @@ impl Page {
     /// The page's rows, top to bottom.
     pub fn rows(self) -> &'static [Row] {
         match self {
-            Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt],
+            Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
             Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm],
             Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys],
@@ -91,12 +92,13 @@ impl Page {
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 30] = [
+pub const ROWS: [Row; 31] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
     Row::Smoothing,
     Row::Crt,
+    Row::Facing,
     Row::Sound,
     Row::MasterVolume,
     Row::SfxVolume,
@@ -160,6 +162,7 @@ impl Row {
             Row::Gamepad => "Gamepad",
             Row::Food => "Food use",
             Row::Footsteps => "Footsteps",
+            Row::Facing => "Vehicle turn",
             Row::Music => "Music",
             Row::MusicVolume => "Music volume",
             Row::Smoothing => "Smoothing",
@@ -196,6 +199,7 @@ impl Row {
             Row::Gamepad => "Play with a game controller.",
             Row::Food => "How fast food runs out (a rule change).",
             Row::Footsteps => "Footsteps outdoors (with the enhanced sounds).",
+            Row::Facing => "Vehicles face the way they move (enhanced video).",
             Row::Music => "Our own music for each area, separate from the effects.",
             Row::MusicVolume => "How loud the music is.",
             Row::Smoothing => "How the enlarged picture is smoothed.",
@@ -315,6 +319,7 @@ impl OptionsMenu {
                 Row::Gamepad => q.gamepad = d.gamepad,
                 Row::Food => q.food_use = d.food_use,
                 Row::Footsteps => q.footsteps = d.footsteps,
+                Row::Facing => q.vehicle_facing = d.vehicle_facing,
                 Row::Music => q.music = d.music,
                 Row::MusicVolume => q.music_volume = d.music_volume,
                 Row::Smoothing => q.smoothing = d.smoothing,
@@ -369,6 +374,8 @@ impl OptionsMenu {
             .into(),
             Row::Footsteps if self.sound != SoundMode::Enhanced => if q.footsteps { "On (enh. sound)" } else { "Off" }.into(),
             Row::Footsteps => on(q.footsteps),
+            Row::Facing if self.video != VideoChoice::Enhanced => if q.vehicle_facing { "On (enhanced)" } else { "Off" }.into(),
+            Row::Facing => on(q.vehicle_facing),
             Row::Music => on(q.music),
             Row::MusicVolume => format!("{}%", q.music_volume),
             Row::Smoothing => match q.smoothing {
@@ -442,6 +449,7 @@ impl OptionsMenu {
                     Row::Gamepad => q.gamepad ^= true,
                     Row::Food => q.food_use = qol::cycle(&qol::FoodUse::ALL, q.food_use, k == keys::LEFT),
                     Row::Footsteps => q.footsteps ^= true,
+                    Row::Facing => q.vehicle_facing ^= true,
                     Row::Music => q.music ^= true,
                     Row::MusicVolume => q.music_volume = qol::cycle(&qol::MUSIC_VOLUMES, q.music_volume, k == keys::LEFT),
                     Row::Smoothing => q.smoothing = qol::cycle(&qol::Smoothing::ALL, q.smoothing, k == keys::LEFT),
@@ -580,7 +588,7 @@ mod tests {
     fn pages_turn_and_wrap() {
         let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
         m.key(keys::UP);
-        assert_eq!(m.current(), Row::Crt, "up wraps within the page");
+        assert_eq!(m.current(), Row::Facing, "up wraps within the page");
         m.key(crate::msglog::keys::PGUP);
         assert_eq!((m.page(), m.row), (Page::Interface, 0), "back from the first page");
         m.key(b']');

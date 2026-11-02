@@ -295,7 +295,8 @@ fn parse_args() -> Result<Args, String> {
                     }
                 }
             }
-            a.save_to = Some(d.join("PLAYER1.U1"));
+            // `--player N` plays (and saves) the roster's own copy of N.
+            a.save_to = Some(d.join(format!("PLAYER{}.U1", a.player.unwrap_or(1))));
         }
     }
     a.scale = a.scale.clamp(1, 6);
@@ -557,7 +558,14 @@ fn load(a: &Args, mode: VideoMode, chosen: Option<&Path>, reload: Option<PlayerR
         _ if reloaded => None,
         (Some(p), _, _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
         (None, Some(p), _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
-        (None, None, Some(n)) => Some(g.read(&format!("PLAYER{n}.U1")).map_err(e)?),
+        (None, None, Some(n)) => {
+            // The roster's copy (where the game saves it), else the game's.
+            let f = format!("PLAYER{n}.U1");
+            match a.save_to.as_deref().and_then(Path::parent).map(|d| d.join(&f)).filter(|p| p.is_file()) {
+                Some(p) => Some(std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?),
+                None => Some(g.read(&f).map_err(e)?),
+            }
+        }
         _ => None,
     };
     let mut rec = match (save_bytes, reload) {
@@ -931,7 +939,7 @@ impl SdlIo {
     fn redraw(&mut self) {
         let Some((w, h, crt)) = self.last_frame else { return };
         let (ww, wh) = self.canvas.output_size().unwrap_or((w, h));
-        let (x, y, dw, dh) = qol::fit(ww, wh, w, h, self.qol.scaling);
+        let (x, y, dw, dh) = qol::fit_art(ww, wh, w, h, (w / W as u32).max(1), self.qol.scaling);
         let dst = sdl2::rect::Rect::new(x, y, dw, dh);
         self.canvas.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
         self.canvas.clear();

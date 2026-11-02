@@ -388,8 +388,36 @@ pub fn fit(ww: u32, wh: u32, pw: u32, ph: u32, s: Scaling) -> (i32, i32, u32, u3
     (((ww - w) / 2) as i32, ((wh - h) / 2) as i32, w, h)
 }
 
+/// `fit` for a picture drawn at `k` times the original's size (the
+/// enhanced art): `Whole` also allows whole multiples of the original's
+/// pixels, whichever is larger, so a window sized for the original keeps
+/// the same picture size when the art changes.
+pub fn fit_art(ww: u32, wh: u32, pw: u32, ph: u32, k: u32, s: Scaling) -> (i32, i32, u32, u32) {
+    let a = fit(ww, wh, pw, ph, s);
+    if s != Scaling::Whole || k <= 1 {
+        return a;
+    }
+    let b = fit(ww, wh, (pw / k).max(1), (ph / k).max(1), s);
+    if b.2 > a.2 {
+        b
+    } else {
+        a
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fit_art_keeps_the_original_multiple() {
+        use super::{fit_art, Scaling};
+        // 960x600 holds three original-size pictures but only 1.5 of the
+        // doubled art: the art is drawn at the original's 3x.
+        assert_eq!(fit_art(960, 600, 640, 400, 2, Scaling::Whole), (0, 0, 960, 600));
+        // 1280x800: two of the art, as before.
+        assert_eq!(fit_art(1300, 800, 640, 400, 2, Scaling::Whole), (10, 0, 1280, 800));
+        assert_eq!(fit_art(960, 600, 320, 200, 1, Scaling::Whole), (0, 0, 960, 600));
+    }
+
     #[test]
     fn scale2x_rounds_diagonals_and_keeps_flat_areas() {
         use super::{pixel_art, scale2x};

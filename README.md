@@ -209,7 +209,8 @@ passes by itself, as in the original. Options:
 * `--player N` or `--save FILE` to load a save; `--pos X,Y` to override
   the position.
 * `--save-to FILE`: where `Q` writes the 820-byte record. The default is
-  `~/.local/share/ultima1-engine/saves/PLAYER1.U1` (`$XDG_DATA_HOME`), the
+  `~/.local/share/ultima1-engine/saves/PLAYER1.U1` (`PLAYERn.U1` with
+  `--player N`; `$XDG_DATA_HOME`), the
   folder that also holds the character menu's roster; the first time, the
   game's own `PLAYERn.U1` are copied there. Screenshots default to
   `./PLAYER1.U1`. It must not be inside the game folder.

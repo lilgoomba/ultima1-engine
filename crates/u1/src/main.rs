@@ -813,6 +813,17 @@ struct SdlIo {
     save_req: Option<(SaveReq, u8)>,
     /// A short note over the top of the map (slot results, F4).
     toast: Option<(String, Instant)>,
+    /// Tap actions (SPEC §24): what the game says a tap would find now,
+    /// keys a tap still has to give (dropped at the next prompt), a key
+    /// for arriving on a thing, the press under way (finger, picture
+    /// point, since, auto-walking), the highlight, and where the picture
+    /// was last drawn.
+    scene: u1_assets::tap::Scene,
+    tap_queue: std::collections::VecDeque<u8>,
+    tap_then: Option<(u1_assets::tap::Thing, u8)>,
+    tap_press: Option<(i64, i32, i32, Instant, bool)>,
+    tap_flash: Option<((i32, i32, i32, i32), Instant)>,
+    pic: sdl2::rect::Rect,
 }
 
 /// The engine's own windows, run with the game paused.
@@ -826,6 +837,9 @@ enum Modal {
 
 /// How long a note shows, and where.
 const TOAST: Duration = Duration::from_millis(2500);
+/// Tap actions: how long the tapped cell is outlined, and a long press.
+const TAP_FLASH: Duration = Duration::from_millis(250);
+const LONG_PRESS: Duration = Duration::from_millis(500);
 const TOAST_BOX: (usize, usize, usize, usize) = (8, 8, 311, 15);
 
 impl SdlIo {
@@ -932,6 +946,7 @@ impl SdlIo {
         };
         let (x, y, dw, dh) = qol::fit(aw, ah, w, h, self.qol.scaling);
         let dst = sdl2::rect::Rect::new(ax + x, ay + y, dw, dh);
+        self.pic = dst;
         self.canvas.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
         self.canvas.clear();
         let tex = match (&self.crt_tex, crt) {
@@ -939,6 +954,19 @@ impl SdlIo {
             _ => &self.tex,
         };
         let _ = self.canvas.copy(tex, None, dst);
+        if let Some(((x, y, w, h), at)) = self.tap_flash {
+            if at.elapsed() < TAP_FLASH {
+                let (sx, sy) = (dst.width() as f32 / 320.0, dst.height() as f32 / 200.0);
+                let r = sdl2::rect::Rect::new(dst.x() + (x as f32 * sx) as i32, dst.y() + (y as f32 * sy) as i32, (w as f32 * sx) as u32, (h as f32 * sy) as u32);
+                self.canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
+                self.canvas.set_draw_color(sdl2::pixels::Color::RGBA(255, 255, 160, 150));
+                let _ = self.canvas.draw_rect(r);
+                let _ = self.canvas.draw_rect(sdl2::rect::Rect::new(r.x() + 1, r.y() + 1, r.width().saturating_sub(2), r.height().saturating_sub(2)));
+                self.canvas.set_blend_mode(sdl2::render::BlendMode::None);
+            } else {
+                self.tap_flash = None;
+            }
+        }
         self.draw_touch(ww, wh);
         self.canvas.present();
     }
@@ -947,7 +975,9 @@ impl SdlIo {
     fn draw_touch(&mut self, ww: u32, wh: u32) {
         use sdl2::pixels::Color;
         use sdl2::rect::Rect;
+        let tap = self.qol.tap;
         let Some(t) = &mut self.touch else { return };
+        t.o.tap = tap;
         t.buttons = touch::layout(ww, wh, t.dpi, t.o);
         self.canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
         for b in &t.buttons {
@@ -981,7 +1011,10 @@ impl SdlIo {
     fn touch_down(&mut self, id: i64, x: i32, y: i32) {
         let act = {
             let Some(t) = &mut self.touch else { return };
-            let Some(b) = touch::hit(&t.buttons, x, y) else { return };
+            let Some(b) = touch::hit(&t.buttons, x, y) else {
+                self.tap_start(id, x, y);
+                return;
+            };
             let act = b.act;
             t.down.retain(|d| d.0 != id);
             t.down.push((id, act));
@@ -1022,12 +1055,13 @@ impl SdlIo {
             Act::QuickSave | Act::QuickLoad if self.in_menu => {}
             Act::QuickSave => self.request(SaveReq::Save(Slot::Quick)),
             Act::QuickLoad => self.request(SaveReq::Load(Slot::Quick)),
-            Act::Keyboard | Act::Numbers | Act::Hide | Act::Show => {
+            Act::Keyboard | Act::Numbers | Act::More | Act::Hide | Act::Show => {
                 let Some(t) = &mut self.touch else { return };
                 match act {
                     Act::Keyboard if t.text.is_active() => t.text.stop(),
                     Act::Keyboard => t.text.start(),
                     Act::Numbers => t.o.numbers = !t.o.numbers,
+                    Act::More => t.o.more = !t.o.more,
                     _ => t.o.hidden = !t.o.hidden,
                 }
             }
@@ -1035,6 +1069,7 @@ impl SdlIo {
         self.redraw();
     }
     fn touch_up(&mut self, id: i64) {
+        self.tap_end(id);
         let Some(t) = &mut self.touch else { return };
         if let Some(i) = t.down.iter().position(|d| d.0 == id) {
             t.down.remove(i);
@@ -1050,6 +1085,64 @@ impl SdlIo {
         if touch::hit(&t.buttons, x, y).map(|b| b.act) != Some(act) {
             self.touch_up(id);
         }
+    }
+
+    /// Tap actions (SPEC §24): a press on the game picture starts.
+    fn tap_start(&mut self, id: i64, x: i32, y: i32) {
+        if !self.qol.tap || self.in_menu || self.front || !self.pic.contains_point((x, y)) {
+            return;
+        }
+        let (px, py) = ((x - self.pic.x()) * 320 / self.pic.width().max(1) as i32, (y - self.pic.y()) * 200 / self.pic.height().max(1) as i32);
+        self.tap_press = Some((id, px, py, Instant::now(), false));
+    }
+
+    /// The press ends: a short one is a tap.
+    fn tap_end(&mut self, id: i64) {
+        if let Some((i, x, y, at, walking)) = self.tap_press {
+            if i == id {
+                self.tap_press = None;
+                if !walking && at.elapsed() < LONG_PRESS {
+                    self.tap_fire(x, y, false);
+                }
+            }
+        }
+    }
+
+    /// A press held: on the player a long press (X-it, or what is
+    /// underfoot in a dungeon); elsewhere it keeps walking that way, one
+    /// normal turn per step, until let go or something other than a
+    /// step would happen (a foe next to the way, a horse to board...).
+    fn tap_held(&mut self) {
+        let Some((id, x, y, at, walking)) = self.tap_press else { return };
+        if at.elapsed() < LONG_PRESS || !self.at_prompt || self.in_menu || !self.tap_queue.is_empty() || !self.pending.is_empty() {
+            return;
+        }
+        let a = u1_assets::tap::resolve(&self.scene, x, y, false);
+        let own = matches!(&self.scene, u1_assets::tap::Scene::Grid(g) if a.cell == Some((g.px, g.py)));
+        if !walking && (own || matches!(self.scene, u1_assets::tap::Scene::Dungeon(_))) {
+            self.tap_press = None;
+            self.tap_fire(x, y, true);
+            return;
+        }
+        let step = a.keys.len() == 1 && (keys::LEFT..=keys::DOWN).contains(&a.keys[0]) && a.then.is_none();
+        if !step || own {
+            self.tap_press = None;
+            return;
+        }
+        self.tap_press = Some((id, x, y, at, true));
+        self.tap_fire(x, y, false);
+    }
+
+    fn tap_fire(&mut self, x: i32, y: i32, long: bool) {
+        if !self.qol.tap || !self.at_prompt || self.in_menu || self.front {
+            return;
+        }
+        let a = u1_assets::tap::resolve(&self.scene, x, y, long);
+        if let (Some((c, r)), u1_assets::tap::Scene::Grid(g)) = (a.cell, &self.scene) {
+            self.tap_flash = Some((g.rect(c, r), Instant::now()));
+        }
+        self.tap_queue = a.keys.into_iter().collect();
+        self.tap_then = a.then;
     }
 
     /// `d` under the speed settings.
@@ -1122,6 +1215,17 @@ impl SdlIo {
                 // copies of real touches are left out).
                 Event::MouseButtonDown { which, x, y, .. } if self.touch.is_some() && which != u32::MAX => self.touch_down(-1, x, y),
                 Event::MouseButtonUp { which, .. } if self.touch.is_some() && which != u32::MAX => self.touch_up(-1),
+                // Without the touch controls, clicks on the picture are taps
+                // when the option is on (right click: a long press).
+                Event::MouseButtonDown { which, x, y, mouse_btn, .. } if self.qol.tap && which != u32::MAX => {
+                    self.tap_start(-1, x, y);
+                    if mouse_btn == sdl2::mouse::MouseButton::Right {
+                        if let Some((_, px, py, _, _)) = self.tap_press.take() {
+                            self.tap_fire(px, py, true);
+                        }
+                    }
+                }
+                Event::MouseButtonUp { which, .. } if self.qol.tap && which != u32::MAX => self.tap_end(-1),
                 Event::Window { win_event, .. } => {
                     use sdl2::event::WindowEvent as We;
                     if matches!(win_event, We::SizeChanged(..) | We::Resized(..) | We::Exposed | We::Maximized | We::Restored | We::Shown) {
@@ -1294,6 +1398,11 @@ impl SdlIo {
                 return k;
             }
         }
+        if !self.in_menu {
+            if let Some(k) = self.tap_queue.pop_front() {
+                return Some(k);
+            }
+        }
         None
     }
 
@@ -1342,6 +1451,7 @@ impl Io for SdlIo {
             self.restarting()?;
             let poll = self.scaled(POLL, Wait::Poll);
             self.repeat_due();
+            self.tap_held();
             if let Some(k) = self.next_key() {
                 self.next = Instant::now() + poll;
                 return Ok(Some(k));
@@ -1489,7 +1599,20 @@ impl Io for SdlIo {
     }
 
     fn command_prompt(&mut self, on: bool) {
+        if on && !self.at_prompt {
+            // What a tap still had to type belonged to the last command.
+            self.tap_queue.clear();
+        }
         self.at_prompt = on;
+    }
+
+    fn tap_scene(&mut self, s: u1_assets::tap::Scene) {
+        if let Some((want, k)) = self.tap_then.take() {
+            if matches!(&s, u1_assets::tap::Scene::Grid(g) if g.here.thing == want) {
+                self.tap_queue.push_back(k);
+            }
+        }
+        self.scene = s;
     }
 
     fn view_open(&mut self, key: Option<u8>) {
@@ -1967,6 +2090,12 @@ fn play(a: &Args) -> Result<(), String> {
         save_base: None,
         save_req: None,
         toast: None,
+        scene: Default::default(),
+        tap_queue: Default::default(),
+        tap_then: None,
+        tap_press: None,
+        tap_flash: None,
+        pic: sdl2::rect::Rect::new(0, 0, 1, 1),
     };
     // The optional features: the file's, and --crt / --fullscreen.
     let mut q = cfg.qol;

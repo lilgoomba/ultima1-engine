@@ -173,7 +173,7 @@ fn dungeon(d: &Dungeon, x: i32, y: i32, long: bool) -> Action {
         (_, 2) => Action::keys(&[keys::DOWN]),
         // The middle of the corridor: what is underfoot, if anything.
         (_, 1) if context.is_some() => Action::keys(&[context.unwrap()]),
-        _ if d.foe_ahead => Action::keys(&[b'A']),
+        _ if d.foe_ahead => Action::keys(b"A"),
         _ => Action::keys(&[keys::UP]),
     }
 }
@@ -198,12 +198,12 @@ fn grid(g: &Grid, x: i32, y: i32, long: bool) -> Action {
 
 fn own(g: &Grid, long: bool) -> Action {
     if long {
-        return if g.here.riding { Action::keys(&[b'X']) } else { Action::default() };
+        return if g.here.riding { Action::keys(b"X") } else { Action::default() };
     }
     match g.here.thing {
-        Thing::Entrance => Action::keys(&[b'E']),
-        Thing::Vehicle if !g.here.riding => Action::keys(&[b'B']),
-        _ => Action::keys(&[b' ']),
+        Thing::Entrance => Action::keys(b"E"),
+        Thing::Vehicle if !g.here.riding => Action::keys(b"B"),
+        _ => Action::keys(b" "),
     }
 }
 
@@ -211,7 +211,7 @@ fn next_to(g: &Grid, t: Thing, dx: i32, dy: i32) -> Action {
     let k = arrow(dx, dy);
     match t {
         Thing::Foe => Action::keys(&[b'A', k]),
-        Thing::Person if g.town => Action::keys(&[b'T']),
+        Thing::Person if g.town => Action::keys(b"T"),
         Thing::Vehicle if g.here.riding => Action::keys(&[k]),
         Thing::Vehicle | Thing::Entrance => Action { keys: vec![k], then: arrive_key(t).map(|b| (t, b)), cell: None },
         _ => Action::keys(&[k]),
@@ -239,6 +239,91 @@ fn step_toward(g: &Grid, dx: i32, dy: i32) -> Action {
         first
     };
     Action::keys(&[arrow(pick.0, pick.1)])
+}
+
+impl crate::game::Game {
+    /// What a tap would find now (SPEC §24), for the command prompt.
+    pub fn tap_scene(&self) -> Scene {
+        use crate::game::{CASTLE, OUTDOORS, TOWN};
+        match self.mode {
+            OUTDOORS => Scene::Grid(self.tap_world()),
+            TOWN | CASTLE => Scene::Grid(self.tap_town()),
+            crate::dgame::DUNGEON if self.dungeon.is_some() => Scene::Dungeon(self.tap_dungeon()),
+            _ => Scene::None,
+        }
+    }
+
+    fn tap_world(&self) -> Grid {
+        use crate::rules::{self, PLAYER_COL, PLAYER_ROW, VIEW_COLS, VIEW_ROWS};
+        let tr = self.transport();
+        let kind = |v: u8| -> Thing {
+            if rules::is_monster_tile(v) {
+                Thing::Foe
+            } else if (0x0B..=0x12).contains(&v) {
+                Thing::Vehicle
+            } else if (4..=7).contains(&v) {
+                Thing::Entrance
+            } else if rules::check_move(v, tr).is_err() {
+                Thing::Blocked
+            } else {
+                Thing::Open
+            }
+        };
+        let mut cells = Vec::with_capacity((VIEW_COLS * VIEW_ROWS) as usize);
+        for row in 0..VIEW_ROWS {
+            for col in 0..VIEW_COLS {
+                let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
+                cells.push(kind(self.cell_or_object(mx, my)));
+            }
+        }
+        let here = kind(self.cell_or_object(self.ow.x, self.ow.y));
+        Grid {
+            x0: 8,
+            y0: 8,
+            cw: self.a.world_tiles.width.max(1) as i32,
+            ch: self.a.world_tiles.height.max(1) as i32,
+            cols: VIEW_COLS,
+            rows: VIEW_ROWS,
+            px: PLAYER_COL,
+            py: PLAYER_ROW,
+            cells,
+            here: Here { thing: if tr != 0 && here == Thing::Vehicle { Thing::Open } else { here }, riding: tr != 0 },
+            town: false,
+        }
+    }
+
+    fn tap_town(&self) -> Grid {
+        use crate::tcd::{TCD_HEIGHT, TCD_WIDTH};
+        let (w, h) = (TCD_WIDTH as i32, TCD_HEIGHT as i32);
+        let mut cells = Vec::with_capacity((w * h) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                cells.push(if (x, y) == (self.px, self.py) {
+                    Thing::Open
+                } else {
+                    match self.passable(x, y) {
+                        crate::town::FREE | crate::town::SPECIAL => Thing::Open,
+                        0 => Thing::Blocked,
+                        _ if self.hostile => Thing::Foe,
+                        _ => Thing::Person,
+                    }
+                });
+            }
+        }
+        Grid {
+            x0: 8,
+            y0: 8,
+            cw: self.a.town_tiles.width.max(1) as i32,
+            ch: self.a.town_tiles.height.max(1) as i32,
+            cols: w,
+            rows: h,
+            px: self.px,
+            py: self.py,
+            cells,
+            here: Here::default(),
+            town: true,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -341,90 +426,5 @@ mod tests {
         assert_eq!(t(&Dungeon { chest: true, ..d }, 3, 3, false), [b'U']);
         assert!(resolve(&Scene::Dungeon(d), 2, 2, false).keys.is_empty(), "outside the view");
         assert!(resolve(&Scene::None, 100, 50, false).keys.is_empty());
-    }
-}
-
-impl crate::game::Game {
-    /// What a tap would find now (SPEC §24), for the command prompt.
-    pub fn tap_scene(&self) -> Scene {
-        use crate::game::{CASTLE, OUTDOORS, TOWN};
-        match self.mode {
-            OUTDOORS => Scene::Grid(self.tap_world()),
-            TOWN | CASTLE => Scene::Grid(self.tap_town()),
-            crate::dgame::DUNGEON if self.dungeon.is_some() => Scene::Dungeon(self.tap_dungeon()),
-            _ => Scene::None,
-        }
-    }
-
-    fn tap_world(&self) -> Grid {
-        use crate::rules::{self, PLAYER_COL, PLAYER_ROW, VIEW_COLS, VIEW_ROWS};
-        let tr = self.transport();
-        let kind = |v: u8| -> Thing {
-            if rules::is_monster_tile(v) {
-                Thing::Foe
-            } else if (0x0B..=0x12).contains(&v) {
-                Thing::Vehicle
-            } else if (4..=7).contains(&v) {
-                Thing::Entrance
-            } else if rules::check_move(v, tr).is_err() {
-                Thing::Blocked
-            } else {
-                Thing::Open
-            }
-        };
-        let mut cells = Vec::with_capacity((VIEW_COLS * VIEW_ROWS) as usize);
-        for row in 0..VIEW_ROWS {
-            for col in 0..VIEW_COLS {
-                let (mx, my) = rules::view_cell(self.ow.x, self.ow.y, col, row);
-                cells.push(kind(self.cell_or_object(mx, my)));
-            }
-        }
-        let here = kind(self.cell_or_object(self.ow.x, self.ow.y));
-        Grid {
-            x0: 8,
-            y0: 8,
-            cw: self.a.world_tiles.width.max(1) as i32,
-            ch: self.a.world_tiles.height.max(1) as i32,
-            cols: VIEW_COLS,
-            rows: VIEW_ROWS,
-            px: PLAYER_COL,
-            py: PLAYER_ROW,
-            cells,
-            here: Here { thing: if tr != 0 && here == Thing::Vehicle { Thing::Open } else { here }, riding: tr != 0 },
-            town: false,
-        }
-    }
-
-    fn tap_town(&self) -> Grid {
-        use crate::tcd::{TCD_HEIGHT, TCD_WIDTH};
-        let (w, h) = (TCD_WIDTH as i32, TCD_HEIGHT as i32);
-        let mut cells = Vec::with_capacity((w * h) as usize);
-        for y in 0..h {
-            for x in 0..w {
-                cells.push(if (x, y) == (self.px, self.py) {
-                    Thing::Open
-                } else {
-                    match self.passable(x, y) {
-                        crate::town::FREE | crate::town::SPECIAL => Thing::Open,
-                        0 => Thing::Blocked,
-                        _ if self.hostile => Thing::Foe,
-                        _ => Thing::Person,
-                    }
-                });
-            }
-        }
-        Grid {
-            x0: 8,
-            y0: 8,
-            cw: self.a.town_tiles.width.max(1) as i32,
-            ch: self.a.town_tiles.height.max(1) as i32,
-            cols: w,
-            rows: h,
-            px: self.px,
-            py: self.py,
-            cells,
-            here: Here::default(),
-            town: true,
-        }
     }
 }

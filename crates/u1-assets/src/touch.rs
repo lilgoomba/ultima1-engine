@@ -27,6 +27,8 @@ pub enum Act {
     Keyboard,
     /// The number pad instead of the letters, or back.
     Numbers,
+    /// Tap actions on: the "More" panel (the commands a tap gives) or back.
+    More,
     Hide,
     Show,
 }
@@ -50,11 +52,24 @@ impl Button {
 /// The letter commands on the right, three columns of eight.
 pub const LETTERS: &[u8; 24] = b"ABCDEFGHIKMNOPQRSTUVWXYZ";
 
+/// With tap actions on, the commands a tap already gives (attack, board,
+/// enter, klimb, open, transact, X-it) wait on the "More" panel, and the
+/// rest stay on the main one.
+pub const MORE: &[u8; 7] = b"ABEKOTX";
+
+/// The main panel's letters with tap actions on.
+pub fn main_letters() -> Vec<u8> {
+    LETTERS.iter().copied().filter(|c| !MORE.contains(c)).collect()
+}
+
 /// The overlay's state: shown or not, and letters or numbers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Overlay {
     pub hidden: bool,
     pub numbers: bool,
+    /// Tap actions on (the slim letter panel), and its "More" side shown.
+    pub tap: bool,
+    pub more: bool,
 }
 
 /// The size of one button for a `ww` x `wh` window with `dpi` dots per
@@ -143,6 +158,22 @@ pub fn layout(ww: u32, wh: u32, dpi: f32, o: Overlay) -> Vec<Button> {
             b(x0 + c * (u + g), g + r * (h + g), u, h, l, a);
         }
         b(x0, g + 4 * (h + g), 3 * u + 2 * g, h, "ABC", Act::Numbers);
+    } else if o.tap {
+        // Slim: the main letters and "More", or the "More" commands (with
+        // Space for Pass) and "Back"; either way six rows.
+        let mut items: Vec<(String, Act)> = if o.more {
+            MORE.iter().map(|&c| ((c as char).to_string(), Act::Key(c))).chain([("Pass".to_string(), Act::Key(b' '))]).collect()
+        } else {
+            main_letters().into_iter().map(|c| ((c as char).to_string(), Act::Key(c))).collect()
+        };
+        items.push((if o.more { "Back" } else { "More" }.to_string(), Act::More));
+        let rows = (items.len() as i32 + 2) / 3;
+        let h = ((wh - (rows + 2) * g) / (rows + 1)).min(u * 3 / 2);
+        for (i, (l, a)) in items.iter().enumerate() {
+            let (col, row) = (i as i32 % 3, i as i32 / 3);
+            b(x0 + col * (u + g), g + row * (h + g), u, h, l, *a);
+        }
+        b(x0, g + rows * (h + g), 3 * u + 2 * g, h, "123", Act::Numbers);
     } else {
         let h = (wh - 10 * g) / 9;
         for (i, &c) in LETTERS.iter().enumerate() {
@@ -170,7 +201,13 @@ mod tests {
     #[test]
     fn buttons_fit_and_never_overlap() {
         for (w, h, dpi) in [(2400, 1080, 400.0), (1920, 1080, 160.0), (2048, 1536, 264.0), (1280, 800, 213.0), (800, 480, 160.0)] {
-            for o in [Overlay::default(), Overlay { numbers: true, ..Default::default() }, Overlay { hidden: true, ..Default::default() }] {
+            for o in [
+                Overlay::default(),
+                Overlay { numbers: true, ..Default::default() },
+                Overlay { hidden: true, ..Default::default() },
+                Overlay { tap: true, ..Default::default() },
+                Overlay { tap: true, more: true, ..Default::default() },
+            ] {
                 let v = layout(w, h, dpi, o);
                 for (i, a) in v.iter().enumerate() {
                     assert!(a.x >= 0 && a.y >= 0 && a.x + a.w <= w as i32 && a.y + a.h <= h as i32, "{w}x{h} {o:?} {a:?}");
@@ -214,5 +251,21 @@ mod tests {
         // A 4:3 tablet draws it over the whole screen.
         assert_eq!(game_area(2048, 1536, 264.0, o), (0, 0, 2048, 1536));
         assert_eq!(game_area(2400, 1080, 400.0, Overlay { hidden: true, ..o }), (0, 0, 2400, 1080));
+    }
+
+    #[test]
+    fn tap_mode_splits_the_letters_into_main_and_more() {
+        let main = layout(2400, 1080, 400.0, Overlay { tap: true, ..Default::default() });
+        let more = layout(2400, 1080, 400.0, Overlay { tap: true, more: true, ..Default::default() });
+        for &c in b"CDFGHIMNPQRSUVWYZ" {
+            assert!(main.iter().any(|b| b.act == Act::Key(c)), "{}", c as char);
+        }
+        for &c in MORE {
+            assert!(!main.iter().any(|b| b.act == Act::Key(c) && b.x > 1200), "{}", c as char);
+            assert!(more.iter().any(|b| b.act == Act::Key(c)), "{}", c as char);
+        }
+        assert!(main.iter().any(|b| b.act == Act::More) && more.iter().any(|b| b.act == Act::More));
+        // Space stays on the d-pad either way.
+        assert!(main.iter().any(|b| b.act == Act::Key(b' ')));
     }
 }

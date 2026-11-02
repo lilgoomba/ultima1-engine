@@ -462,6 +462,17 @@ mod tests {
     }
 
     #[test]
+    fn save_slots_default_on_and_old_configs() {
+        // An old config that never mentions slots now gets them; one that
+        // turned them on keeps them; one that says off stays off.
+        assert!(Config::parse("video = \"ega\"\n").qol.slots);
+        assert!(Config::parse("save_slots = true\n").qol.slots);
+        let off = Config::parse("save_slots = false\n");
+        assert!(!off.qol.slots && off.to_toml().contains("save_slots = false"));
+        assert!(!Config::default().to_toml().contains("save_slots"));
+    }
+
+    #[test]
     fn tolerant_parse() {
         let c = Config::parse("# hand edited\n\nvideo='CGA'  # four colours\nsound = \"enhanced\"\nfuture = 3\n[keys]\nvideo = \"ega\"\n");
         assert_eq!(c.video, Some(VideoChoice::Cga));

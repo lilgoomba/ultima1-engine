@@ -604,10 +604,13 @@ mod tests {
         assert_eq!((m.qol.message_delay, m.value(Row::Delay)), (0, "None".to_string()));
         at(&mut m, Row::Scaling).key(keys::RIGHT);
         assert_eq!(m.qol.scaling, Scaling::Fill);
+        assert!(m.qol.slots && m.value(Row::Slots) == "On (F2 F5 F9)", "save slots default on");
         for r in [Row::Fullscreen, Row::Crt, Row::Slots, Row::Log, Row::Space] {
             at(&mut m, r).key(keys::RIGHT);
         }
-        assert!(m.qol.fullscreen && m.qol.crt && m.qol.slots && m.qol.log && m.qol.fast_space);
+        assert!(m.qol.fullscreen && m.qol.crt && !m.qol.slots && m.qol.log && m.qol.fast_space);
+        at(&mut m, Row::Slots).key(b'r');
+        assert!(m.qol.slots, "R puts the page back to slots on");
         assert_eq!((m.video, m.sound), (VideoChoice::Ega, SoundMode::Original), "the other rows are untouched");
         for r in [Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::Repeat, Row::Gamepad] {
             assert_eq!(at(&mut m, r).key(b' '), MenuKey::Changed);

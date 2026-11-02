@@ -180,7 +180,7 @@ impl Default for Qol {
             fullscreen: false,
             scaling: Scaling::Whole,
             crt: false,
-            slots: false,
+            slots: true,
             log: false,
             turbo: false,
             message_delay: 100,

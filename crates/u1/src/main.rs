@@ -1609,27 +1609,34 @@ impl SdlIo {
                 },
                 |_, _, _, _| false,
             ),
-            Modal::Quit => self.run_modal(
-                t,
-                &mut (),
-                |_, c| {
-                    opts::panel(c);
-                    opts::center(c, 5, "Quit the game?", u1_assets::term::WARN);
-                    opts::center(c, 7, "What you did since the last save", u1_assets::term::TEXT);
-                    opts::center(c, 8, "will be lost.", u1_assets::term::TEXT);
-                    opts::center(c, 10, "To save: Q (Quit) outdoors,", u1_assets::term::TEXT);
-                    opts::center(c, 11, "or F2 (with save slots on).", u1_assets::term::TEXT);
-                    opts::center(c, 14, "Y: quit now   N: keep playing", u1_assets::term::TEXT);
-                },
-                |io, _, k, name| match k.to_ascii_lowercase() {
-                    b'y' => {
-                        io.halt = true;
-                        false
-                    }
-                    b'n' | keys::ESC | keys::ENTER => false,
-                    _ => name.is_empty(),
-                },
-            ),
+            Modal::Quit => {
+                let mut slots = self.qol.slots;
+                self.run_modal(
+                    t,
+                    &mut slots,
+                    |slots, c| {
+                        opts::panel(c);
+                        opts::center(c, 5, "Quit the game?", u1_assets::term::WARN);
+                        opts::center(c, 7, "What you did since the last save", u1_assets::term::TEXT);
+                        opts::center(c, 8, "will be lost.", u1_assets::term::TEXT);
+                        if *slots {
+                            opts::center(c, 10, "To save: Q (Quit) outdoors,", u1_assets::term::TEXT);
+                            opts::center(c, 11, "or a save slot (F2, F5).", u1_assets::term::TEXT);
+                        } else {
+                            opts::center(c, 10, "To save: Q (Quit) outdoors.", u1_assets::term::TEXT);
+                        }
+                        opts::center(c, 14, "Y: quit now   N: keep playing", u1_assets::term::TEXT);
+                    },
+                    |io, _, k, name| match k.to_ascii_lowercase() {
+                        b'y' => {
+                            io.halt = true;
+                            false
+                        }
+                        b'n' | keys::ESC | keys::ENTER => false,
+                        _ => name.is_empty(),
+                    },
+                )
+            }
         }
     }
 

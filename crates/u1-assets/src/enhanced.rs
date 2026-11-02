@@ -914,12 +914,10 @@ mod tests {
     #[test]
     fn vehicle_flip_by_base_orientation() {
         use crate::game::vehicle_flip;
-        for t in [0x0B, 0x0C, 0x0D] {
+        for t in [0x0B, 0x0C, 0x0D, 0x0E, 0x0F] {
             assert!(vehicle_flip(t, true) && !vehicle_flip(t, false), "{t:#x} drawn facing right");
         }
-        for t in [0x0E, 0x0F, 0x10] {
-            assert!(!vehicle_flip(t, true) && vehicle_flip(t, false), "{t:#x} drawn facing left");
-        }
+        assert!(!vehicle_flip(0x10, true) && vehicle_flip(0x10, false), "the aircar is drawn facing left");
         for t in [0x00, 0x0A, 0x11, 0x12, 0x13] {
             assert!(!vehicle_flip(t, true) && !vehicle_flip(t, false));
         }

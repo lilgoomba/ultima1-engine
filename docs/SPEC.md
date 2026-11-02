@@ -1882,8 +1882,8 @@ rides faces the way it last moved sideways: a move (or a blocked try)
 west faces it left, east faces it right, north and south keep the
 facing. This is done by mirroring the existing enhanced picture left to
 right; no new art. The pictures' own direction decides when to mirror:
-horse, cart and raft are drawn facing right; the frigate (both frames)
-and the aircar facing left; the shuttle (upright on its pad) and the
+horse, cart, raft and frigate (both frames) are drawn facing right;
+the aircar facing left; the shuttle (upright on its pad) and the
 time machine never turn, nor does the player on foot, monsters or
 terrain under a vehicle. A new game, a loaded save, and boarding a
 vehicle parked by the map face right. X-iting parks the vehicle with

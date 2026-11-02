@@ -1832,13 +1832,13 @@ impl Game {
 }
 
 /// Whether a world tile's enhanced picture is mirrored for a vehicle
-/// facing `left`. The horse, cart and raft are drawn facing right; the
-/// frigate (both frames) and the aircar facing left; the shuttle and the
+/// facing `left`. The horse, cart, raft and frigate (both frames) are
+/// drawn facing right; the aircar facing left; the shuttle and the
 /// time machine, and everything that is not a vehicle, never turn.
 pub fn vehicle_flip(tile: usize, left: bool) -> bool {
     match tile {
-        0x0B..=0x0D => left,
-        0x0E..=0x10 => !left,
+        0x0B..=0x0F => left,
+        0x10 => !left,
         _ => false,
     }
 }

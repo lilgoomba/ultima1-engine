@@ -791,6 +791,21 @@ struct SdlIo {
     save_req: Option<(SaveReq, u8)>,
     /// A short note over the top of the map (slot results, F4).
     toast: Option<(String, Instant)>,
+    /// The window is not the active one: the game waits (SPEC §22).
+    focus_lost: bool,
+    /// The window open now, while one is.
+    current: Option<Modal>,
+    /// Keys reached the game since its last save (for the quit question).
+    dirty: bool,
+    /// The player said yes to quitting.
+    halt: bool,
+    /// The window's place and size outside fullscreen (kept in the config)
+    /// and whether it moved since the config was saved.
+    geom: Option<(i32, i32, u32, u32)>,
+    geom_moved: bool,
+    /// The screenshot key's SDL name, and the last frame shown.
+    shot_key: String,
+    last_rgb: Option<(usize, usize, Vec<u8>)>,
 }
 
 /// The engine's own windows, run with the game paused.
@@ -800,6 +815,10 @@ enum Modal {
     Slots,
     Log,
     Rebind,
+    /// The window lost focus: waiting until it is back (or a key).
+    Paused,
+    /// The window was closed with unsaved progress.
+    Quit,
 }
 
 /// How long a note shows, and where.
@@ -869,6 +888,7 @@ impl SdlIo {
             (Some(p), Some((m, r))) => (W * p.scale(), H * p.scale(), enhanced::compose_boxed(t, m, &self.palette, p, ms, r)),
             (_, o) => frame_rgb(o.map_or(t, |o| o.0), &self.palette, pack, 1, ms),
         };
+        self.last_rgb = Some((w, h, rgb.clone()));
         // Pixel-art smoothing enlarges the frame first, then the CRT
         // filter works on the result; either goes through its own texture.
         // The window fits the original's size (whole multiples of it).
@@ -924,6 +944,31 @@ impl SdlIo {
         d.mul_f64(self.qol.wait_factor(w, self.in_space))
     }
 
+    /// The screenshot key: the frame on screen as a PNG.
+    fn snap(&mut self) {
+        let Some((w, h, rgb)) = self.last_rgb.clone() else { return };
+        let dir = shot_dir();
+        // u1-YYYYMMDD-HHMMSS.png
+        let name = format!("u1-{}.png", local_stamp().replace(['-', ':'], "").replace(' ', "-"));
+        let mut path = dir.join(&name);
+        let mut n = 2;
+        while path.exists() {
+            path = dir.join(name.replace(".png", &format!("-{n}.png")));
+            n += 1;
+        }
+        let r = std::fs::create_dir_all(&dir).map_err(|e| e.to_string()).and_then(|_| write_png(&path, w as u32, h as u32, &rgb));
+        match r {
+            Ok(()) => {
+                eprintln!("screenshot: {}", path.display());
+                self.note(&format!("Saved {}", short_path(&path)));
+            }
+            Err(e) => {
+                eprintln!("screenshot: {e}");
+                self.note("Screenshot not saved");
+            }
+        }
+    }
+
     fn note(&mut self, msg: &str) {
         self.toast = Some((msg.to_string(), Instant::now()));
     }
@@ -967,9 +1012,47 @@ impl SdlIo {
         let evs: Vec<Event> = self.events.poll_iter().collect();
         for ev in evs {
             match ev {
-                Event::Quit { .. } => return Err(Halt),
+                Event::Quit { .. } => {
+                    if !(self.qol.confirm_quit && self.dirty && !self.front) {
+                        return Err(Halt);
+                    }
+                    if self.current != Some(Modal::Quit) {
+                        if self.in_menu {
+                            // Close the window that is up; the question follows.
+                            self.menu_keys.push_back((keys::ESC, "escape".into()));
+                        }
+                        self.in_menu = true;
+                        self.modal_wanted = Some(Modal::Quit);
+                    }
+                }
                 Event::Window { win_event, .. } => {
                     use sdl2::event::WindowEvent as We;
+                    match win_event {
+                        We::FocusLost => {
+                            self.focus_lost = true;
+                            if !self.in_menu {
+                                self.in_menu = true;
+                                self.modal_wanted = Some(Modal::Paused);
+                            }
+                        }
+                        We::FocusGained => {
+                            self.focus_lost = false;
+                            if self.current == Some(Modal::Paused) {
+                                self.menu_keys.push_back((0, "focus".into()));
+                            }
+                        }
+                        We::Moved(..) | We::Resized(..) | We::SizeChanged(..) if !self.qol.fullscreen => {
+                            let w = self.canvas.window();
+                            if w.fullscreen_state() == sdl2::video::FullscreenType::Off {
+                                let ((x, y), (sw, sh)) = (w.position(), w.size());
+                                if self.geom != Some((x, y, sw, sh)) {
+                                    self.geom = Some((x, y, sw, sh));
+                                    self.geom_moved = true;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
                     if matches!(win_event, We::SizeChanged(..) | We::Resized(..) | We::Exposed | We::Maximized | We::Restored | We::Shown) {
                         self.redraw();
                     }
@@ -1035,6 +1118,10 @@ impl SdlIo {
                         }
                     };
                     let name = k.name().to_lowercase();
+                    if name == self.shot_key && !repeat {
+                        self.snap();
+                        continue;
+                    }
                     // Keys typed while a window is up are the window's.
                     if self.in_menu {
                         self.menu_keys.push_back((c.unwrap_or(0), name));
@@ -1049,6 +1136,7 @@ impl SdlIo {
                     }
                     let extra = self.keymap.code_for(&name).filter(|&x| self.wanted_code(x));
                     if c.is_some() || extra.is_some() {
+                        self.dirty |= !self.front;
                         self.pending.push_back((c, extra));
                     }
                 }
@@ -1321,6 +1409,14 @@ impl Io for SdlIo {
         self.save_req.take().map(|(r, _)| r)
     }
 
+    fn saved(&mut self, path: &Path, rec: &u1_assets::save::PlayerRecord, t: &Term) {
+        self.dirty = false;
+        let when: String = local_stamp().chars().take(16).collect();
+        if let Err(e) = u1_assets::slots::SaveInfo::of(rec, t, &when).write(path) {
+            eprintln!("{}: {e}", u1_assets::slots::info_path(path).display());
+        }
+    }
+
     fn save_done(&mut self, msg: &str) {
         self.note(msg);
     }
@@ -1407,10 +1503,19 @@ impl SdlIo {
         }
         while let Some(which) = self.modal_wanted.take() {
             self.in_menu = true;
+            self.current = Some(which);
             let r = self.run_one(t, which);
+            self.current = None;
             self.in_menu = false;
             self.menu_keys.clear();
             r?;
+            if self.halt {
+                return Err(Halt);
+            }
+            if self.focus_lost && self.modal_wanted.is_none() {
+                // Closed by a key while still in the background.
+                self.focus_lost = false;
+            }
         }
         if let Some((dev, _)) = &mut self.audio {
             dev.lock().music.paused = false;
@@ -1485,6 +1590,39 @@ impl SdlIo {
                 let mut v = LogView::new(t);
                 self.run_modal(t, &mut v, |v, c| v.draw(c), |_, v, k, _| v.key(k))
             }
+            Modal::Paused => self.run_modal(
+                t,
+                &mut (),
+                |_, c| {
+                    opts::panel(c);
+                    opts::center(c, 7, "Paused", u1_assets::term::WARN);
+                    opts::center(c, 9, "The window is in the background;", u1_assets::term::TEXT);
+                    opts::center(c, 10, "no time passes in the game.", u1_assets::term::TEXT);
+                    opts::center(c, 13, "Click the window or press a key", u1_assets::term::TEXT);
+                },
+                |_, _, _, _| false,
+            ),
+            Modal::Quit => self.run_modal(
+                t,
+                &mut (),
+                |_, c| {
+                    opts::panel(c);
+                    opts::center(c, 5, "Quit the game?", u1_assets::term::WARN);
+                    opts::center(c, 7, "What you did since the last save", u1_assets::term::TEXT);
+                    opts::center(c, 8, "will be lost.", u1_assets::term::TEXT);
+                    opts::center(c, 10, "To save: Q (Quit) outdoors,", u1_assets::term::TEXT);
+                    opts::center(c, 11, "or a save slot (F2).", u1_assets::term::TEXT);
+                    opts::center(c, 14, "Y: quit now   N: keep playing", u1_assets::term::TEXT);
+                },
+                |io, _, k, name| match k.to_ascii_lowercase() {
+                    b'y' => {
+                        io.halt = true;
+                        false
+                    }
+                    b'n' | keys::ESC | keys::ENTER => false,
+                    _ => name.is_empty(),
+                },
+            ),
         }
     }
 
@@ -1563,6 +1701,14 @@ impl SdlIo {
         }
     }
 
+    /// Keep the window's place and size for next time, if it changed.
+    fn keep_window(&mut self) {
+        if self.geom_moved {
+            self.save_config(false);
+            self.geom_moved = false;
+        }
+    }
+
     /// Save the choices (`all`: the display and sound as well as the
     /// optional features; the keys F4 and Alt+Enter save only those).
     fn save_config(&self, all: bool) {
@@ -1579,6 +1725,9 @@ impl SdlIo {
             c.sound = Some(self.sound);
         }
         c.qol = self.qol;
+        if self.geom.is_some() {
+            c.window = self.geom;
+        }
         c.keys = self.keymap.clone();
         c.pad = self.pad.map.clone();
         c.warnings.clear();
@@ -1748,7 +1897,14 @@ fn play(a: &Args) -> Result<(), String> {
     let k = pack.as_ref().map_or(1, |p| p.scale()) as u32;
     let (iw, ih) = (W as u32 * k, H as u32 * k);
     let n = (a.scale / k).max(1);
-    let window = video.window("u1 - Ultima I", iw * n, ih * n).position_centered().resizable().build().map_err(|e| e.to_string())?;
+    // The window's last place and size, if the config has them.
+    let (ww, wh) = cfg.window.map_or((iw * n, ih * n), |(_, _, w, h)| (w, h));
+    let mut wb = video.window("u1 - Ultima I", ww, wh);
+    match cfg.window {
+        Some((x, y, _, _)) => wb.position(x, y),
+        None => wb.position_centered(),
+    };
+    let window = wb.resizable().build().map_err(|e| e.to_string())?;
     let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
     // The texture creator lives for the whole program.
     let tc: &'static _ = Box::leak(Box::new(canvas.texture_creator()));
@@ -1802,6 +1958,14 @@ fn play(a: &Args) -> Result<(), String> {
         save_base: None,
         save_req: None,
         toast: None,
+        focus_lost: false,
+        current: None,
+        dirty: false,
+        halt: false,
+        geom: cfg.window,
+        geom_moved: false,
+        shot_key: cfg.screenshot_key.clone().unwrap_or_else(|| "f12".into()),
+        last_rgb: None,
     };
     // The optional features: the file's, and --crt / --fullscreen.
     let mut q = cfg.qol;
@@ -1827,7 +1991,10 @@ fn play(a: &Args) -> Result<(), String> {
         io.apply_window();
     }
     let chosen = match front(a, mode, &mut io)? {
-        Front::Halted(_) => return Ok(()),
+        Front::Halted(_) => {
+            io.keep_window();
+            return Ok(());
+        }
         Front::Play(p) => Some(p),
         Front::Skip => None,
     };
@@ -1857,6 +2024,7 @@ fn play(a: &Args) -> Result<(), String> {
         if let Some(s) = g.stopped {
             eprintln!("stopped: {s}");
         }
+        io.keep_window();
         return Ok(());
     }
 }
@@ -1916,6 +2084,44 @@ fn wrap_text(text: &str, width: usize) -> String {
     }
     out.truncate(out.trim_end().len());
     out
+}
+
+/// The local date and time, "YYYY-MM-DD HH:MM:SS".
+fn local_stamp() -> String {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as libc::time_t;
+    // SAFETY: localtime_r / localtime_s write only into the zeroed `tm` we pass.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    #[cfg(unix)]
+    let ok = unsafe { !libc::localtime_r(&t, &mut tm).is_null() };
+    #[cfg(windows)]
+    let ok = unsafe { libc::localtime_s(&mut tm, &t) == 0 };
+    #[cfg(not(any(unix, windows)))]
+    let ok = false;
+    if !ok {
+        return format!("{t}");
+    }
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec)
+}
+
+/// Where the screenshot key saves: ~/Pictures/ultima1-engine when there
+/// is a Pictures folder, else the data folder's ultima1-engine/screenshots.
+fn shot_dir() -> PathBuf {
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let pics = home.join("Pictures");
+    if pics.is_dir() {
+        return pics.join("ultima1-engine");
+    }
+    let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(".local/share"));
+    data.join("ultima1-engine").join("screenshots")
+}
+
+/// `p` with the home folder as ~, for a note.
+fn short_path(p: &Path) -> String {
+    let s = p.display().to_string();
+    match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() && s.starts_with(&h) => format!("~{}", &s[h.len()..]),
+        _ => s,
+    }
 }
 
 /// Local wall-clock time as DOS reports it: hour, minute, second, hundredths.

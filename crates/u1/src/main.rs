@@ -670,7 +670,7 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
         let mut c = g.term.clone();
         let q = Qol { crt: a.crt, fullscreen: a.fullscreen, ..a.features };
         let mut m = OptionsMenu::new(VideoChoice::from_parts(a.enhanced, mode), a.sound, avail).with_qol(q);
-        m.row = a.menu_row.min(opts::ROWS.len() - 1);
+        m.select(opts::ROWS[a.menu_row.min(opts::ROWS.len() - 1)]);
         m.draw(&mut c);
         Some(c)
     } else if a.rebind_shot {
@@ -812,7 +812,9 @@ impl SdlIo {
     fn sync_music(&mut self) {
         let Some((dev, rate)) = &mut self.audio else { return };
         let want = self.area.filter(|_| self.qol.music && self.sound != SoundMode::Mute);
-        let vol = f32::from(self.qol.music_volume) / 100.0;
+        let master = f32::from(self.qol.master_volume) / 100.0;
+        let vol = f32::from(self.qol.music_volume) / 100.0 * master;
+        let sfx = f32::from(self.qol.sfx_volume) / 100.0 * master;
         let have = dev.lock().music.current();
         if want.is_some() && !self.rendering {
             self.rendering = true;
@@ -830,6 +832,7 @@ impl SdlIo {
         }
         let mut m = dev.lock();
         m.music.volume = vol;
+        m.sfx = sfx;
         match want {
             None if have.is_some() => m.music.stop(),
             Some(t) if have != Some(t) => {
@@ -1428,7 +1431,7 @@ impl SdlIo {
                     t,
                     &mut m,
                     |m, c| m.draw(c),
-                    |io, m, k, _| match m.key(k) {
+                    |io, m, k, name| match m.key(if name == "tab" { opts::TAB } else { k }) {
                         MenuKey::Changed => {
                             io.choose(m.video, m.sound);
                             io.apply_qol(m.qol);
@@ -1641,6 +1644,8 @@ struct Mixer {
     rate: usize,
     /// The area music (its own layer and volume).
     music: music::Player,
+    /// The effects' gain (effects volume times master; 1.0 by default).
+    sfx: f32,
 }
 
 impl Mixer {
@@ -1662,13 +1667,15 @@ impl sdl2::audio::AudioCallback for Mixer {
     type Channel = i16;
     fn callback(&mut self, out: &mut [i16]) {
         for o in out.iter_mut() {
-            let mut acc = self.music.sample();
+            let mut fx = 0i32;
             for (v, pos) in self.voices.iter_mut() {
                 if let Some(&x) = v.get(*pos) {
-                    acc += i32::from(x);
+                    fx += i32::from(x);
                     *pos += 1;
                 }
             }
+            let fx = if self.sfx == 1.0 { fx } else { (fx as f32 * self.sfx) as i32 };
+            let acc = self.music.sample() + fx;
             *o = acc.clamp(-32768, 32767) as i16;
         }
         self.voices.retain(|(v, p)| *p < v.len());
@@ -1681,7 +1688,7 @@ fn open_speaker(sdl: &sdl2::Sdl) -> Option<(sdl2::audio::AudioDevice<Mixer>, u32
     let sub = sdl.audio().map_err(|e| eprintln!("no audio: {e}")).ok()?;
     let want = sdl2::audio::AudioSpecDesired { freq: Some(44_100), channels: Some(1), samples: Some(512) };
     let q = sub
-        .open_playback(None, &want, |spec| Mixer { voices: Vec::new(), rate: spec.freq.max(1) as usize, music: music::Player::new(spec.freq.max(1) as u32) })
+        .open_playback(None, &want, |spec| Mixer { voices: Vec::new(), rate: spec.freq.max(1) as usize, music: music::Player::new(spec.freq.max(1) as u32), sfx: 1.0 })
         .map_err(|e| eprintln!("no audio: {e}"))
         .ok()?;
     q.resume();

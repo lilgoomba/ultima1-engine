@@ -94,6 +94,11 @@ pub struct Config {
     pub keys: KeyMap,
     /// Gamepad buttons.
     pub pad: PadMap,
+    /// The window's last place and size (x, y, width, height), restored
+    /// at start; fullscreen is kept in `qol`.
+    pub window: Option<(i32, i32, u32, u32)>,
+    /// The key that saves a screenshot (an SDL key name, e.g. "f12").
+    pub screenshot_key: Option<String>,
     /// Lines that could not be used (reported, never fatal).
     pub warnings: Vec<String>,
     /// The file's other lines, kept as they were for saving: top-level
@@ -146,6 +151,11 @@ impl Config {
                     Some(x) => c.sound = Some(x),
                     None => c.warnings.push(format!("line {}: sound wants original, enhanced or mute", n + 1)),
                 },
+                "window" => match parse_window(&v) {
+                    Some(w) => c.window = Some(w),
+                    None => c.warnings.push(format!("line {}: window wants \"x,y,width,height\"", n + 1)),
+                },
+                "screenshot_key" if !v.is_empty() => c.screenshot_key = Some(v.to_ascii_lowercase()),
                 k if k.starts_with("key_") => match c.keys.config_key(k, &v) {
                     Some(Ok(())) => {}
                     Some(Err(e)) => c.warnings.push(format!("line {}: {e}", n + 1)),
@@ -200,11 +210,18 @@ impl Config {
         flag(q.gamepad, d.gamepad, "gamepad", "SDL game controllers");
         flag(q.footsteps, d.footsteps, "footsteps", "overworld footsteps in enhanced sound");
         flag(q.music, d.music, "music", "our own area music (F1)");
+        flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "ask before closing with unsaved progress");
         if q.food_use != d.food_use {
             s += &format!("food_use = \"{}\"   # original | half | off\n", q.food_use.as_str());
         }
         if q.music_volume != d.music_volume {
             s += &format!("music_volume = {}   # per cent: 10 .. 100\n", q.music_volume);
+        }
+        if q.master_volume != d.master_volume {
+            s += &format!("master_volume = {}   # per cent: 0 .. 100\n", q.master_volume);
+        }
+        if q.sfx_volume != d.sfx_volume {
+            s += &format!("sfx_volume = {}   # per cent: 0 .. 100\n", q.sfx_volume);
         }
         if q.smoothing != d.smoothing {
             s += &format!("smoothing = \"{}\"   # off | linear | pixel-art\n", q.smoothing.as_str());
@@ -223,6 +240,12 @@ impl Config {
         }
         if q.repeat_rate != d.repeat_rate {
             s += &format!("repeat_rate = {}   # steps a second: 0 (the game's pace) | 4 | 8 | 12 | 16\n", q.repeat_rate);
+        }
+        if let Some(k) = &self.screenshot_key {
+            s += &format!("screenshot_key = \"{k}\"   # an SDL key name\n");
+        }
+        if let Some((x, y, w, h)) = self.window {
+            s += &format!("window = \"{x},{y},{w},{h}\"   # x, y, width, height (remembered)\n");
         }
         for l in self.keys.config_lines().into_iter().chain(self.pad.config_lines()) {
             s += &l;
@@ -288,6 +311,14 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
             }
             _ => Err("10, 20 .. 100"),
         },
+        "master_volume" | "sfx_volume" => match v.trim_end_matches('%').parse::<u8>() {
+            Ok(d) if crate::qol::VOLUMES.contains(&d) => {
+                *if k == "master_volume" { &mut q.master_volume } else { &mut q.sfx_volume } = d;
+                Ok(())
+            }
+            _ => Err("0, 10 .. 100"),
+        },
+        "confirm_quit" => flag(v).map(|b| q.confirm_quit = b),
         "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {
@@ -322,6 +353,14 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         _ => return None,
     };
     Some(r)
+}
+
+/// `"x,y,width,height"`; sizes of at least 64 by 40.
+fn parse_window(v: &str) -> Option<(i32, i32, u32, u32)> {
+    let p: Vec<&str> = v.split(',').map(str::trim).collect();
+    let [x, y, w, h] = p[..] else { return None };
+    let (w, h) = (w.parse::<u32>().ok()?, h.parse::<u32>().ok()?);
+    (w >= 64 && h >= 40 && w <= 16384 && h <= 16384).then_some((x.parse().ok()?, y.parse().ok()?, w, h))
 }
 
 fn strip_comment(l: &str) -> &str {
@@ -406,6 +445,20 @@ mod tests {
             }
         }
         assert_eq!(Config::parse(&Config::default().to_toml()), Config::default());
+    }
+
+    #[test]
+    fn polish_keys_round_trip() {
+        let mut c = Config { window: Some((-5, 40, 1280, 800)), screenshot_key: Some("f11".into()), ..Default::default() };
+        c.qol.master_volume = 70;
+        c.qol.sfx_volume = 0;
+        c.qol.confirm_quit = false;
+        let t = c.to_toml();
+        assert!(t.contains("window = \"-5,40,1280,800\"") && t.contains("sfx_volume = 0"), "{t}");
+        assert_eq!(Config::parse(&t), c);
+        assert!(!Config::default().to_toml().contains("volume"), "defaults are not written");
+        let bad = Config::parse("window = \"1,2,3\"\nsfx_volume = 15\nwindow = \"0,0,10,10\"\n");
+        assert_eq!((bad.window, bad.qol.sfx_volume, bad.warnings.len()), (None, 100, 3));
     }
 
     #[test]

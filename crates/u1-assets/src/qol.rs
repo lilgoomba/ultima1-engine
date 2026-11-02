@@ -82,6 +82,9 @@ impl Smoothing {
     }
 }
 
+/// The master and effects volumes offered, in per cent.
+pub const VOLUMES: [u8; 11] = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+
 /// The music volumes offered, in per cent.
 pub const MUSIC_VOLUMES: [u8; 10] = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
@@ -161,6 +164,14 @@ pub struct Qol {
     pub music_volume: u8,
     /// Smoothing of the enlarged picture.
     pub smoothing: Smoothing,
+    /// The loudness of everything, in per cent (100: as the engine
+    /// always played).
+    pub master_volume: u8,
+    /// The effects' loudness (beeps and enhanced sounds), in per cent.
+    pub sfx_volume: u8,
+    /// Ask before closing the window with progress not yet saved (an
+    /// engine safety net only: nothing in the game changes).
+    pub confirm_quit: bool,
 }
 
 impl Default for Qol {
@@ -190,6 +201,9 @@ impl Default for Qol {
             music: false,
             music_volume: 50,
             smoothing: Smoothing::Off,
+            master_volume: 100,
+            sfx_volume: 100,
+            confirm_quit: true,
         }
     }
 }

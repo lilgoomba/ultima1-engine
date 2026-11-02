@@ -20,7 +20,7 @@ pub fn sound_label(s: SoundMode) -> &'static str {
     }
 }
 
-/// The menu's rows, top to bottom.
+/// The menu's settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Row {
     Video,
@@ -50,43 +50,89 @@ pub enum Row {
     MusicVolume,
     Smoothing,
     Keys,
+    MasterVolume,
+    SfxVolume,
+    ConfirmQuit,
 }
 
-pub const ROWS: [Row; 27] = [
+/// The menu's pages (tabs), in order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Page {
+    Video,
+    Sound,
+    Gameplay,
+    Controls,
+    Interface,
+}
+
+impl Page {
+    pub const ALL: [Page; 5] = [Page::Video, Page::Sound, Page::Gameplay, Page::Controls, Page::Interface];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Page::Video => "Video",
+            Page::Sound => "Sound",
+            Page::Gameplay => "Gameplay",
+            Page::Controls => "Controls",
+            Page::Interface => "Interface",
+        }
+    }
+
+    /// The page's rows, top to bottom.
+    pub fn rows(self) -> &'static [Row] {
+        match self {
+            Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt],
+            Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
+            Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm],
+            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys],
+            Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
+        }
+    }
+}
+
+/// Every row, page by page (the order `--menu-row` counts in).
+pub const ROWS: [Row; 30] = [
     Row::Video,
-    Row::Sound,
     Row::Fullscreen,
     Row::Scaling,
+    Row::Smoothing,
     Row::Crt,
-    Row::Slots,
-    Row::Log,
+    Row::Sound,
+    Row::MasterVolume,
+    Row::SfxVolume,
+    Row::Music,
+    Row::MusicVolume,
+    Row::Footsteps,
     Row::Turbo,
     Row::Delay,
     Row::Space,
     Row::Timing,
-    Row::Automap,
-    Row::Minimap,
-    Row::Character,
-    Row::Help,
-    Row::Hints,
+    Row::Food,
     Row::Confirm,
     Row::Repeat,
     Row::RepeatDelay,
     Row::RepeatRate,
     Row::Gamepad,
-    Row::Food,
-    Row::Footsteps,
-    Row::Music,
-    Row::MusicVolume,
-    Row::Smoothing,
     Row::Keys,
+    Row::Slots,
+    Row::Log,
+    Row::Automap,
+    Row::Minimap,
+    Row::Character,
+    Row::Help,
+    Row::Hints,
+    Row::ConfirmQuit,
 ];
 
 /// Where the values start: one blank after the longest label.
 const VALUE_COL: usize = 17;
 
-/// How many rows the menu shows at once (it scrolls).
-pub const SHOWN: usize = 11;
+/// The most rows a page has.
+pub const SHOWN: usize = 8;
+
+/// Keys the menu reads besides the game's: Tab (next page) and the
+/// message log's page keys (`msglog::keys`).
+pub const TAB: u8 = 9;
 
 impl Row {
     pub fn label(self) -> &'static str {
@@ -118,13 +164,54 @@ impl Row {
             Row::MusicVolume => "Music volume",
             Row::Smoothing => "Smoothing",
             Row::Keys => "Keys",
+            Row::MasterVolume => "Master vol.",
+            Row::SfxVolume => "Effects vol.",
+            Row::ConfirmQuit => "Confirm quit",
+        }
+    }
+
+    /// One line on what the setting does (at most two lines of the box).
+    pub fn describe(self) -> &'static str {
+        match self {
+            Row::Video => "The display: the original's EGA, CGA or Tandy, or the enhanced art.",
+            Row::Sound => "The original's speaker beeps, the enhanced sounds, or silence.",
+            Row::Fullscreen => "Fill the whole screen (also Alt+Enter).",
+            Row::Scaling => "Whole pixels keep every pixel the same size; Fill uses the window.",
+            Row::Crt => "Scanlines and a soft glow, like an old monitor.",
+            Row::Slots => "Five save slots (F2), quicksave F5 and quickload F9.",
+            Row::Log => "PgUp shows the messages that scrolled away.",
+            Row::Turbo => "Everything runs four times as fast (also F4).",
+            Row::Delay => "How long the game waits after a message.",
+            Row::Space => "Space flight and combat wait half as long.",
+            Row::Timing => "Speaker effects no longer hold the game up.",
+            Row::Automap => "Tab in a dungeon shows the levels you have seen.",
+            Row::Minimap => "Tab outdoors shows the land you have seen.",
+            Row::Character => "Z shows a full character screen.",
+            Row::Help => "F3 shows a list of the commands.",
+            Row::Hints => "A short line on what a command asks for.",
+            Row::Confirm => "Ask before selling or dropping something worth this much.",
+            Row::Repeat => "Our own repeat for held arrows, or the system's.",
+            Row::RepeatDelay => "How long an arrow is held before it repeats.",
+            Row::RepeatRate => "Steps a second while an arrow repeats.",
+            Row::Gamepad => "Play with a game controller.",
+            Row::Food => "How fast food runs out (a rule change).",
+            Row::Footsteps => "Footsteps outdoors (with the enhanced sounds).",
+            Row::Music => "Our own music for each area, separate from the effects.",
+            Row::MusicVolume => "How loud the music is.",
+            Row::Smoothing => "How the enlarged picture is smoothed.",
+            Row::Keys => "Extra keys for commands and screens.",
+            Row::MasterVolume => "How loud everything is.",
+            Row::SfxVolume => "How loud the beeps and sound effects are.",
+            Row::ConfirmQuit => "Ask before closing the window with progress not saved.",
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OptionsMenu {
-    /// Index into [`ROWS`].
+    /// Index into [`Page::ALL`].
+    pub page: usize,
+    /// Index into the page's rows.
     pub row: usize,
     pub video: VideoChoice,
     pub sound: SoundMode,
@@ -170,7 +257,73 @@ impl OptionsMenu {
     pub const BOX: (usize, usize, usize, usize) = PANEL;
 
     pub fn new(video: VideoChoice, sound: SoundMode, avail: [bool; 4]) -> Self {
-        OptionsMenu { row: 0, video, sound, avail, qol: Qol::default() }
+        OptionsMenu { page: 0, row: 0, video, sound, avail, qol: Qol::default() }
+    }
+
+    /// The page shown.
+    pub fn page(&self) -> Page {
+        Page::ALL[self.page]
+    }
+
+    /// The row chosen.
+    pub fn current(&self) -> Row {
+        self.page().rows()[self.row]
+    }
+
+    /// Show `r`'s page with `r` chosen.
+    pub fn select(&mut self, r: Row) {
+        for (p, page) in Page::ALL.iter().enumerate() {
+            if let Some(i) = page.rows().iter().position(|&x| x == r) {
+                (self.page, self.row) = (p, i);
+            }
+        }
+    }
+
+    fn turn_page(&mut self, back: bool) {
+        let n = Page::ALL.len();
+        self.page = if back { (self.page + n - 1) % n } else { (self.page + 1) % n };
+        self.row = 0;
+    }
+
+    /// Put `rows` back to the faithful engine's values (the display keeps
+    /// its original mode, without the enhanced art).
+    pub fn reset(&mut self, rows: &[Row]) {
+        let d = Qol::default();
+        let q = &mut self.qol;
+        for &r in rows {
+            match r {
+                Row::Video => self.video = VideoChoice::from_parts(false, self.video.mode()),
+                Row::Sound => self.sound = SoundMode::Original,
+                Row::Fullscreen => q.fullscreen = d.fullscreen,
+                Row::Scaling => q.scaling = d.scaling,
+                Row::Crt => q.crt = d.crt,
+                Row::Slots => q.slots = d.slots,
+                Row::Log => q.log = d.log,
+                Row::Turbo => q.turbo = d.turbo,
+                Row::Delay => q.message_delay = d.message_delay,
+                Row::Space => q.fast_space = d.fast_space,
+                Row::Timing => q.steady = d.steady,
+                Row::Automap => q.automap = d.automap,
+                Row::Minimap => q.minimap = d.minimap,
+                Row::Character => q.charsheet = d.charsheet,
+                Row::Help => q.help = d.help,
+                Row::Hints => q.hints = d.hints,
+                Row::Confirm => q.confirm = d.confirm,
+                Row::Repeat => q.repeat = d.repeat,
+                Row::RepeatDelay => q.repeat_delay = d.repeat_delay,
+                Row::RepeatRate => q.repeat_rate = d.repeat_rate,
+                Row::Gamepad => q.gamepad = d.gamepad,
+                Row::Food => q.food_use = d.food_use,
+                Row::Footsteps => q.footsteps = d.footsteps,
+                Row::Music => q.music = d.music,
+                Row::MusicVolume => q.music_volume = d.music_volume,
+                Row::Smoothing => q.smoothing = d.smoothing,
+                Row::Keys => {}
+                Row::MasterVolume => q.master_volume = d.master_volume,
+                Row::SfxVolume => q.sfx_volume = d.sfx_volume,
+                Row::ConfirmQuit => q.confirm_quit = d.confirm_quit,
+            }
+        }
     }
 
     pub fn with_qol(mut self, qol: Qol) -> Self {
@@ -225,23 +378,48 @@ impl OptionsMenu {
             }
             .into(),
             Row::Keys => "Enter: change".into(),
+            Row::MasterVolume => format!("{}%", q.master_volume),
+            Row::SfxVolume => format!("{}%", q.sfx_volume),
+            Row::ConfirmQuit => on(q.confirm_quit),
         }
     }
 
     pub fn key(&mut self, k: u8) -> MenuKey {
+        let n = self.page().rows().len();
         match k {
             keys::UP => {
-                self.row = (self.row + ROWS.len() - 1) % ROWS.len();
+                self.row = (self.row + n - 1) % n;
                 MenuKey::Stay
             }
             keys::DOWN => {
-                self.row = (self.row + 1) % ROWS.len();
+                self.row = (self.row + 1) % n;
                 MenuKey::Stay
+            }
+            TAB | crate::msglog::keys::PGDN | b']' => {
+                self.turn_page(false);
+                MenuKey::Stay
+            }
+            crate::msglog::keys::PGUP | b'[' => {
+                self.turn_page(true);
+                MenuKey::Stay
+            }
+            b'1'..=b'5' => {
+                (self.page, self.row) = (usize::from(k - b'1'), 0);
+                MenuKey::Stay
+            }
+            b'r' | b'R' => {
+                self.reset(self.page().rows());
+                MenuKey::Changed
+            }
+            b'o' | b'O' => {
+                self.reset(&ROWS);
+                MenuKey::Changed
             }
             keys::LEFT | keys::RIGHT | b' ' => {
                 let step = if k == keys::LEFT { 3 } else { 1 };
+                let cur = self.current();
                 let q = &mut self.qol;
-                match ROWS[self.row] {
+                match cur {
                     Row::Video | Row::Sound => {}
                     Row::Fullscreen => q.fullscreen ^= true,
                     Row::Scaling => q.scaling = if q.scaling == Scaling::Whole { Scaling::Fill } else { Scaling::Whole },
@@ -268,8 +446,11 @@ impl OptionsMenu {
                     Row::MusicVolume => q.music_volume = qol::cycle(&qol::MUSIC_VOLUMES, q.music_volume, k == keys::LEFT),
                     Row::Smoothing => q.smoothing = qol::cycle(&qol::Smoothing::ALL, q.smoothing, k == keys::LEFT),
                     Row::Keys => return MenuKey::Rebind,
+                    Row::MasterVolume => q.master_volume = qol::cycle(&qol::VOLUMES, q.master_volume, k == keys::LEFT),
+                    Row::SfxVolume => q.sfx_volume = qol::cycle(&qol::VOLUMES, q.sfx_volume, k == keys::LEFT),
+                    Row::ConfirmQuit => q.confirm_quit ^= true,
                 }
-                if ROWS[self.row] == Row::Video {
+                if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);
                     for _ in 0..4 {
                         i = (i + step) % 4;
@@ -284,7 +465,7 @@ impl OptionsMenu {
                     } else {
                         MenuKey::Changed
                     }
-                } else if ROWS[self.row] == Row::Sound {
+                } else if self.current() == Row::Sound {
                     let i = SOUNDS.iter().position(|&s| s == self.sound).unwrap_or(0);
                     self.sound = SOUNDS[(i + step.min(2)) % 3];
                     MenuKey::Changed
@@ -292,49 +473,83 @@ impl OptionsMenu {
                     MenuKey::Changed
                 }
             }
-            keys::ENTER if ROWS[self.row] == Row::Keys => MenuKey::Rebind,
+            keys::ENTER if self.current() == Row::Keys => MenuKey::Rebind,
             keys::ENTER | keys::ESC => MenuKey::Close,
             _ => MenuKey::Stay,
         }
-    }
-
-    /// The first row shown (the menu scrolls to keep the choice in view).
-    pub fn top(&self) -> usize {
-        self.row.saturating_sub(SHOWN - 1)
     }
 
     /// Draw over `t` (a copy of the game's screen).
     pub fn draw(&self, t: &mut Term) {
         panel(t);
         center(t, 2, "Options  (the game is paused)", TEXT);
-        let top = self.top();
-        if top > 0 {
-            t.print_at_attr(36, 4, "\u{18}", TEXT);
+        // The tabs, on two lines; the page shown in the warning colour.
+        for (line, pages) in [(3, 0..3), (4, 3..5)] {
+            let text: Vec<String> = pages.clone().map(|i| format!("{} {}", i + 1, Page::ALL[i].label())).collect();
+            let width = text.iter().map(|s| s.len()).sum::<usize>() + 2 * (text.len() - 1);
+            let mut col = 2 + (36 - width) / 2;
+            for (i, s) in pages.zip(&text) {
+                t.print_at_attr(col, line, s, if i == self.page { WARN } else { TEXT });
+                col += s.len() + 2;
+            }
         }
-        if top + SHOWN < ROWS.len() {
-            t.print_at_attr(36, 3 + SHOWN, "\u{19}", TEXT);
-        }
-        for (i, &r) in ROWS.iter().enumerate().skip(top).take(SHOWN) {
-            let row = 4 + i - top;
+        for (i, &r) in self.page().rows().iter().enumerate() {
+            let row = 6 + i;
             let sel = i == self.row;
             t.print_at_attr(2, row, if sel { "\u{10}" } else { " " }, WARN);
             t.print_at_attr(3, row, &format!("{}:", r.label()), TEXT);
             t.print_at_attr(VALUE_COL, row, &format!("<{}>", self.value(r)), if sel { WARN } else { TEXT });
         }
-        center(t, 16, "Up/Down: choose  Left/Right: change", TEXT);
-        center(t, 17, "F1 or Enter: resume", TEXT);
+        for (i, l) in wrap(self.current().describe(), 36).iter().take(2).enumerate() {
+            t.print_at_attr(2, 14 + i, l, TEXT);
+        }
+        center(t, 16, "Tab: page  R: reset page  O: all", TEXT);
+        center(t, 17, "Arrows: change  F1/Enter: resume", TEXT);
         t.cursor(1, 24);
     }
+}
+
+/// `s` in lines of at most `w` characters, broken at spaces.
+pub fn wrap(s: &str, w: usize) -> Vec<String> {
+    let mut out = vec![String::new()];
+    for word in s.split(' ') {
+        let cur = out.last_mut().expect("one line");
+        if !cur.is_empty() && cur.len() + 1 + word.len() > w {
+            out.push(word.to_string());
+        } else {
+            if !cur.is_empty() {
+                cur.push(' ');
+            }
+            cur.push_str(word);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn at(m: &mut OptionsMenu, r: Row) -> &mut OptionsMenu {
+        m.select(r);
+        m
+    }
+
     #[test]
     fn labels_and_values_never_touch() {
         for r in ROWS {
             assert!(3 + r.label().len() + 1 < VALUE_COL, "{r:?}");
+            assert!(wrap(r.describe(), 36).len() <= 2, "{r:?} describes in two lines");
+        }
+    }
+
+    #[test]
+    fn every_row_on_one_page() {
+        let all: Vec<Row> = Page::ALL.iter().flat_map(|p| p.rows().iter().copied()).collect();
+        assert_eq!(all, ROWS.to_vec(), "ROWS is the pages in order");
+        assert!(Page::ALL.iter().all(|p| p.rows().len() <= SHOWN));
+        for (i, r) in ROWS.iter().enumerate() {
+            assert!(!ROWS[i + 1..].contains(r), "{r:?} twice");
         }
     }
 
@@ -349,7 +564,8 @@ mod tests {
         assert_eq!(m.video, VideoChoice::Tandy);
         let mut only = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [false, true, false, false]);
         assert_eq!(only.key(keys::RIGHT), MenuKey::Stay);
-        assert_eq!(m.key(keys::DOWN), MenuKey::Stay);
+        assert_eq!(m.key(TAB), MenuKey::Stay);
+        assert_eq!((m.page(), m.current()), (Page::Sound, Row::Sound));
         m.key(keys::RIGHT);
         assert_eq!(m.sound, SoundMode::Enhanced);
         m.key(keys::RIGHT);
@@ -361,34 +577,68 @@ mod tests {
     }
 
     #[test]
+    fn pages_turn_and_wrap() {
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        m.key(keys::UP);
+        assert_eq!(m.current(), Row::Crt, "up wraps within the page");
+        m.key(crate::msglog::keys::PGUP);
+        assert_eq!((m.page(), m.row), (Page::Interface, 0), "back from the first page");
+        m.key(b']');
+        assert_eq!(m.page(), Page::Video);
+        m.key(b'4');
+        assert_eq!(m.page(), Page::Controls);
+        m.select(Row::Keys);
+        assert_eq!(m.key(keys::ENTER), MenuKey::Rebind);
+        assert_eq!(m.key(keys::RIGHT), MenuKey::Rebind);
+    }
+
+    #[test]
     fn qol_rows_toggle_and_default_off() {
         let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
         assert_eq!(m.qol, Qol::default());
-        m.key(keys::UP);
-        assert_eq!(ROWS[m.row], Row::Keys, "wraps to the last row");
-        assert_eq!(m.key(keys::ENTER), MenuKey::Rebind);
-        assert_eq!(m.key(keys::RIGHT), MenuKey::Rebind);
-        m.row = 10;
-        assert_eq!(m.key(keys::RIGHT), MenuKey::Changed);
+        assert_eq!(at(&mut m, Row::Timing).key(keys::RIGHT), MenuKey::Changed);
         assert!(m.qol.steady);
-        for _ in 0..3 {
-            m.key(keys::UP);
-        }
-        assert_eq!(ROWS[m.row], Row::Turbo);
-        m.key(b' ');
+        at(&mut m, Row::Turbo).key(b' ');
         assert!(m.qol.turbo && m.value(Row::Turbo) == "On (F4)");
-        m.key(keys::DOWN);
-        m.key(keys::LEFT);
+        at(&mut m, Row::Delay).key(keys::LEFT);
         assert_eq!((m.qol.message_delay, m.value(Row::Delay)), (0, "None".to_string()));
-        m.row = 3;
-        m.key(keys::RIGHT);
+        at(&mut m, Row::Scaling).key(keys::RIGHT);
         assert_eq!(m.qol.scaling, Scaling::Fill);
-        for r in [2, 4, 5, 6, 9] {
-            m.row = r;
-            m.key(keys::RIGHT);
+        for r in [Row::Fullscreen, Row::Crt, Row::Slots, Row::Log, Row::Space] {
+            at(&mut m, r).key(keys::RIGHT);
         }
         assert!(m.qol.fullscreen && m.qol.crt && m.qol.slots && m.qol.log && m.qol.fast_space);
         assert_eq!((m.video, m.sound), (VideoChoice::Ega, SoundMode::Original), "the other rows are untouched");
+        for r in [Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::Repeat, Row::Gamepad] {
+            assert_eq!(at(&mut m, r).key(b' '), MenuKey::Changed);
+        }
+        let q = m.qol;
+        assert!(q.automap && q.minimap && q.charsheet && q.help && q.hints && q.repeat && q.gamepad);
+        at(&mut m, Row::Confirm).key(keys::RIGHT);
+        assert_eq!((m.qol.confirm, m.value(Row::Confirm)), (10, "Worth 10+".to_string()));
+        m.key(keys::LEFT);
+        m.key(keys::LEFT);
+        assert_eq!(m.qol.confirm, 500);
+    }
+
+    #[test]
+    fn volumes_and_resets() {
+        let mut m = OptionsMenu::new(VideoChoice::Enhanced, SoundMode::Mute, [true; 4]);
+        at(&mut m, Row::SfxVolume).key(keys::LEFT);
+        assert_eq!((m.qol.sfx_volume, m.value(Row::SfxVolume)), (90, "90%".to_string()));
+        at(&mut m, Row::MasterVolume).key(keys::RIGHT);
+        assert_eq!(m.qol.master_volume, 0, "100 wraps to silence");
+        at(&mut m, Row::ConfirmQuit).key(b' ');
+        at(&mut m, Row::Turbo).key(b' ');
+        assert!(!m.qol.confirm_quit && m.qol.turbo);
+        m.select(Row::Music);
+        assert_eq!(m.key(b'r'), MenuKey::Changed, "reset the Sound page");
+        assert_eq!((m.sound, m.qol.sfx_volume, m.qol.master_volume), (SoundMode::Original, 100, 100));
+        assert!(m.qol.turbo && !m.qol.confirm_quit, "other pages kept");
+        assert_eq!(m.video, VideoChoice::Enhanced);
+        m.key(b'O');
+        assert_eq!(m.qol, Qol::default());
+        assert_eq!(m.video, VideoChoice::Ega, "the original display under the art");
     }
 
     #[test]
@@ -403,35 +653,15 @@ mod tests {
             assert_eq!(t.at(x, y), f.at(x, y), "nothing outside the box");
         }
         assert!(t.row_text(2).contains("Options"));
-        assert!(t.row_text(4).contains("Video:") && t.row_text(4).contains("<CGA>"));
-        assert!(t.row_text(5).contains("<Mute>"));
-        assert!(t.row_text(6).contains("Fullscreen:") && t.row_text(6).contains("<Off>"));
-        assert!(t.row_text(14).contains("CPU timing:") && t.row_text(14).contains("<Original>"));
+        assert!(t.row_text(3).contains("1 Video") && t.row_text(4).contains("5 Interface"));
+        assert!(t.row_text(6).contains("Video:") && t.row_text(6).contains("<CGA>"));
+        assert!(t.row_text(7).contains("Fullscreen:") && t.row_text(7).contains("<Off>"));
+        assert!(t.row_text(14).contains("The display"), "the description");
         assert_eq!(t.row_text(24)[..30].trim(), "", "the message window is untouched");
-    }
-
-    #[test]
-    fn second_group_rows_and_scrolling() {
-        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
-        for r in [Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::Repeat, Row::Gamepad] {
-            m.row = ROWS.iter().position(|&x| x == r).unwrap();
-            assert_eq!(m.key(b' '), MenuKey::Changed);
-        }
-        let q = m.qol;
-        assert!(q.automap && q.minimap && q.charsheet && q.help && q.hints && q.repeat && q.gamepad);
-        m.row = ROWS.iter().position(|&x| x == Row::Confirm).unwrap();
-        m.key(keys::RIGHT);
-        assert_eq!((m.qol.confirm, m.value(Row::Confirm)), (10, "Worth 10+".to_string()));
-        m.key(keys::LEFT);
-        m.key(keys::LEFT);
-        assert_eq!(m.qol.confirm, 500);
+        let mut m = m;
+        m.key(b'2');
         let mut t = Term::new();
         m.draw(&mut t);
-        assert!(t.row_text(4 + m.row - m.top()).contains("Confirm:"));
-        assert!(!t.row_text(4).contains("Video:"), "scrolled");
-        m.row = 0;
-        let mut t = Term::new();
-        m.draw(&mut t);
-        assert!(t.row_text(4).contains("Video:") && !(4..15).any(|y| t.row_text(y).contains("Keys:")));
+        assert!(t.row_text(6).contains("<Mute>") && t.row_text(7).contains("Master vol."));
     }
 }

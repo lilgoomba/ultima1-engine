@@ -1540,16 +1540,22 @@ impl Game {
         self.show_coin();
     }
 
-    /// Fire: the frigate's cannons outdoors; elsewhere "Fire?".
+    /// Fire: the frigate's cannons or the aircar's lasers outdoors
+    /// ("Fire what?" on anything else); elsewhere "Fire?".
     fn cmd_fire(&mut self, io: &mut dyn Io) -> IoResult<()> {
-        if self.mode != OUTDOORS || self.transport() != 4 {
+        if self.mode != OUTDOORS {
             self.err(io, m::FIRE_Q);
             return Ok(());
         }
         self.say(m::FIRE);
-        self.term.print(" ");
-        self.say(m::CANNONS);
-        self.say(m::COLON);
+        match self.transport() {
+            4 => self.say(m::CANNONS),
+            5 => self.say(m::LASERS),
+            _ => {
+                self.err(io, m::FIRE_WHAT);
+                return Ok(());
+            }
+        }
         let d = match self.key_timeout(io)? {
             keys::LEFT => Dir::West,
             keys::RIGHT => Dir::East,

@@ -295,8 +295,13 @@ fn parse_args() -> Result<Args, String> {
                     }
                 }
             }
-            // `--player N` plays (and saves) the roster's own copy of N.
-            a.save_to = Some(d.join(format!("PLAYER{}.U1", a.player.unwrap_or(1))));
+            // `--player N` plays (and saves) the roster's own copy of N;
+            // `--save FILE` saves back to FILE, or to the roster when FILE
+            // is one of the game's own files (those are only read).
+            a.save_to = Some(match &a.save {
+                Some(f) => save_back(f, &a.game_dir, &d),
+                None => d.join(format!("PLAYER{}.U1", a.player.unwrap_or(1))),
+            });
         }
     }
     a.scale = a.scale.clamp(1, 6);
@@ -2120,6 +2125,17 @@ fn wrap_text(text: &str, width: usize) -> String {
 }
 
 /// The local date and time, "YYYY-MM-DD HH:MM:SS".
+/// Where `Q` writes for `--save FILE`: FILE itself, unless it lies in the
+/// game folder, then the roster file of the same name.
+fn save_back(file: &Path, game_dir: &Path, roster: &Path) -> PathBuf {
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let in_game = canon(file).parent().is_some_and(|p| p.starts_with(canon(game_dir)));
+    match file.file_name() {
+        Some(n) if in_game => roster.join(n),
+        _ => file.to_path_buf(),
+    }
+}
+
 fn local_stamp() -> String {
     stamp_of(std::time::SystemTime::now())
 }

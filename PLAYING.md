@@ -55,7 +55,8 @@ The game folder is only ever read.
 With no options the game starts like the original: the title sequence,
 then the character menu (create a character, or continue one). Other
 starts: `--player N` (character N of your roster, saved back there;
-the game's own `PLAYERn.U1` the first time), `--save FILE`, `--gen`
+the game's own `PLAYERn.U1` the first time), `--save FILE` (saved
+back to FILE; to the roster when FILE is one of the game's files), `--gen`
 (straight to the character menu). `--help` lists every option.
 
 ## 4. Keys

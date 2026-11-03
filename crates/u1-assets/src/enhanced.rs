@@ -832,10 +832,11 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
     }
     if let Some((id, x, y, w, h)) = t.backdrop {
         if let Some(e) = pack.entries.get(&id) {
-            let op = crate::term::ArtOp { id, under: None, shift: 0, pos: None, flip: false, x, y, w, h, px: Vec::new() };
+            let op = crate::term::ArtOp { id, under: None, shift: 0, pos: None, flip: false, x, y, w, h, px: Vec::new(), cut: Vec::new() };
             backdrop(&mut out, s, t, &op, Pack::frame(e, 0, 1, ms));
         }
     }
+    let mut raw: Option<Vec<u8>> = None;
     for op in &t.art {
         if op.id == ArtId::Screen("castle") {
             // The start-up castle: each flag shows the pack frame of the
@@ -897,6 +898,15 @@ pub fn compose(t: &Term, palette: &[[u8; 3]; 16], pack: &Pack, ms: u64) -> Vec<u
             put(&mut out, &f.mirrored(), x0, y0, sx);
         } else {
             put(&mut out, f, x0, y0, sx);
+        }
+        if !op.cut.is_empty() {
+            let raw = raw.get_or_insert_with(|| t.to_rgb(palette, s));
+            for &(cx0, cy0, cx1, cy1) in &op.cut {
+                for y in cy0 * s..(cy1 + 1) * s {
+                    let (a, b) = ((y * ow + cx0 * s) * 3, (y * ow + (cx1 + 1) * s) * 3);
+                    out[a..b].copy_from_slice(&raw[a..b]);
+                }
+            }
         }
     }
     out
@@ -1163,9 +1173,11 @@ file = "x.png"
         let mut over = t.clone();
         over.fill(31, 23, 287, 127, 0);
         over.plot(40, 30, 12);
-        // Composed on its own the covered tile drops to the original...
-        assert_eq!(px(&compose(&over, &EGA_PALETTE, &p, 0), 2, 2 * 25, 2 * 17), EGA_PALETTE[1]);
-        // ...but with the box laid over the screen it keeps its art.
+        // Composed on its own the tile keeps its art outside the box...
+        let own = compose(&over, &EGA_PALETTE, &p, 0);
+        assert_eq!(px(&own, 2, 2 * 25, 2 * 17), [0, 0, 200]);
+        assert_eq!(px(&own, 2, 2 * 31, 2 * 23), [0, 0, 0], "inside: the box");
+        // ...and so with the box laid over the screen.
         let rgb = compose_boxed(&t, &over, &EGA_PALETTE, &p, 0, (31, 23, 287, 127));
         assert_eq!(px(&rgb, 2, 2 * 25, 2 * 17), [0, 0, 200]);
         assert_eq!(px(&rgb, 2, 2 * 30 + 1, 2 * 22 + 1), [0, 0, 200]);

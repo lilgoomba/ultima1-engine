@@ -179,6 +179,9 @@ pub struct Qol {
     /// pad button) behind a "Press any key" line instead of only the
     /// original's short pause.
     pub sign_wait: bool,
+    /// The original's 500-coin fee for refuelling at a space station; off
+    /// refuels free (the suit is still needed).
+    pub docking_fee: bool,
 }
 
 impl Default for Qol {
@@ -213,6 +216,7 @@ impl Default for Qol {
             sfx_volume: 100,
             confirm_quit: true,
             sign_wait: true,
+            docking_fee: true,
         }
     }
 }

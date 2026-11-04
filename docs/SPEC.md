@@ -1892,6 +1892,14 @@ keys typed ahead and held-key repeats do not end it, and turbo and the
 message delay do not shorten it. Nothing else changes: the stat gain,
 quest and record are the original's. Off gives the original's flow.
 
+**Docking fees.** Config `docking_fee` (default on: the original's
+rule), F1 Gameplay row "Docking fees". Docking at a space station in
+the original charges 500 coin to refill fuel and shields (with less,
+"Sorry, but thou canst not / refuel thy ship without / the 500p docking
+fee." and no refill). Off, the station refills free with no message;
+the ship choice is as before, and the suit rule is unchanged (without a
+vacuum or reflect suit readied, the space doors still kill).
+
 **Vehicles turn.** Config `vehicle_facing` (default on), F1 Video row
 "Vehicle turn". In the enhanced video mode only, the vehicle the player
 rides faces the way it last moved sideways: a move (or a blocked try)

@@ -1291,14 +1291,15 @@ impl<'a> Space<'a> {
             self.println(d::VACUUM_2);
             return self.death();
         }
-        if self.g.coin() < 500 {
+        let fee = if self.io.features().docking_fee { 500 } else { 0 };
+        if self.g.coin() < fee {
             self.println(d::FEE_1);
             self.println(d::FEE_2);
             self.puts(d::FEE_3);
             self.io.key(&self.g.term)?;
             self.g.term.println("");
         } else {
-            self.g.add(off::COIN, -500);
+            self.g.add(off::COIN, -fee);
             let s = self.slot_mut();
             s.fuel = Self::max_fuel(s.ty);
             s.shield = Self::max_shield(s.ty);
@@ -1787,5 +1788,26 @@ mod real_game {
         let _ = s.dock();
         assert_eq!(s.g.coin(), 100);
         assert_eq!(s.sec().slots[0].fuel, 7);
+        // "Docking fees" off: no charge, the refill anyway.
+        let mut io = ScriptIo::from_text("x1");
+        io.qol.docking_fee = false;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.g.rec.set_u16(off::COIN, 100);
+        let mut h = *s.sec();
+        s.cur = 0;
+        h.slots[0].fuel = 7;
+        s.gal[3][3] = h;
+        let _ = s.dock();
+        assert_eq!(s.g.coin(), 100);
+        assert_eq!(s.sec().slots[0].fuel, Space::max_fuel(s.sec().slots[0].ty));
+        // The suit is still needed.
+        let mut io = ScriptIo::from_text("x1");
+        io.qol.docking_fee = false;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.g.rec.set_u16(off::READY_ARMOUR, 3);
+        let _ = s.dock();
+        assert_eq!(s.g.hits(), 0);
     }
 }

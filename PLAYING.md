@@ -83,6 +83,10 @@ never reads:
 A sign post's or pillar's words stay up until you press a key (F1,
 Gameplay: Sign wait; on by default, off for the original's short pause).
 
+Docking at a space station costs 500 coin to refuel, as in the original;
+F1, Gameplay: Docking fees Off refuels free. Either way, ready a vacuum
+or reflect suit before docking, or the open space doors kill you.
+
 The game also pauses when its window loses focus. Closing the window with
 progress not yet saved asks first (F1, Interface: Confirm quit). The
 window's size and place are remembered.

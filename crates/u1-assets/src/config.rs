@@ -214,6 +214,7 @@ impl Config {
         flag(q.music, d.music, "music", "our own area music (F1)");
         flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "ask before closing with unsaved progress");
         flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after a sign's words");
+        flag(q.docking_fee, d.docking_fee, "docking_fee", "the 500 coin fee to refuel at a space station");
         if q.food_use != d.food_use {
             s += &format!("food_use = \"{}\"   # original | half | off\n", q.food_use.as_str());
         }
@@ -321,6 +322,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         },
         "confirm_quit" => flag(v).map(|b| q.confirm_quit = b),
         "wait_on_signs" => flag(v).map(|b| q.sign_wait = b),
+        "docking_fee" => flag(v).map(|b| q.docking_fee = b),
         "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {
@@ -458,6 +460,7 @@ mod tests {
         c.qol.sfx_volume = 0;
         c.qol.confirm_quit = false;
         c.qol.sign_wait = false;
+        c.qol.docking_fee = false;
         let t = c.to_toml();
         assert!(t.contains("window = \"-5,40,1280,800\"") && t.contains("sfx_volume = 0"), "{t}");
         assert_eq!(Config::parse(&t), c);

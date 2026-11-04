@@ -55,6 +55,7 @@ pub enum Row {
     SfxVolume,
     ConfirmQuit,
     SignWait,
+    DockFee,
 }
 
 /// The menu's pages (tabs), in order.
@@ -85,7 +86,7 @@ impl Page {
         match self {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
-            Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::SignWait],
+            Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::SignWait, Row::DockFee],
             Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
         }
@@ -93,7 +94,7 @@ impl Page {
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 32] = [
+pub const ROWS: [Row; 33] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
@@ -113,6 +114,7 @@ pub const ROWS: [Row; 32] = [
     Row::Food,
     Row::Confirm,
     Row::SignWait,
+    Row::DockFee,
     Row::Repeat,
     Row::RepeatDelay,
     Row::RepeatRate,
@@ -173,6 +175,7 @@ impl Row {
             Row::SfxVolume => "Effects vol.",
             Row::ConfirmQuit => "Confirm quit",
             Row::SignWait => "Sign wait",
+            Row::DockFee => "Docking fees",
         }
     }
 
@@ -211,6 +214,7 @@ impl Row {
             Row::SfxVolume => "How loud the beeps and sound effects are.",
             Row::ConfirmQuit => "Ask before closing the window with progress not saved.",
             Row::SignWait => "Keep a sign's words up until a key.",
+            Row::DockFee => "Pay 500 coin to refuel at a station.",
         }
     }
 }
@@ -332,6 +336,7 @@ impl OptionsMenu {
                 Row::SfxVolume => q.sfx_volume = d.sfx_volume,
                 Row::ConfirmQuit => q.confirm_quit = d.confirm_quit,
                 Row::SignWait => q.sign_wait = d.sign_wait,
+                Row::DockFee => q.docking_fee = d.docking_fee,
             }
         }
     }
@@ -394,6 +399,7 @@ impl OptionsMenu {
             Row::SfxVolume => format!("{}%", q.sfx_volume),
             Row::ConfirmQuit => on(q.confirm_quit),
             Row::SignWait => on(q.sign_wait),
+            Row::DockFee => on(q.docking_fee),
         }
     }
 
@@ -464,6 +470,7 @@ impl OptionsMenu {
                     Row::SfxVolume => q.sfx_volume = qol::cycle(&qol::VOLUMES, q.sfx_volume, k == keys::LEFT),
                     Row::ConfirmQuit => q.confirm_quit ^= true,
                     Row::SignWait => q.sign_wait ^= true,
+                    Row::DockFee => q.docking_fee ^= true,
                 }
                 if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);

@@ -1103,6 +1103,13 @@ side. Strings, the galaxy layout tables and the ship and fighter sprites
 * **Galaxy.** A 7x7 grid of sectors, home at (3,3); each holds a few stations, enemy
   fighters and possibly a star. The sector scan draws the whole grid.
   Hyperjump moves to a neighbouring sector.
+  The jump (front view only, 100 fuel): the stars speed up to the top
+  speed, then at "Lightspeed!" a fresh field is drawn 200 times without
+  erasing, so each star leaves a dotted streak out from the sights, and
+  200 more times erasing the streaks, then the stars slow back down. The
+  original runs the two streak loops as fast as its PC can (about a
+  second and a half each); the engine paces them with a vertical retrace
+  every second step.
 * **Views.** Top-down (turn, thrust, retro; an idle ship keeps drifting
   and the prompt prints Pass by itself after 1500 key polls, counted from
   zero at each prompt, two ticks per poll in the top-down view: about
@@ -1899,6 +1906,13 @@ the original charges 500 coin to refill fuel and shields (with less,
 fee." and no refill). Off, the station refills free with no message;
 the ship choice is as before, and the suit rule is unchanged (without a
 vacuum or reflect suit readied, the space doors still kill).
+
+**F3 in space.** With the help screen on (F1 "Help screen"), F3 at the
+space command prompt shows the space commands (views, turning, thrust,
+retro, sights, speed, fire, hyperspace, inform, noise, ztats, docking)
+over the screen; F3 or any key puts the screen back. Tab has no map in
+space and is ignored there. Extra keys from F1 Keys work at the space
+prompt as at the outdoor one.
 
 **Ship choice by arrow.** Always on. At "Choose thy ship: " the
 original takes only a port number 1-4 and repeats the prompt until it

@@ -685,6 +685,42 @@ impl Game {
         self.term.print_at_attr(1, 21, "Keys can be changed: F1, Keys.", t);
     }
 
+    /// The command help in space (F3 there): space has its own commands.
+    pub fn draw_space_help(&mut self) {
+        self.view_frame("Commands in space", "F3 or any key: back");
+        let (w, t) = (self.vc(WHITE, 3), self.vc(TEXT, 1));
+        let cmds: [(&str, &str); 13] = [
+            ("V", "view: map or front"),
+            ("", "On the map (top-down):"),
+            ("Left/Right", "turn"),
+            ("Up", "thrust"),
+            ("Down", "retro (and undock)"),
+            ("Space", "pass"),
+            ("", "In the front view:"),
+            ("Arrows", "move the sights"),
+            ("1-8", "speed"),
+            ("Space", "centre the sights"),
+            ("F", "fire"),
+            ("H", "hyperspace jump"),
+            ("", ""),
+        ];
+        for (i, (k, d)) in cmds.iter().enumerate() {
+            let row = 3 + i;
+            if k.is_empty() {
+                self.term.print_at_attr(1, row, d, w);
+            } else {
+                self.term.print_at_attr(3, row, k, w);
+                self.term.print_at_attr(15, row, d, t);
+            }
+        }
+        let more = [("I", "inform: where am I"), ("N", "noise on/off"), ("Z", "ztats")];
+        for (i, (k, d)) in more.iter().enumerate() {
+            self.term.print_at_attr(3, 16 + i, k, w);
+            self.term.print_at_attr(15, 16 + i, d, t);
+        }
+        self.term.print_at_attr(1, 20, "Dock: fly into a free port.", t);
+    }
+
     // ------------------------------------------------------------ hints
 
     /// SPEC §23.4: a short line on what the command `k` will ask for.

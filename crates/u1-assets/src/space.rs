@@ -446,10 +446,24 @@ impl<'a> Space<'a> {
             // DOSBox shows every ~165 s.
             let mut n: u16 = 0;
             self.prompt();
+            // At the command prompt the engine's keys (F3, rebound extra
+            // keys) are delivered as in OUT.
+            self.io.command_prompt(true);
             let key = loop {
                 self.tick()?;
                 let k = self.io.poll_now(&self.g.term)?;
                 self.switch_video();
+                if k == Some(keys::HELP) || k == Some(keys::MAP) {
+                    // F3: the command help for space (with the help
+                    // screen on); Tab has no map out here, so it is
+                    // ignored as when the map is off.
+                    if k == Some(keys::HELP) && self.io.features().help {
+                        self.io.command_prompt(false);
+                        self.show_help()?;
+                        self.io.command_prompt(true);
+                    }
+                    continue;
+                }
                 n = n.wrapping_add(1);
                 if !self.fp {
                     self.delay(2)?;
@@ -461,6 +475,7 @@ impl<'a> Space<'a> {
                     break b' ';
                 }
             };
+            self.io.command_prompt(false);
             self.command(key)?;
             if self.redraw {
                 self.draw_all();
@@ -556,6 +571,19 @@ impl<'a> Space<'a> {
                 self.snd(1);
             }
         }
+        Ok(())
+    }
+
+    /// F3 in space: the space command help over the screen until a key,
+    /// then the screen exactly as it was.
+    fn show_help(&mut self) -> R<()> {
+        let saved = self.g.term.clone();
+        self.g.draw_space_help();
+        self.io.view_open(Some(keys::HELP));
+        let r = self.io.key(&self.g.term);
+        self.io.view_open(None);
+        r?;
+        self.g.term = saved;
         Ok(())
     }
 
@@ -1587,15 +1615,26 @@ impl<'a> Space<'a> {
         self.g.term.cursor(10, 24);
         self.srand(s);
         self.new_stars();
+        // The jump's streaks: star mode 1 draws without erasing (each star
+        // leaves a trail out from the centre), mode 3 erases them again.
+        // The original runs these loops flat out, which on its PC took
+        // about a second and a half each; a vertical retrace every second
+        // step keeps that pace here (unpaced they would never be seen).
         self.star_mode = 1;
-        for _ in 0..=200 {
+        for i in 0..=200 {
             self.stars();
+            if i % 2 == 1 {
+                self.retrace(1)?;
+            }
         }
         self.srand(s);
         self.new_stars();
         self.star_mode = 3;
-        for _ in 0..200 {
+        for i in 0..200 {
             self.stars();
+            if i % 2 == 1 {
+                self.retrace(1)?;
+            }
         }
         self.star_mode = 2;
         let mut sp = 8;
@@ -1876,5 +1915,29 @@ mod real_game {
                 assert_eq!(s.docked_port(s.cur), Some(0), "{side}");
             }
         }
+    }
+
+    #[test]
+    fn f3_shows_the_space_help_and_puts_the_screen_back() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("x");
+        io.qol.help = true;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.frame();
+        s.draw_all();
+        let before = s.g.term.px.clone();
+        assert!(s.show_help().is_ok());
+        assert!(s.g.term.px == before);
+        // A script that ends with the help up leaves it showing.
+        let mut io = ScriptIo::from_text("");
+        io.qol.help = true;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.frame();
+        s.draw_all();
+        let before = s.g.term.px.clone();
+        assert!(s.show_help().is_err());
+        assert!(s.g.term.px != before);
     }
 }

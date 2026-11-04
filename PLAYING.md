@@ -71,7 +71,7 @@ never reads:
 |---|---|
 | F1 | Options, in five pages (Video, Sound, Gameplay, Controls, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default, except save slots, the quit confirmation and (enhanced video only) vehicle turning. The game is paused while it is open. |
 | F2 | Save slots (on by default; slot 1 is your character's own file, the one Q writes) |
-| F3 | Command help screen (turn on "Help screen" in F1) |
+| F3 | Command help screen (turn on "Help screen" in F1); in space it lists the space commands |
 | F4 | Turbo: every wait 4x shorter (always available) |
 | F5 / F9 | Quicksave / quickload |
 | Tab | Dungeon automap / world map (turn on the maps in F1) |

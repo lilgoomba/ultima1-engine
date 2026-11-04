@@ -7,7 +7,7 @@
 use crate::exe::Exe;
 use crate::game::Game;
 use crate::gamedir::GameDir;
-use crate::io::{Halt, Io, IoResult};
+use crate::io::{keys, Halt, Io, IoResult};
 use crate::rng::U1Rng;
 use crate::save::off;
 use crate::sound::Sfx;
@@ -23,6 +23,9 @@ const C_WHITE: u8 = 15;
 const C_BLUE: u8 = 1;
 const C_RED: u8 = 12;
 const C_FRAME: u8 = 7;
+/// The ship choice: the picked ship (yellow) and the hint (grey).
+const C_PICK: u8 = 14;
+const C_HINT: u8 = 7;
 
 /// Data-segment offsets in SPACE.EXE.
 mod d {
@@ -1307,7 +1310,7 @@ impl<'a> Space<'a> {
         if count > 1 {
             loop {
                 self.puts(d::CHOOSE);
-                let k = self.io.key(&self.g.term)?;
+                let k = self.choose_key()?;
                 if (b' '..=b'~').contains(&k) {
                     self.g.term.print(&(k as char).to_string());
                 }
@@ -1335,6 +1338,48 @@ impl<'a> Space<'a> {
         self.prompt();
         self.g.term.cursor(1, 24);
         Ok(())
+    }
+
+    /// The engine's addition to "Choose thy ship: ": an arrow picks the
+    /// ship docked at that side of the station (shown after the prompt in
+    /// yellow), Enter or Space takes it. Any other key is the original's
+    /// answer (1-4); until an arrow is pressed nothing on screen differs.
+    fn choose_key(&mut self) -> R<u8> {
+        let (col, row) = (self.g.term.col, self.g.term.row);
+        if self.io.features().hints {
+            self.g.term.print_at_attr(col, row, "(arrows)", C_HINT);
+            self.g.term.cursor(col, row);
+        }
+        let mut sel: Option<i16> = None;
+        loop {
+            let k = self.io.key(&self.g.term)?;
+            let side = match k {
+                keys::LEFT => "left",
+                keys::RIGHT => "right",
+                keys::UP => "top",
+                keys::DOWN => "bottom",
+                keys::ENTER | b' ' if sel.is_some() => {
+                    self.g.term.print_at(col, row, &" ".repeat(12));
+                    self.g.term.cursor(col, row);
+                    return Ok(b'1' + sel.unwrap_or(0) as u8);
+                }
+                _ => {
+                    if sel.is_some() || self.io.features().hints {
+                        self.g.term.print_at(col, row, &" ".repeat(12));
+                        self.g.term.cursor(col, row);
+                    }
+                    return Ok(k);
+                }
+            };
+            let found = (0..4).filter_map(|i| self.docked_port(i)).find(|&p| self.ptr(d::PORT_NAMES, p as usize).trim() == side);
+            if let Some(p) = found {
+                sel = Some(p);
+                let pn = self.ptr(d::PORT_NAMES, p as usize);
+                let t = format!("{} {:<10}", p + 1, pn.trim());
+                self.g.term.print_at_attr(col, row, &t, C_PICK);
+                self.g.term.cursor(col, row);
+            }
+        }
     }
 
     /// `1a97`: Pass (top-down) or re-centre the sights.
@@ -1809,5 +1854,27 @@ mod real_game {
         s.g.rec.set_u16(off::READY_ARMOUR, 3);
         let _ = s.dock();
         assert_eq!(s.g.hits(), 0);
+    }
+
+    #[test]
+    fn arrows_pick_the_ship_at_that_side() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::READY_ARMOUR, 4);
+        g.rec.set_u16(off::COIN, 1000);
+        for (tok, side) in [("{left}", "left"), ("{right}", "right"), ("{up}", "top"), ("{down}", "bottom")] {
+            let mut io = ScriptIo::from_text(&format!("{tok}{{enter}}1"));
+            let mut s = Space::new(&mut g, &mut io, files.clone());
+            s.make_galaxy();
+            s.g.rec.set_u16(off::COIN, 1000);
+            let name = |s: &Space, i: usize| s.docked_port(i).map(|p| s.ptr(d::PORT_NAMES, p as usize).trim().to_string());
+            let there = (0..4).any(|i| name(&s, i).as_deref() == Some(side));
+            let _ = s.dock();
+            if there {
+                assert_eq!(name(&s, s.cur).as_deref(), Some(side));
+            } else {
+                // No ship there: the arrow does nothing and the 1 decides.
+                assert_eq!(s.docked_port(s.cur), Some(0), "{side}");
+            }
+        }
     }
 }

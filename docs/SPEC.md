@@ -1900,6 +1900,16 @@ fee." and no refill). Off, the station refills free with no message;
 the ship choice is as before, and the suit rule is unchanged (without a
 vacuum or reflect suit readied, the space doors still kill).
 
+**Ship choice by arrow.** Always on. At "Choose thy ship: " the
+original takes only a port number 1-4 and repeats the prompt until it
+names a docked ship (there is no cancel). The engine also takes an
+arrow key: it picks the ship docked at that side of the station (left,
+right, top, bottom) and shows its port number and side after the
+prompt in yellow; Enter, Space (gamepad A) takes it. Arrows toward an
+empty side do nothing; digits work as in the original, and until an
+arrow is pressed the screen is unchanged. With F1 "Hints" on, a grey
+"(arrows)" follows the prompt.
+
 **Vehicles turn.** Config `vehicle_facing` (default on), F1 Video row
 "Vehicle turn". In the enhanced video mode only, the vehicle the player
 rides faces the way it last moved sideways: a move (or a blocked try)

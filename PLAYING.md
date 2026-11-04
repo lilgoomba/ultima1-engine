@@ -86,6 +86,8 @@ Gameplay: Sign wait; on by default, off for the original's short pause).
 Docking at a space station costs 500 coin to refuel, as in the original;
 F1, Gameplay: Docking fees Off refuels free. Either way, ready a vacuum
 or reflect suit before docking, or the open space doors kill you.
+At "Choose thy ship:" type the port number, or press the arrow toward
+the ship you want (it shows in yellow) and Enter, Space or pad A.
 
 The game also pauses when its window loses focus. Closing the window with
 progress not yet saved asks first (F1, Interface: Confirm quit). The

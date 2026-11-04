@@ -80,6 +80,9 @@ never reads:
 | F12 | Screenshot, saved to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`); change the key in F1 → Controls → Keys (last row) |
 | Alt+Enter | Fullscreen on/off |
 
+A sign post's or pillar's words stay up until you press a key (F1,
+Gameplay: Sign wait; on by default, off for the original's short pause).
+
 The game also pauses when its window loses focus. Closing the window with
 progress not yet saved asks first (F1, Interface: Confirm quit). The
 window's size and place are remembered.

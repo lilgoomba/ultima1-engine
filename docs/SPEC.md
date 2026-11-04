@@ -1880,6 +1880,18 @@ Closing the window after keys reached the game since its last save asks
 screens, and a game just saved, close at once. This only guards the
 window's close button; the game's own Q works exactly as the original.
 
+**Wait on signs.** Config `wait_on_signs` (default on, an exception
+like save slots, confirm quit and vehicle turn, asked for by players),
+F1 Gameplay row "Sign wait". The original shows a landmark's (sign post
+or pillar) words in a box, then waits only for a key or about 10000
+keyboard polls (a second or two on the machines of its day; the engine
+keeps about 1.5 s, shorter with a smaller message delay). With the
+option on, after that pause the box shows "Press any key" below the
+words and stays until a fresh key press, mouse click or pad button;
+keys typed ahead and held-key repeats do not end it, and turbo and the
+message delay do not shorten it. Nothing else changes: the stat gain,
+quest and record are the original's. Off gives the original's flow.
+
 **Vehicles turn.** Config `vehicle_facing` (default on), F1 Video row
 "Vehicle turn". In the enhanced video mode only, the vehicle the player
 rides faces the way it last moved sideways: a move (or a blocked try)

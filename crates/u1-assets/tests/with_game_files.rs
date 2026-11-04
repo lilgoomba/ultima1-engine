@@ -1566,3 +1566,25 @@ fn vehicle_faces_last_sideways_move() {
     g.draw_world();
     assert!(!flipped(&g), "the option off never mirrors");
 }
+
+/// Playtest report: a sign's words flashed by. With "Wait on signs" (on by
+/// default) the sign's box keeps them up behind "Press any key" until a
+/// key; off, the flow is the original's short pause (SPEC §25).
+#[test]
+fn signs_wait_for_a_key_when_the_option_is_on() {
+    let waiting = |keys: &str, on: bool| {
+        let mut io = ScriptIo::from_text(keys);
+        io.qol.sign_wait = on;
+        play_io(13, 89, &mut io, 2, &[], |_| {})
+    };
+    let Some(g) = waiting("e", true) else { return };
+    let s = screen_text(&g);
+    assert!(s.contains("Press any key") && s.contains("Sign"), "{s}");
+    // Any key ends it, after the original's own pause.
+    let g = waiting("e~x", true).unwrap();
+    assert!(!screen_text(&g).contains("Press any key"));
+    // Off: the original's flow, no prompt at all.
+    let g = waiting("e", false).unwrap();
+    assert!(!screen_text(&g).contains("Press any key"));
+    assert_eq!(g.rec.as_bytes(), waiting("e~x", true).unwrap().rec.as_bytes(), "nothing else changes");
+}

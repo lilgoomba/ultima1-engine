@@ -810,6 +810,10 @@ struct SdlIo {
     current: Option<Modal>,
     /// Keys reached the game since its last save (for the quit question).
     dirty: bool,
+    /// Waiting on a sign (`any_key`): key repeats are dropped and a
+    /// mouse click counts as a key.
+    fresh_wait: bool,
+    clicked: bool,
     /// The player said yes to quitting.
     halt: bool,
     /// The window's place and size outside fullscreen (kept in the config)
@@ -1157,11 +1161,15 @@ impl SdlIo {
                         self.hold_arrow(a, k.into_i32());
                     }
                     let extra = self.keymap.code_for(&name).filter(|&x| self.wanted_code(x));
+                    if repeat && self.fresh_wait {
+                        continue;
+                    }
                     if c.is_some() || extra.is_some() {
                         self.dirty |= !self.front;
                         self.pending.push_back((c, extra));
                     }
                 }
+                Event::MouseButtonDown { .. } if self.fresh_wait && !self.in_menu => self.clicked = true,
                 Event::KeyUp { keycode: Some(k), .. } => {
                     self.held.release(k.into_i32());
                 }
@@ -1336,6 +1344,23 @@ impl Io for SdlIo {
 
     fn flush(&mut self) {
         self.pending.clear();
+    }
+
+    fn any_key(&mut self, t: &Term) -> IoResult<()> {
+        self.pending.clear();
+        self.held.clear();
+        self.clicked = false;
+        self.fresh_wait = true;
+        let r = loop {
+            match self.poll(t) {
+                Ok(Some(_)) => break Ok(()),
+                Ok(None) if self.clicked => break Ok(()),
+                Ok(None) => {}
+                Err(e) => break Err(e),
+            }
+        };
+        self.fresh_wait = false;
+        r
     }
 
     fn sound(&mut self, n: u8) {
@@ -1989,6 +2014,8 @@ fn play(a: &Args) -> Result<(), String> {
         restart: false,
         qol: Qol::default(),
         in_space: false,
+        fresh_wait: false,
+        clicked: false,
         area: None,
         tracks: Default::default(),
         rendering: false,

@@ -1372,10 +1372,24 @@ impl Game {
             self.snd(io, 6);
         }
         self.wait(io)?;
+        if io.features().sign_wait {
+            self.press_any_key(io)?;
+        }
         if l != 6 {
             self.nl();
         }
         self.redraw();
+        Ok(())
+    }
+
+    /// The engine's "Wait on signs": "Press any key" on the sign's box
+    /// (row 14, below its text) until a fresh key, click or pad button.
+    fn press_any_key(&mut self, io: &mut dyn Io) -> IoResult<()> {
+        let (col, row) = (self.term.col, self.term.row);
+        self.term.print_at(13, 14, "Press any key");
+        io.any_key(&self.term)?;
+        self.term.fill(104, 112, 207, 119, BLACK);
+        self.term.cursor(col, row);
         Ok(())
     }
 

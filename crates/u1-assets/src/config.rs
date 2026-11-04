@@ -213,6 +213,7 @@ impl Config {
         flag(q.vehicle_facing, d.vehicle_facing, "vehicle_facing", "enhanced video: vehicles face left or right");
         flag(q.music, d.music, "music", "our own area music (F1)");
         flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "ask before closing with unsaved progress");
+        flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after a sign's words");
         if q.food_use != d.food_use {
             s += &format!("food_use = \"{}\"   # original | half | off\n", q.food_use.as_str());
         }
@@ -319,6 +320,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
             _ => Err("0, 10 .. 100"),
         },
         "confirm_quit" => flag(v).map(|b| q.confirm_quit = b),
+        "wait_on_signs" => flag(v).map(|b| q.sign_wait = b),
         "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {
@@ -455,6 +457,7 @@ mod tests {
         c.qol.master_volume = 70;
         c.qol.sfx_volume = 0;
         c.qol.confirm_quit = false;
+        c.qol.sign_wait = false;
         let t = c.to_toml();
         assert!(t.contains("window = \"-5,40,1280,800\"") && t.contains("sfx_volume = 0"), "{t}");
         assert_eq!(Config::parse(&t), c);

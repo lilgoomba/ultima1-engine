@@ -175,6 +175,10 @@ pub struct Qol {
     /// Ask before closing the window with progress not yet saved (an
     /// engine safety net only: nothing in the game changes).
     pub confirm_quit: bool,
+    /// After a signpost or pillar's text, wait for a key (or click or
+    /// pad button) behind a "Press any key" line instead of only the
+    /// original's short pause.
+    pub sign_wait: bool,
 }
 
 impl Default for Qol {
@@ -208,6 +212,7 @@ impl Default for Qol {
             master_volume: 100,
             sfx_volume: 100,
             confirm_quit: true,
+            sign_wait: true,
         }
     }
 }

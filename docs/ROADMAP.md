@@ -113,6 +113,8 @@ the tests keep the original behaviour.
 * **Vehicles turn** left or right with the last sideways move (enhanced
   video only, the art mirrored; F1 Video "Vehicle turn", on by default).
 * **Confirm quit** when closing the window with unsaved progress.
+* **Wait on signs**: a sign post's or pillar's words stay up behind
+  "Press any key" (F1 Gameplay "Sign wait", on by default).
 * **AppImage desktop entry and a new 16-bit style icon** (our own art).
 
 ## Future ideas (not built)

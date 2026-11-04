@@ -130,6 +130,14 @@ pub trait Io {
         self.poll(t)
     }
 
+    /// Wait for a fresh key press (a mouse click or pad button counts
+    /// too in front ends that have them); keys typed ahead and held-key
+    /// repeats do not end it.
+    fn any_key(&mut self, t: &Term) -> IoResult<()> {
+        self.flush();
+        self.key(t).map(drop)
+    }
+
     /// Drop keys typed ahead (front ends with a key buffer).
     fn flush(&mut self) {}
 
@@ -204,7 +212,10 @@ pub struct ScriptIo {
 
 impl ScriptIo {
     pub fn new(keys: &[u8]) -> Self {
-        ScriptIo { keys: keys.iter().copied().collect(), ..Default::default() }
+        // Scripts replay the original's flow: the engine's wait on signs
+        // is off unless a test turns it on.
+        let qol = crate::qol::Qol { sign_wait: false, ..Default::default() };
+        ScriptIo { keys: keys.iter().copied().collect(), qol, ..Default::default() }
     }
 
     /// Keys from text; `~` stands for the key that ends a timed wait and

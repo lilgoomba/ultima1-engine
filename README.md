@@ -362,7 +362,7 @@ original game audio) and is licensed CC-BY-SA 4.0 like the art.
 
 F1 pauses the game (sound and music too) and opens the options menu,
 drawn like the original's own shop and king windows. Settings are grouped
-on five pages, chosen with Left/Right on the page bar or Tab:
+on five pages (Tab moves to the next page), roughly:
 
 * **Video**: display (Enhanced, EGA, CGA or Tandy; only the displays your
   game files include), fullscreen, scaling, CRT filter, smoothing,
@@ -522,7 +522,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | Volumes | 100% / 100% / 50% | | Master, effects (`sfx_volume`) and music volume, set separately. |
 | Confirm quit | **on** | | Closing the window with unsaved progress asks first. |
 | AppImage desktop entry | | | The AppImage carries a desktop entry and our own 16-bit style icon (CC-BY-SA 4.0). |
-| Vehicle facing | **on** | | Enhanced video: horse, cart, raft and aircar face the way they last moved sideways; kept in the `.map` sidecar. |
+| Vehicle facing | **on** | | Enhanced video: vehicles face the way they last moved sideways; kept in the `.map` sidecar. |
 | `--save FILE` fix | | | Saves back to FILE (or to the roster when FILE is in the game folder), no longer over roster character 1. `--player N` plays character N. |
 | Sign wait | **on** | | A sign's words stay up behind "Press any key". Off: the original's short pause. |
 | Docking fees | **on** | | The original's 500-coin refuel fee at a space station. Off: refuelling is free (the suit rule is unchanged). |

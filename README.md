@@ -360,27 +360,34 @@ original game audio) and is licensed CC-BY-SA 4.0 like the art.
 
 ### Options menu (F1)
 
-F1 pauses the game and opens a small options window, drawn like the
-original's own shop and king windows:
+F1 pauses the game (sound and music too) and opens the options menu,
+drawn like the original's own shop and king windows. Settings are grouped
+on five pages, chosen with Left/Right on the page bar or Tab:
 
-* **Video**: Enhanced, EGA, CGA or Tandy (only the displays your game
-  files include are offered; Enhanced is the pack's art over EGA).
-* **Sound**: Original beeps, Enhanced or Mute.
-* **Optional features** (all off by default; with them off the game
-  plays exactly as before and every save stays an original player file):
-  Fullscreen, Scaling (whole pixels or fill the window), CRT filter, Save
-  slots, Message log, Turbo, Msg delay (original, 50%, 25%, none), Space
-  speed and CPU timing. See "Optional features" below.
+* **Video**: display (Enhanced, EGA, CGA or Tandy; only the displays your
+  game files include), fullscreen, scaling, CRT filter, smoothing,
+  vehicle facing.
+* **Sound**: effects (Original beeps, Enhanced or Mute), master volume,
+  effects volume, music, music volume, footsteps.
+* **Gameplay**: turbo, message delay, space speed, CPU timing, food use,
+  confirm selling, sign wait, docking fees.
+* **Controls**: arrow repeat, gamepad, the Keys (rebind) screen, including
+  the screenshot key.
+* **Interface**: save slots, message log, maps, character screen, help
+  screen, hints, confirm quit.
 
-Up/Down chooses a line, Left/Right changes it, and F1, Enter or Esc
-returns to the game. Changes apply at once without restarting: a new
-display's pictures appear at the next command prompt, in space and
-Mondain's lair too; on the title and character screens the program
-starts again in the new display when the menu closes (a character being
-made is dropped). With the enhanced art on, tiles the box only partly
-covers keep their art around it. F1 is not one of the original's
-keys; Esc is not used to open the menu because the character program
-uses it.
+Up/Down chooses a line, Left/Right changes it, a description line under
+the list says what the highlighted setting does, and each page (or all of
+them) can be reset to the defaults. F1, Enter or Esc returns to the game.
+Every change applies live, without restarting: a new display's pictures
+appear at the next command prompt, in space and Mondain's lair too; on the
+title and character screens the program starts again in the new display
+when the menu closes (a character being made is dropped). F1 is not one of
+the original's keys; Esc is not used to open the menu because the
+character program uses it.
+
+The game also pauses when the window loses focus and resumes when it
+gets it back.
 
 The choice is saved to `~/.config/ultima1-engine/config.toml`
 (`$XDG_CONFIG_HOME/ultima1-engine/config.toml` if that is set):
@@ -396,7 +403,7 @@ Comments, other keys and tables in the file are kept when the menu saves.
 one run. Screenshots (`--screenshot`) ignore it; `--options` draws the menu
 over a screenshot.
 
-### Optional features (F1, all off by default except save slots and enhanced-video vehicle turning)
+### Optional features (F1, all off by default except save slots, confirm quit, vehicle facing, sign wait and docking fees)
 
 | Setting | Keys | What it does |
 |---|---|---|
@@ -501,6 +508,40 @@ install:
 ```sh
 U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 ```
+
+### Desktop and polish features (branch polish-1; SPEC §25)
+
+| Setting / feature | Default | Keys | What it does |
+|---|---|---|---|
+| Grouped F1 menu | | F1 | Five pages with descriptions and resets (above). |
+| Pause on menu / focus loss | always | | The game, music and effects stop while F1 is open or the window is in the background. |
+| Live settings | always | | Every F1 change takes effect at once. |
+| Rich save slots | **on** | F2, F5, F9 | Each save gets a `<save>.info` sidecar (time, name, level, place, thumbnail) shown in the slot screen; the 820-byte record itself is unchanged, and a save with no sidecar shows the file's own time. |
+| Screenshot key | F12 | rebindable (Keys screen, `key_screenshot`) | PNG to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`). |
+| Window memory | always | | The window's place and size are remembered (`window = "x,y,w,h"`). |
+| Volumes | 100% / 100% / 50% | | Master, effects (`sfx_volume`) and music volume, set separately. |
+| Confirm quit | **on** | | Closing the window with unsaved progress asks first. |
+| AppImage desktop entry | | | The AppImage carries a desktop entry and our own 16-bit style icon (CC-BY-SA 4.0). |
+| Vehicle facing | **on** | | Enhanced video: horse, cart, raft and aircar face the way they last moved sideways; kept in the `.map` sidecar. |
+| `--save FILE` fix | | | Saves back to FILE (or to the roster when FILE is in the game folder), no longer over roster character 1. `--player N` plays character N. |
+| Sign wait | **on** | | A sign's words stay up behind "Press any key". Off: the original's short pause. |
+| Docking fees | **on** | | The original's 500-coin refuel fee at a space station. Off: refuelling is free (the suit rule is unchanged). |
+| Ship choice by arrow | always | Left/Right, Enter/Space, pad A | At "Choose thy ship", the arrows pick the port on that side (shown in yellow); digits still work. |
+| F3 in space | with Help screen | F3 | Lists the space commands; F3 or any key closes it. |
+| Hyperspace pacing | always | H | The "Lightspeed!" star streaks are paced (about 1.7 s per phase) so they are seen, as on the original's PC. |
+
+```toml
+master_volume = 100
+sfx_volume = 100
+confirm_quit = true
+wait_on_signs = true
+docking_fee = true
+vehicle_facing = true
+key_screenshot = "f12"
+window = "100,80,1280,800"
+```
+
+See `CHANGELOG.md` for the full list.
 
 ### Developer helpers
 

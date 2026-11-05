@@ -56,6 +56,7 @@ pub enum Row {
     ConfirmQuit,
     SignWait,
     DockFee,
+    SteadyAim,
 }
 
 /// The menu's pages (tabs), in order.
@@ -87,14 +88,14 @@ impl Page {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
             Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::SignWait, Row::DockFee],
-            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys],
+            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::SteadyAim, Row::Keys],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
         }
     }
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 33] = [
+pub const ROWS: [Row; 34] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
@@ -119,6 +120,7 @@ pub const ROWS: [Row; 33] = [
     Row::RepeatDelay,
     Row::RepeatRate,
     Row::Gamepad,
+    Row::SteadyAim,
     Row::Keys,
     Row::Slots,
     Row::Log,
@@ -176,6 +178,7 @@ impl Row {
             Row::ConfirmQuit => "Confirm quit",
             Row::SignWait => "Sign wait",
             Row::DockFee => "Docking fees",
+            Row::SteadyAim => "Steady aim",
         }
     }
 
@@ -215,6 +218,7 @@ impl Row {
             Row::ConfirmQuit => "Ask before closing the window with progress not saved.",
             Row::SignWait => "Keep a sign's words up until a key.",
             Row::DockFee => "Pay 500 coin to refuel at a station.",
+            Row::SteadyAim => "Space sights move only while an arrow is pressed.",
         }
     }
 }
@@ -337,6 +341,7 @@ impl OptionsMenu {
                 Row::ConfirmQuit => q.confirm_quit = d.confirm_quit,
                 Row::SignWait => q.sign_wait = d.sign_wait,
                 Row::DockFee => q.docking_fee = d.docking_fee,
+                Row::SteadyAim => q.steady_aim = d.steady_aim,
             }
         }
     }
@@ -400,6 +405,7 @@ impl OptionsMenu {
             Row::ConfirmQuit => on(q.confirm_quit),
             Row::SignWait => on(q.sign_wait),
             Row::DockFee => on(q.docking_fee),
+            Row::SteadyAim => on(q.steady_aim),
         }
     }
 
@@ -471,6 +477,7 @@ impl OptionsMenu {
                     Row::ConfirmQuit => q.confirm_quit ^= true,
                     Row::SignWait => q.sign_wait ^= true,
                     Row::DockFee => q.docking_fee ^= true,
+                    Row::SteadyAim => q.steady_aim ^= true,
                 }
                 if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);

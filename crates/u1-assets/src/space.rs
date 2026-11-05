@@ -218,6 +218,9 @@ const FLAMES: [[&[Flame]; 4]; 3] = [
     ],
 ];
 
+/// Steady aim: pixels the sights move per arrow press or repeat.
+const STEADY_STEP: i16 = 4;
+
 fn sign(v: i16) -> i16 {
     v.signum()
 }
@@ -248,6 +251,8 @@ struct Space<'a> {
     cy: i16,
     dvx: i16,
     dvy: i16,
+    /// Steady aim: the direction last paid for (0 none).
+    aim_dir: i16,
     star_mode: i16,
     rel: [(i16, i16); 40],
     old: [(i16, i16); 40],
@@ -308,6 +313,7 @@ impl<'a> Space<'a> {
             cy: 79,
             dvx: 0,
             dvy: 0,
+            aim_dir: 0,
             star_mode: 2,
             rel: [(0, 0); 40],
             old: [(0, 0); 40],
@@ -476,6 +482,9 @@ impl<'a> Space<'a> {
                 }
             };
             self.io.command_prompt(false);
+            if !matches!(key, keys::LEFT | keys::RIGHT | keys::UP | keys::DOWN) {
+                self.aim_dir = 0;
+            }
             self.command(key)?;
             if self.redraw {
                 self.draw_all();
@@ -1206,6 +1215,9 @@ impl<'a> Space<'a> {
         if !self.fp {
             return self.td_move(dir);
         }
+        if self.io.features().steady_aim {
+            return self.steady_arrow(dir);
+        }
         let name = self.ptr(d::FP_NAMES, dir as usize);
         self.g.term.println(&name);
         if self.slot().fuel < 2 {
@@ -1219,6 +1231,37 @@ impl<'a> Space<'a> {
             3 => (self.dvx, self.dvy) = (0, -4),
             _ => (self.dvx, self.dvy) = (0, 4),
         }
+        Ok(())
+    }
+
+    /// Steady aim (option): one step of the sights per press, and no
+    /// drift afterwards. A held arrow repeats, so the sights move while it
+    /// is held and stop when it is let go. The original's 2 fuel is paid
+    /// when a direction is started, not for each repeat of it.
+    fn steady_arrow(&mut self, dir: i16) -> R<()> {
+        self.dvx = 0;
+        self.dvy = 0;
+        if self.aim_dir != dir {
+            let name = self.ptr(d::FP_NAMES, dir as usize);
+            self.g.term.println(&name);
+            if self.slot().fuel < 2 {
+                self.println(d::NOT_ENOUGH_FUEL);
+                return Ok(());
+            }
+            self.use_fuel(2);
+            self.aim_dir = dir;
+        }
+        let (sx, sy) = match dir {
+            1 => (-STEADY_STEP, 0),
+            2 => (STEADY_STEP, 0),
+            3 => (0, -STEADY_STEP),
+            _ => (0, STEADY_STEP),
+        };
+        self.crosshair(BLACK);
+        // The original's limits: the sights stay inside 20..300 x 20..140.
+        self.cx = (self.cx + sx).clamp(24, 296);
+        self.cy = (self.cy + sy).clamp(24, 136);
+        self.crosshair(C_WHITE);
         Ok(())
     }
 
@@ -1797,6 +1840,41 @@ mod real_game {
         s.esize = 1;
         s.ex = s.cx - 2;
         s.ey = s.cy - 5;
+    }
+
+    #[test]
+    fn steady_aim_stops_the_sights_and_the_original_drifts() {
+        let Some((mut g, files)) = setup() else { return };
+        // Original: one press sets a drift that goes on frame after frame.
+        let mut io = ScriptIo::from_text("");
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 500;
+        assert!(s.cmd_arrow(2).is_ok());
+        for _ in 0..5 {
+            s.stars();
+        }
+        assert_eq!((s.cx, s.dvx, s.slot().fuel), (159 + 20, 4, 498));
+        // Steady aim: a step per press, nothing after; 2 fuel per direction.
+        let mut io = ScriptIo::from_text("");
+        io.qol.steady_aim = true;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 500;
+        assert!(s.cmd_arrow(2).is_ok());
+        assert!(s.cmd_arrow(2).is_ok());
+        for _ in 0..5 {
+            s.stars();
+        }
+        assert_eq!((s.cx, s.cy, s.dvx, s.slot().fuel), (159 + 2 * STEADY_STEP, 79, 0, 498));
+        assert!(s.cmd_arrow(3).is_ok());
+        assert_eq!((s.cy, s.slot().fuel), (79 - STEADY_STEP, 496));
+        for _ in 0..100 {
+            assert!(s.cmd_arrow(2).is_ok());
+        }
+        assert_eq!(s.cx, 296, "kept inside the view");
     }
 
     #[test]

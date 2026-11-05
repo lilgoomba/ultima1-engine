@@ -182,6 +182,10 @@ pub struct Qol {
     /// The original's 500-coin fee for refuelling at a space station; off
     /// refuels free (the suit is still needed).
     pub docking_fee: bool,
+    /// Space aiming: the sights move a step per arrow press (or held
+    /// repeat) and stay put, instead of the original's drift until
+    /// another direction or the edge.
+    pub steady_aim: bool,
 }
 
 impl Default for Qol {
@@ -217,6 +221,7 @@ impl Default for Qol {
             confirm_quit: true,
             sign_wait: true,
             docking_fee: true,
+            steady_aim: false,
         }
     }
 }

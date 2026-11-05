@@ -215,6 +215,7 @@ impl Config {
         flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "ask before closing with unsaved progress");
         flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after a sign's words");
         flag(q.docking_fee, d.docking_fee, "docking_fee", "the 500 coin fee to refuel at a space station");
+        flag(q.steady_aim, d.steady_aim, "steady_aim", "space sights stop when the arrow is let go");
         if q.food_use != d.food_use {
             s += &format!("food_use = \"{}\"   # original | half | off\n", q.food_use.as_str());
         }
@@ -323,6 +324,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "confirm_quit" => flag(v).map(|b| q.confirm_quit = b),
         "wait_on_signs" => flag(v).map(|b| q.sign_wait = b),
         "docking_fee" => flag(v).map(|b| q.docking_fee = b),
+        "steady_aim" => flag(v).map(|b| q.steady_aim = b),
         "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {

@@ -89,6 +89,10 @@ or reflect suit before docking, or the open space doors kill you.
 At "Choose thy ship:" type the port number, or press the arrow toward
 the ship you want (it shows in yellow) and Enter, Space or pad A.
 
+In the space front view an arrow sets the sights drifting until another
+arrow or Space, as in the original. F1, Controls: Steady aim makes them
+move only while an arrow is pressed or held.
+
 The game also pauses when its window loses focus. Closing the window with
 progress not yet saved asks first (F1, Interface: Confirm quit). The
 window's size and place are remembered.

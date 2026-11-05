@@ -1907,6 +1907,15 @@ fee." and no refill). Off, the station refills free with no message;
 the ship choice is as before, and the suit rule is unchanged (without a
 vacuum or reflect suit readied, the space doors still kill).
 
+**Steady aim.** Off by default (F1 Controls, `steady_aim`). In the
+original's front view an arrow sets a drift of 4 pixels a frame for the
+sights, which keeps going until another arrow, Space (centre) or the edge
+of the view, and costs 2 fuel each press. With steady aim each arrow press
+(or key repeat of a held arrow) moves the sights 4 pixels at once and
+leaves no drift, so they stop when the key is let go; 2 fuel is paid when
+a direction is started, not for each repeat, and the sights keep inside
+the original's limits.
+
 **F3 in space.** With the help screen on (F1 "Help screen"), F3 at the
 space command prompt shows the space commands (views, turning, thrust,
 retro, sights, speed, fire, hyperspace, inform, noise, ztats, docking)

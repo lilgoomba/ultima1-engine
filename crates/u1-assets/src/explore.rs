@@ -75,11 +75,15 @@ pub struct Explore {
     pub visited: BTreeSet<u8>,
     /// Indexed `[a][b]` as the dungeon's cells.
     pub levels: BTreeMap<LevelKey, Grid>,
+    /// Enhanced video's vehicle facing (SPEC §25): the ridden vehicle
+    /// faces left, and the map cells of vehicles parked facing left.
+    pub face_left: bool,
+    pub parked_left: BTreeSet<(i32, i32)>,
 }
 
 impl Default for Explore {
     fn default() -> Self {
-        Explore { world: vec![0; (WORLD_WIDTH * WORLD_HEIGHT).div_ceil(8)], visited: BTreeSet::new(), levels: BTreeMap::new() }
+        Explore { world: vec![0; (WORLD_WIDTH * WORLD_HEIGHT).div_ceil(8)], visited: BTreeSet::new(), levels: BTreeMap::new(), face_left: false, parked_left: BTreeSet::new() }
     }
 }
 
@@ -146,7 +150,12 @@ impl Explore {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.world_count() == 0 && self.visited.is_empty() && self.levels.is_empty()
+        self.world_count() == 0 && self.visited.is_empty() && self.levels.is_empty() && !self.has_facing()
+    }
+
+    /// Any vehicle facing left (worth keeping in the sidecar).
+    pub fn has_facing(&self) -> bool {
+        self.face_left || !self.parked_left.is_empty()
     }
 
     pub fn to_text(&self) -> String {
@@ -164,6 +173,12 @@ impl Explore {
         for (&(x, y, d), g) in &self.levels {
             let rows: Vec<String> = (0..DUNGEON_SIZE).map(|b| (0..DUNGEON_SIZE).map(|a| g[a][b].ch()).collect()).collect();
             s += &format!("level {x} {y} {d} {}\n", rows.join("/"));
+        }
+        if self.face_left {
+            s += "facing left\n";
+        }
+        for (x, y) in &self.parked_left {
+            s += &format!("parked_left {x} {y}\n");
         }
         s
     }
@@ -206,6 +221,12 @@ impl Explore {
                     }
                     e.levels.insert((x as u8, y as u8, d), g);
                 }
+                Some("facing") => e.face_left = w.next() == Some("left"),
+                Some("parked_left") => {
+                    if let (Some(Ok(x)), Some(Ok(y))) = (w.next().map(str::parse::<i32>), w.next().map(str::parse::<i32>)) {
+                        e.parked_left.insert((x, y));
+                    }
+                }
                 _ => {}
             }
         }
@@ -231,6 +252,19 @@ impl Explore {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn vehicle_facing_round_trip() {
+        let mut e = Explore { face_left: true, ..Default::default() };
+        e.parked_left.insert((12, 140));
+        e.parked_left.insert((0, 3));
+        assert!(!e.is_empty());
+        let t = e.to_text();
+        assert!(t.contains("facing left\nparked_left 0 3\nparked_left 12 140\n"), "{t}");
+        assert_eq!(Explore::parse(&t), e);
+        let old = Explore::parse("version 1\nvisited 3\n");
+        assert!(!old.face_left && old.parked_left.is_empty(), "an older sidecar faces right");
+    }
+
     use super::*;
 
     #[test]

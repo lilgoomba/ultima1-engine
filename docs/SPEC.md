@@ -1103,6 +1103,13 @@ side. Strings, the galaxy layout tables and the ship and fighter sprites
 * **Galaxy.** A 7x7 grid of sectors, home at (3,3); each holds a few stations, enemy
   fighters and possibly a star. The sector scan draws the whole grid.
   Hyperjump moves to a neighbouring sector.
+  The jump (front view only, 100 fuel): the stars speed up to the top
+  speed, then at "Lightspeed!" a fresh field is drawn 200 times without
+  erasing, so each star leaves a dotted streak out from the sights, and
+  200 more times erasing the streaks, then the stars slow back down. The
+  original runs the two streak loops as fast as its PC can (about a
+  second and a half each); the engine paces them with a vertical retrace
+  every second step.
 * **Views.** Top-down (turn, thrust, retro; an idle ship keeps drifting
   and the prompt prints Pass by itself after 1500 key polls, counted from
   zero at each prompt, two ticks per poll in the top-down view: about
@@ -1590,7 +1597,7 @@ listed in [ROADMAP.md](ROADMAP.md).
 
 ## 22. Optional engine features (not original behaviour)
 
-Every one is off by default. Off, the engine behaves exactly as without
+Every one is off by default except save slots (on since polish-1, §25) and, in the enhanced video mode only, vehicle turning (§25). Off, the engine behaves exactly as without
 it: the same screens, the same timing, the same records, the same random
 sequence (the tests check the screen and the saved record with all of
 them off). None changes a rule. They are rows of the options menu (§21),
@@ -1615,6 +1622,11 @@ keys in the config file, and use only keys the original never reads
   Slots 2-5 and the quicksave are files beside it, `<name>-slot<n>.<ext>`
   and `<name>-quick.<ext>`; each is an ordinary 820-byte player record
   the original can load if renamed.
+* On by default (config `save_slots`, default true; §25). Being on changes
+  nothing until F2, F5 or F9 is pressed: Quit still writes the
+  character's own file exactly as the original, so a player who never
+  touches the slots gets the same single save. A config that says
+  `save_slots = false` keeps them off.
 * A save or load is asked for by the front end (F2 window, F5, F9) and
   taken by the game at its next main-loop key poll, so it happens only
   where the original would read a command (outdoors, in a town or castle,
@@ -1711,7 +1723,8 @@ skipped. Deleting it forgets the maps and nothing else.
   bound: J L M P W Y, the digits 0 1 3 5 7 9, ; ' , . / [ ] \ - = `, Tab,
   F3 F6 F7 F8 F10 F11 F12. An extra key means its command only at the
   command prompt; inside a question, a shop list or a number every key
-  types what it always did. Defaults: Tab map, F3 help, F6 character.
+  types what it always did. Defaults: Tab map, F3 help. (There is no separate character key: with the
+  setting on, Z itself shows the character screen, see 23.4.)
   Config: `key_<command> = "<key>"` (`key_attack = "j"`, `key_map =
   "none"`), keys named in lower case as SDL names them.
 * **Rebind screen** (F1, Keys): the commands with their own key and their
@@ -1726,8 +1739,9 @@ skipped. Deleting it forgets the maps and nothing else.
   rightstick. (The mapping is tested with synthetic SDL controller
   events; testing with a real controller is pending.) Defaults: a Space, b Esc, x A, y E, back map, start
   options, guide help, leftshoulder K, rightshoulder F, leftstick
-  character, rightstick Z. A value is a letter or digit, space, enter,
-  esc, up/down/left/right, options, map, help, character or none.
+  Z, rightstick Z. A value is a letter or digit, space, enter,
+  esc, up/down/left/right, options, map, help or none (an old
+  "character" value is read as Z).
 * **Arrow auto-repeat**: off, the system's key repeat is used, as before.
   On, the engine's own: a held arrow (or d-pad/stick direction) moves
   again after the delay (250 by default, 400, 600 or 800 ms) and then at
@@ -1745,10 +1759,26 @@ skipped. Deleting it forgets the maps and nothing else.
   its own prompt says what it wants (for example "(W weapon, A armour, S
   spell)" for Ready, "(B buy, S sell)" for Transact in a town). Only for
   commands that prompt; the prompt itself is unchanged.
-* **Character screen (F6)**: read only. Name, level, sex, race and class,
-  hit points, food, experience, coin, the six attributes, weapons and
-  armour owned (the readied ones marked), spells, transport, gems and the
-  quests in plain words. It shows nothing the Z-stats pages do not.
+* **Character screen (Z, with the setting on)**: Ztats itself. With the
+  setting on, Z (or whatever key Z has as its extra key, and the pad's
+  stick press) prints "Ztats" as before and then shows one combined,
+  read-only screen in place of the original's Ztats pages: name, level,
+  sex, race and class, hit points, food, experience, coin, the six
+  attributes, weapons and armour owned (the readied ones marked), spells,
+  transport, gems, enemy vessels destroyed, and the quests. It is paged
+  when it does not fit (a footer says "Page n of N"); as in the
+  original, each key goes to the next page and the key on the last page
+  closes it, the view is put back and no turn passes. The record is not
+  changed. With the setting off, Z is exactly the original Ztats.
+* **Quests** on that screen: each quest given (active or done) names who
+  gave it and what it is, built at run time from the game's own tables:
+  the castle's name (from the location names in OUT.EXE) gives the giver,
+  "Lord British", "The Lost King" or "King of <castle>" (for example "King
+  of the Black Dragon"); even-numbered castles give a kill quest ("Slay a
+  Gelatinous Cube", the monster from the kill-quest table), odd ones a
+  find quest ("Find the Tower of Knowledge", the place from the find-quest
+  table). Under it: "Not done yet." or, when done, "Done! Return to the
+  king." Nothing about a quest not yet given is shown.
 
 ### 23.5 Confirm before selling or dropping
 
@@ -1759,7 +1789,160 @@ the coin dropped) first asks "Sure? (Y/N)" in a box over the view. Y goes
 on exactly as the original; anything else leaves everything as it was and
 the command ends as if nothing was chosen.
 
-## Sources
+## 24. Music and smoothing (engine features, not original behaviour)
+
+The original has no music and draws square pixels; both features below are
+off by default and change nothing when off.
+
+**Music.** Config `music` (default false) and `music_volume` (10-100,
+default 50), F1 rows Music and Music volume. One track per game mode
+(outdoors, town, castle, dungeon), plus title (intro and character
+creation), space (space flight), lair (Mondain's lair), and two one-shot
+stings: victory (Mondain defeated) and death. Area changes crossfade over
+one second; a sting replaces the loop and ends in silence until the next
+area. The music pauses while the F1 menu is open. It is independent of the
+effects mode: it plays with Original beeps and with Enhanced sound,
+following only its own switch and volume; Mute silences everything,
+music included. Tracks are our own compositions stored as compact score parameters
+and rendered at start-up on a background thread (first the one needed);
+music only mixes into the effects stream, it never delays the game.
+
+**Smoothing.** Config `smoothing = off | linear | pixel-art`, F1 row
+Smoothing. Off: nearest-neighbour stretch. Linear: the stretched texture
+is filtered bilinearly. Pixel art: the frame (320x200 EGA or the enhanced
+size) is doubled with the Scale2x/EPX rule (a pixel's quarter takes a
+neighbour's colour where two adjacent neighbours agree and the other two
+differ), repeated until at least 1280 wide, then stretched bilinearly.
+The window fit (whole multiples or fill) is computed on the unsmoothed
+size. With the CRT filter the smoothing runs first and the scanlines are
+applied to its result.
+
+## 25. Desktop polish (engine features, not original behaviour)
+
+None of these changes what the game does; the original has no menus,
+windows or extra files, so each is engine-side only.
+
+**Options pages.** F1 groups its rows in five pages: Video (display,
+fullscreen, scaling, smoothing, CRT, vehicle turn), Sound (sound mode, master volume,
+effects volume, music, music volume, footsteps), Gameplay (turbo, delays,
+fast space, timing, food warning, confirm before selling), Controls (arrow
+repeat and its delay and rate, gamepad, keys) and Interface (save slots,
+message log, maps, character screen, help, hints, confirm quit). Tab, PgDn
+or `]` turn to the next page, PgUp or `[` to the one before, 1-5 jump to a
+page. Under the rows, two lines say what the selected setting does. R puts
+the page's settings back to their defaults, O puts back every setting
+(display: the original's picture in the same EGA/CGA/Tandy mode; sound:
+original beeps); remapped keys are kept. Every change applies at once,
+nothing needs a restart (a display chosen on the title or character
+screen restarts only those screens, §21).
+
+**Pause.** Any engine window (options, slots, log, keys, the questions
+below) suspends the game inside its screen update, as §21: no turn, no
+monster move, no timed wait advances, and the music pauses. The same
+happens when the window loses focus: a "Paused" box shows until the window
+is active again or a key is pressed.
+
+**Volumes.** Config `master_volume` and `sfx_volume` (0-100 in steps of
+10, default 100), F1 Sound rows. Effects (original beeps and enhanced
+sounds) are scaled by effects x master, music by music volume x master. At
+100 the samples are passed unchanged. Mute still silences everything.
+
+**Save details.** After the game writes a save (Quit outdoors, or a save
+slot), the front end writes `<save>.info` beside it: a small text file
+with the local date and time, the character's name, level (1 per 1000
+experience), place (outdoors x,y) and an 80x50 thumbnail of the screen
+(each 4x4 block's commonest non-black colour, one hex digit per pixel).
+The 820-byte record is never changed and the original never sees the
+file. The slot screen lists each slot's name and level and shows the
+selected slot's date, place and thumbnail; a save without the file shows
+what its record says.
+
+**Screenshot key.** F12 by default; the last row of the Keys window
+(F1, Controls, Keys) changes it to any free key, and config
+`key_screenshot` takes any SDL key name the original does not use (or
+`none`; the older `screenshot_key` line is still read). While the Keys
+window waits for a key, the screenshot key is passed to it, so it can be
+bound itself. It writes the frame on screen (menus included) as a PNG,
+`u1-YYYYMMDD-HHMMSS.png`, to `~/Pictures/ultima1-engine/` when
+`~/Pictures` exists, else `$XDG_DATA_HOME/ultima1-engine/screenshots/`
+(`~/.local/share/...`). A note over the map gives the folder and name.
+
+**Window memory.** Config `window = "x,y,width,height"`: the window's
+place and size outside fullscreen, saved when the game ends if it changed,
+used at the next start (otherwise centred at the `--scale` size).
+Fullscreen is the existing `fullscreen` setting.
+
+**Save slots on by default.** `save_slots` now defaults to true (§22.2).
+Existing players need nothing: their `PLAYERn.U1` is slot 1 and loads as
+before, Quit still writes it in the original 820-byte format, and slots
+2-5 and the quicksave appear only when used. Configs are written with
+only non-default keys, so an old config without the key gets slots; one
+with `save_slots = false` keeps the single save. R on the Interface page
+and O (all settings) reset to the engine defaults, so slots come back on;
+to play with only the original's single save, set Save slots to Off.
+
+**Confirm quit.** Config `confirm_quit` (default on), F1 Interface row.
+Closing the window after keys reached the game since its last save asks
+"Quit the game?" (Y quits, N or Esc goes back). The title and character
+screens, and a game just saved, close at once. This only guards the
+window's close button; the game's own Q works exactly as the original.
+
+**Wait on signs.** Config `wait_on_signs` (default on, an exception
+like save slots, confirm quit and vehicle turn, asked for by players),
+F1 Gameplay row "Sign wait". The original shows a landmark's (sign post
+or pillar) words in a box, then waits only for a key or about 10000
+keyboard polls (a second or two on the machines of its day; the engine
+keeps about 1.5 s, shorter with a smaller message delay). With the
+option on, after that pause the box shows "Press any key" below the
+words and stays until a fresh key press, mouse click or pad button;
+keys typed ahead and held-key repeats do not end it, and turbo and the
+message delay do not shorten it. Nothing else changes: the stat gain,
+quest and record are the original's. Off gives the original's flow.
+
+**Docking fees.** Config `docking_fee` (default on: the original's
+rule), F1 Gameplay row "Docking fees". Docking at a space station in
+the original charges 500 coin to refill fuel and shields (with less,
+"Sorry, but thou canst not / refuel thy ship without / the 500p docking
+fee." and no refill). Off, the station refills free with no message;
+the ship choice is as before, and the suit rule is unchanged (without a
+vacuum or reflect suit readied, the space doors still kill).
+
+**F3 in space.** With the help screen on (F1 "Help screen"), F3 at the
+space command prompt shows the space commands (views, turning, thrust,
+retro, sights, speed, fire, hyperspace, inform, noise, ztats, docking)
+over the screen; F3 or any key puts the screen back. Tab has no map in
+space and is ignored there. Extra keys from F1 Keys work at the space
+prompt as at the outdoor one.
+
+**Ship choice by arrow.** Always on. At "Choose thy ship: " the
+original takes only a port number 1-4 and repeats the prompt until it
+names a docked ship (there is no cancel). The engine also takes an
+arrow key: it picks the ship docked at that side of the station (left,
+right, top, bottom) and shows its port number and side after the
+prompt in yellow; Enter, Space (gamepad A) takes it. Arrows toward an
+empty side do nothing; digits work as in the original, and until an
+arrow is pressed the screen is unchanged. With F1 "Hints" on, a grey
+"(arrows)" follows the prompt.
+
+**Vehicles turn.** Config `vehicle_facing` (default on), F1 Video row
+"Vehicle turn". In the enhanced video mode only, the vehicle the player
+rides faces the way it last moved sideways: a move (or a blocked try)
+west faces it left, east faces it right, north and south keep the
+facing. This is done by mirroring the existing enhanced picture left to
+right; no new art. The pictures' own direction decides when to mirror:
+horse, cart, raft and frigate (both frames) are drawn facing right;
+the aircar facing left; the shuttle (upright on its pad) and the
+time machine never turn, nor does the player on foot, monsters or
+terrain under a vehicle. A new game, a loaded save, and boarding a
+vehicle parked by the map face right. X-iting parks the vehicle with
+its facing, kept by map cell, so B on it again faces the same way. The
+facing is kept with the explored map in the `.map` sidecar beside the
+save (lines `facing left` and `parked_left X Y`; never in the 820-byte
+record), written whenever that file is, and also when some vehicle faces
+left; a save without them (or an older sidecar) faces everything right. The EGA, CGA and Tandy pictures
+are never mirrored (the original has a single picture per vehicle), so
+the option changes nothing there.
+
 
 Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.
 

@@ -37,6 +37,7 @@ use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
 use u1_assets::keymap::{KeyMap, RebindKey, RebindScreen};
 use u1_assets::locations::LocationTable;
 use u1_assets::msglog::{self, LogView};
+use u1_assets::music::{self, Track};
 use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
 use u1_assets::palette::{cga_as_16, Rgb, CGA_PALETTE_1_LOW, EGA_PALETTE};
 use u1_assets::qol::{self, Qol, Wait};
@@ -62,7 +63,7 @@ const DEFAULT_POS: (u16, u16) = (49, 40);
 const USAGE: &str = "usage: u1 [--game-dir <path>] [--player N | --save FILE | --pos X,Y]
           [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
           [--video original|enhanced] [--sound original|enhanced|mute] [--pack DIR]
-          [--fullscreen] [--crt]
+          [--fullscreen] [--crt] [--smoothing off|linear|pixel-art]
           [--screenshot out.png [--keys TEXT] [--counter N] [--options | --slots | --log] [--crt]]
 
 Without --game-dir the game files are looked for in $U1_GAME_DIR, the
@@ -102,12 +103,12 @@ flight and steady timing. --fullscreen and --crt turn those on for one run;
 in screenshots --crt applies the filter, --slots and --log draw those
 windows (--keys may hold {saveN} / {loadN}, N 1-5 or q).
 More optional features (SPEC §23), also off by default: a dungeon automap
-and a world mini-map (Tab), a character screen (F6), a command help screen
+and a world mini-map (Tab), a character screen (Ztats, Z, shows it), a command help screen
 (F3), short hints at command prompts, a confirmation before selling or
 dropping things worth a set amount, extra keys for the commands (F1, Keys),
 a gamepad and the engine's own arrow repeat. --features LIST turns some on
 for one run (automap, minimap, character, help, hints, confirm=N, repeat,
-gamepad); in screenshots --keys may hold {map} {help} {char}, and --rebind
+gamepad); in screenshots --keys may hold {map} {help}, and --rebind
 draws the key window.";
 
 struct Args {
@@ -129,6 +130,7 @@ struct Args {
     roster: Option<PathBuf>,
     sound: SoundMode,
     sound_demo: Option<PathBuf>,
+    music_demo: Option<PathBuf>,
     enhanced: bool,
     pack: Option<PathBuf>,
     /// The display and sound options given on the command line (they win
@@ -170,6 +172,7 @@ fn parse_args() -> Result<Args, String> {
         roster: None,
         sound: SoundMode::Original,
         sound_demo: None,
+        music_demo: None,
         enhanced: false,
         pack: None,
         cli: config::Cli::default(),
@@ -228,6 +231,10 @@ fn parse_args() -> Result<Args, String> {
                 a.sound = SoundMode::parse(&v()?).ok_or("--sound wants original, enhanced or mute")?;
                 a.cli.sound = Some(a.sound);
             }
+            "--music-demo" => {
+                a.music_demo = Some(v()?.into());
+                have_dir = true;
+            }
             "--sound-demo" => {
                 a.sound_demo = Some(v()?.into());
                 have_dir = true;
@@ -244,6 +251,7 @@ fn parse_args() -> Result<Args, String> {
             "--slots" => a.slots_shot = true,
             "--log" => a.log_shot = true,
             "--crt" => a.crt = true,
+            "--smoothing" => a.features.smoothing = qol::Smoothing::parse(&v()?).ok_or("--smoothing wants off, linear or pixel-art")?,
             "--fullscreen" => a.fullscreen = true,
             "--features" => features(&mut a.features, &v()?)?,
             "--rebind" => a.rebind_shot = true,
@@ -260,12 +268,12 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other}\n{USAGE}")),
         }
     }
-    let interactive = a.screenshot.is_none() && a.sound_demo.is_none();
+    let interactive = a.screenshot.is_none() && a.sound_demo.is_none() && a.music_demo.is_none();
     let start_given = a.player.is_some() || a.save.is_some() || a.pos.is_some() || a.intro || a.gen;
     if interactive && !start_given {
         a.intro = true;
     }
-    if a.sound_demo.is_none() {
+    if a.sound_demo.is_none() && a.music_demo.is_none() {
         let front = a.intro || a.gen;
         a.game_dir = if have_dir { gamedir::locate(std::slice::from_ref(&a.game_dir), front)? } else { gamedir::locate(&game_dir_candidates(), front)? };
     }
@@ -287,7 +295,13 @@ fn parse_args() -> Result<Args, String> {
                     }
                 }
             }
-            a.save_to = Some(d.join("PLAYER1.U1"));
+            // `--player N` plays (and saves) the roster's own copy of N;
+            // `--save FILE` saves back to FILE, or to the roster when FILE
+            // is one of the game's own files (those are only read).
+            a.save_to = Some(match &a.save {
+                Some(f) => save_back(f, &a.game_dir, &d),
+                None => d.join(format!("PLAYER{}.U1", a.player.unwrap_or(1))),
+            });
         }
     }
     a.scale = a.scale.clamp(1, 6);
@@ -391,6 +405,22 @@ fn sound_demo(a: &Args, out: &Path) -> Result<(), String> {
         println!("{l}");
     }
     Ok(())
+}
+
+/// `--music-demo`: the first 20 seconds of each music track (the stings
+/// whole), one after another, as a WAV file.
+fn music_demo(out: &Path) -> Result<(), String> {
+    let rate = 44_100;
+    let mut wav = Vec::new();
+    for t in Track::ALL {
+        let s = music::render(t, rate);
+        let n = if t.loops() { (20 * rate as usize).min(s.len()) } else { s.len() };
+        let fade = (rate as usize).min(n);
+        wav.extend(s[..n].iter().enumerate().map(|(i, &x)| if t.loops() && i + fade > n { (i32::from(x) * (n - i) as i32 / fade as i32) as i16 } else { x }));
+        wav.extend(std::iter::repeat(0i16).take(rate as usize / 2));
+        println!("{}", t.name());
+    }
+    std::fs::write(out, u1_assets::soundpack::encode_wav(rate, &wav)).map_err(|e| e.to_string())
 }
 
 fn load_pack(a: &Args) -> Result<Option<Pack>, String> {
@@ -533,7 +563,14 @@ fn load(a: &Args, mode: VideoMode, chosen: Option<&Path>, reload: Option<PlayerR
         _ if reloaded => None,
         (Some(p), _, _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
         (None, Some(p), _) => Some(std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()))?),
-        (None, None, Some(n)) => Some(g.read(&format!("PLAYER{n}.U1")).map_err(e)?),
+        (None, None, Some(n)) => {
+            // The roster's copy (where the game saves it), else the game's.
+            let f = format!("PLAYER{n}.U1");
+            match a.save_to.as_deref().and_then(Path::parent).map(|d| d.join(&f)).filter(|p| p.is_file()) {
+                Some(p) => Some(std::fs::read(&p).map_err(|e| format!("{}: {e}", p.display()))?),
+                None => Some(g.read(&f).map_err(e)?),
+            }
+        }
         _ => None,
     };
     let mut rec = match (save_bytes, reload) {
@@ -604,6 +641,7 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
     let pack = load_pack(a)?;
     // --crt: the filter on the frame at its own size (as in the window).
     let finish = |w: usize, h: usize, rgb: Vec<u8>| -> Result<(), String> {
+        let (w, h, rgb) = if a.features.smoothing == qol::Smoothing::PixelArt { qol::pixel_art(&rgb, w, h) } else { (w, h, rgb) };
         if a.crt {
             let k = qol::crt_factor(w);
             write_png(out, (w * k) as u32, (h * k) as u32, &qol::crt(&rgb, w, h, k))
@@ -612,7 +650,8 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
         }
     };
     let shot = |t: &Term, pal: &[Rgb; 16]| -> Result<(), String> {
-        let (w, h, rgb) = frame_rgb(t, pal, pack.as_ref(), if a.crt { 1 } else { scale }, 0);
+        let pixel_art = a.features.smoothing == qol::Smoothing::PixelArt;
+        let (w, h, rgb) = frame_rgb(t, pal, pack.as_ref(), if a.crt || pixel_art { 1 } else { scale }, 0);
         finish(w, h, rgb)
     };
     let chosen = match front(a, mode, &mut io)? {
@@ -644,7 +683,7 @@ fn screenshot(a: &Args, out: &Path) -> Result<(), String> {
         let mut c = g.term.clone();
         let q = Qol { crt: a.crt, fullscreen: a.fullscreen, ..a.features };
         let mut m = OptionsMenu::new(VideoChoice::from_parts(a.enhanced, mode), a.sound, avail).with_qol(q);
-        m.row = a.menu_row.min(opts::ROWS.len() - 1);
+        m.select(opts::ROWS[a.menu_row.min(opts::ROWS.len() - 1)]);
         m.draw(&mut c);
         Some(c)
     } else if a.rebind_shot {
@@ -748,6 +787,11 @@ struct SdlIo {
     qol: Qol,
     /// In space flight (for the fast space setting).
     in_space: bool,
+    /// The area the game is in (its music, when music is on).
+    area: Option<Track>,
+    /// The tracks rendered so far (by a background thread).
+    tracks: Arc<std::sync::Mutex<std::collections::HashMap<Track, Arc<Vec<i16>>>>>,
+    rendering: bool,
     /// The CRT filter's larger texture (its size, and the texture).
     crt_tex: Option<(usize, usize, sdl2::render::Texture<'static>)>,
     /// The last frame's internal size and whether it went through the CRT
@@ -760,6 +804,24 @@ struct SdlIo {
     save_req: Option<(SaveReq, u8)>,
     /// A short note over the top of the map (slot results, F4).
     toast: Option<(String, Instant)>,
+    /// The window is not the active one: the game waits (SPEC §22).
+    focus_lost: bool,
+    /// The window open now, while one is.
+    current: Option<Modal>,
+    /// Keys reached the game since its last save (for the quit question).
+    dirty: bool,
+    /// Waiting on a sign (`any_key`): key repeats are dropped and a
+    /// mouse click counts as a key.
+    fresh_wait: bool,
+    clicked: bool,
+    /// The player said yes to quitting.
+    halt: bool,
+    /// The window's place and size outside fullscreen (kept in the config)
+    /// and whether it moved since the config was saved.
+    geom: Option<(i32, i32, u32, u32)>,
+    geom_moved: bool,
+    /// The screenshot key's SDL name, and the last frame shown.
+    last_rgb: Option<(usize, usize, Vec<u8>)>,
 }
 
 /// The engine's own windows, run with the game paused.
@@ -769,6 +831,10 @@ enum Modal {
     Slots,
     Log,
     Rebind,
+    /// The window lost focus: waiting until it is back (or a key).
+    Paused,
+    /// The window was closed with unsaved progress.
+    Quit,
 }
 
 /// How long a note shows, and where.
@@ -776,13 +842,55 @@ const TOAST: Duration = Duration::from_millis(2500);
 const TOAST_BOX: (usize, usize, usize, usize) = (8, 8, 311, 15);
 
 impl SdlIo {
+    /// Bring the music in line with the area and the settings: start the
+    /// renderer the first time it is needed, then play, crossfade or stop.
+    fn sync_music(&mut self) {
+        let Some((dev, rate)) = &mut self.audio else { return };
+        let want = self.area.filter(|_| self.qol.music && self.sound != SoundMode::Mute);
+        let master = f32::from(self.qol.master_volume) / 100.0;
+        let vol = f32::from(self.qol.music_volume) / 100.0 * master;
+        let sfx = f32::from(self.qol.sfx_volume) / 100.0 * master;
+        let have = dev.lock().music.current();
+        if want.is_some() && !self.rendering {
+            self.rendering = true;
+            let (store, rate) = (self.tracks.clone(), *rate);
+            // The current area first, then the rest.
+            let first = want.unwrap_or(Track::Title);
+            std::thread::spawn(move || {
+                for t in std::iter::once(first).chain(Track::ALL.into_iter().filter(|&t| t != first)) {
+                    let s = Arc::new(music::render(t, rate));
+                    if let Ok(mut m) = store.lock() {
+                        m.insert(t, s);
+                    }
+                }
+            });
+        }
+        let mut m = dev.lock();
+        m.music.volume = vol;
+        m.sfx = sfx;
+        match want {
+            None if have.is_some() => m.music.stop(),
+            Some(t) if have != Some(t) => {
+                if let Some(s) = self.tracks.lock().ok().and_then(|c| c.get(&t).cloned()) {
+                    m.music.start(t, s);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn present(&mut self, t: &Term) -> IoResult<()> {
         match self.toast.as_ref().filter(|(_, at)| at.elapsed() < TOAST) {
             Some((msg, _)) => {
                 let mut c = t.clone();
-                c.fill(TOAST_BOX.0, TOAST_BOX.1, TOAST_BOX.2, TOAST_BOX.3, u1_assets::term::BLACK);
-                opts::center(&mut c, 1, &msg.clone(), u1_assets::term::WARN);
-                self.present_over(t, Some((&c, TOAST_BOX)))
+                // One row per line of the note.
+                let lines: Vec<String> = msg.lines().map(String::from).collect();
+                let b = (TOAST_BOX.0, TOAST_BOX.1, TOAST_BOX.2, TOAST_BOX.3 + 8 * (lines.len().max(1) - 1));
+                c.fill(b.0, b.1, b.2, b.3, u1_assets::term::BLACK);
+                for (i, l) in lines.iter().enumerate() {
+                    opts::center(&mut c, 1 + i, l, u1_assets::term::WARN);
+                }
+                self.present_over(t, Some((&c, b)))
             }
             None => {
                 self.toast = None;
@@ -801,22 +909,37 @@ impl SdlIo {
             (Some(p), Some((m, r))) => (W * p.scale(), H * p.scale(), enhanced::compose_boxed(t, m, &self.palette, p, ms, r)),
             (_, o) => frame_rgb(o.map_or(t, |o| o.0), &self.palette, pack, 1, ms),
         };
-        if self.qol.crt {
-            let k = qol::crt_factor(w);
-            let (cw, ch) = (w * k, h * k);
+        self.last_rgb = Some((w, h, rgb.clone()));
+        // Pixel-art smoothing enlarges the frame first, then the CRT
+        // filter works on the result; either goes through its own texture.
+        // The window fits the original's size (whole multiples of it).
+        let pixel_art = self.qol.smoothing == qol::Smoothing::PixelArt;
+        let post = self.qol.crt || pixel_art;
+        if post {
+            let (sw, sh, srgb) = if pixel_art { qol::pixel_art(&rgb, w, h) } else { (w, h, rgb) };
+            let k = if self.qol.crt { qol::crt_factor(sw) } else { 1 };
+            let (cw, ch) = (sw * k, sh * k);
             if self.crt_tex.as_ref().map_or(true, |(x, y, _)| (*x, *y) != (cw, ch)) {
+                self.scale_hint();
                 let tex = self.tc.create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGB24, cw as u32, ch as u32).map_err(|_| Halt)?;
                 self.crt_tex = Some((cw, ch, tex));
             }
-            let out = qol::crt(&rgb, w, h, k);
+            let out = if self.qol.crt { qol::crt(&srgb, sw, sh, k) } else { srgb };
             let (_, _, tex) = self.crt_tex.as_mut().ok_or(Halt)?;
             tex.update(None, &out, cw * 3).map_err(|_| Halt)?;
         } else {
             self.tex.update(None, &rgb, w * 3).map_err(|_| Halt)?;
         }
-        self.last_frame = Some((w as u32, h as u32, self.qol.crt));
+        self.last_frame = Some((w as u32, h as u32, post));
         self.redraw();
         Ok(())
+    }
+
+    /// How SDL stretches the textures made after this: smoothly with any
+    /// smoothing (the pixel-art scaler's remaining stretch is small),
+    /// square pixels without.
+    fn scale_hint(&self) {
+        sdl2::hint::set("SDL_RENDER_SCALE_QUALITY", if self.qol.smoothing == qol::Smoothing::Off { "0" } else { "1" });
     }
 
     /// Show the last frame again: the whole window cleared to black, the
@@ -825,7 +948,7 @@ impl SdlIo {
     fn redraw(&mut self) {
         let Some((w, h, crt)) = self.last_frame else { return };
         let (ww, wh) = self.canvas.output_size().unwrap_or((w, h));
-        let (x, y, dw, dh) = qol::fit(ww, wh, w, h, self.qol.scaling);
+        let (x, y, dw, dh) = qol::fit_art(ww, wh, w, h, (w / W as u32).max(1), self.qol.scaling);
         let dst = sdl2::rect::Rect::new(x, y, dw, dh);
         self.canvas.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
         self.canvas.clear();
@@ -840,6 +963,33 @@ impl SdlIo {
     /// `d` under the speed settings.
     fn scaled(&self, d: Duration, w: Wait) -> Duration {
         d.mul_f64(self.qol.wait_factor(w, self.in_space))
+    }
+
+    /// The screenshot key: the frame on screen as a PNG.
+    fn snap(&mut self) {
+        let Some((w, h, rgb)) = self.last_rgb.clone() else { return };
+        let dir = shot_dir();
+        // u1-YYYYMMDD-HHMMSS.png
+        let name = format!("u1-{}.png", local_stamp().replace(['-', ':'], "").replace(' ', "-"));
+        let mut path = dir.join(&name);
+        let mut n = 2;
+        while path.exists() {
+            path = dir.join(name.replace(".png", &format!("-{n}.png")));
+            n += 1;
+        }
+        let r = std::fs::create_dir_all(&dir).map_err(|e| e.to_string()).and_then(|_| write_png(&path, w as u32, h as u32, &rgb));
+        match r {
+            Ok(()) => {
+                eprintln!("screenshot: {}", path.display());
+                let dir = short_path(path.parent().unwrap_or(&dir));
+                let file = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+                self.note(&format!("Screenshot saved:\n{dir}/\n{file}"));
+            }
+            Err(e) => {
+                eprintln!("screenshot: {e}");
+                self.note("Screenshot not saved");
+            }
+        }
     }
 
     fn note(&mut self, msg: &str) {
@@ -879,14 +1029,53 @@ impl SdlIo {
     }
 
     fn pump(&mut self) -> IoResult<()> {
+        self.sync_music();
         use sdl2::event::Event;
         use sdl2::keyboard::{Keycode, Mod};
         let evs: Vec<Event> = self.events.poll_iter().collect();
         for ev in evs {
             match ev {
-                Event::Quit { .. } => return Err(Halt),
+                Event::Quit { .. } => {
+                    if !(self.qol.confirm_quit && self.dirty && !self.front) {
+                        return Err(Halt);
+                    }
+                    if self.current != Some(Modal::Quit) {
+                        if self.in_menu {
+                            // Close the window that is up; the question follows.
+                            self.menu_keys.push_back((keys::ESC, "escape".into()));
+                        }
+                        self.in_menu = true;
+                        self.modal_wanted = Some(Modal::Quit);
+                    }
+                }
                 Event::Window { win_event, .. } => {
                     use sdl2::event::WindowEvent as We;
+                    match win_event {
+                        We::FocusLost => {
+                            self.focus_lost = true;
+                            if !self.in_menu {
+                                self.in_menu = true;
+                                self.modal_wanted = Some(Modal::Paused);
+                            }
+                        }
+                        We::FocusGained => {
+                            self.focus_lost = false;
+                            if self.current == Some(Modal::Paused) {
+                                self.menu_keys.push_back((0, "focus".into()));
+                            }
+                        }
+                        We::Moved(..) | We::Resized(..) | We::SizeChanged(..) if !self.qol.fullscreen => {
+                            let w = self.canvas.window();
+                            if w.fullscreen_state() == sdl2::video::FullscreenType::Off {
+                                let ((x, y), (sw, sh)) = (w.position(), w.size());
+                                if self.geom != Some((x, y, sw, sh)) {
+                                    self.geom = Some((x, y, sw, sh));
+                                    self.geom_moved = true;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
                     if matches!(win_event, We::SizeChanged(..) | We::Resized(..) | We::Exposed | We::Maximized | We::Restored | We::Shown) {
                         self.redraw();
                     }
@@ -952,6 +1141,13 @@ impl SdlIo {
                         }
                     };
                     let name = k.name().to_lowercase();
+                    // The screenshot key (except while the Keys window waits
+                    // for a key to bind, so it can be bound itself).
+                    let binding = self.current == Some(Modal::Rebind);
+                    if !binding && !name.is_empty() && name == self.keymap.screenshot() && !repeat {
+                        self.snap();
+                        continue;
+                    }
                     // Keys typed while a window is up are the window's.
                     if self.in_menu {
                         self.menu_keys.push_back((c.unwrap_or(0), name));
@@ -965,10 +1161,15 @@ impl SdlIo {
                         self.hold_arrow(a, k.into_i32());
                     }
                     let extra = self.keymap.code_for(&name).filter(|&x| self.wanted_code(x));
+                    if repeat && self.fresh_wait {
+                        continue;
+                    }
                     if c.is_some() || extra.is_some() {
+                        self.dirty |= !self.front;
                         self.pending.push_back((c, extra));
                     }
                 }
+                Event::MouseButtonDown { .. } if self.fresh_wait && !self.in_menu => self.clicked = true,
                 Event::KeyUp { keycode: Some(k), .. } => {
                     self.held.release(k.into_i32());
                 }
@@ -990,7 +1191,6 @@ impl SdlIo {
         match code {
             keys::MAP => self.qol.automap || self.qol.minimap,
             keys::HELP => self.qol.help,
-            keys::CHARSHEET => self.qol.charsheet,
             _ => true,
         }
     }
@@ -1146,6 +1346,23 @@ impl Io for SdlIo {
         self.pending.clear();
     }
 
+    fn any_key(&mut self, t: &Term) -> IoResult<()> {
+        self.pending.clear();
+        self.held.clear();
+        self.clicked = false;
+        self.fresh_wait = true;
+        let r = loop {
+            match self.poll(t) {
+                Ok(Some(_)) => break Ok(()),
+                Ok(None) if self.clicked => break Ok(()),
+                Ok(None) => {}
+                Err(e) => break Err(e),
+            }
+        };
+        self.fresh_wait = false;
+        r
+    }
+
     fn sound(&mut self, n: u8) {
         self.sound_ev(n, Sfx::default_for(n));
     }
@@ -1179,6 +1396,13 @@ impl Io for SdlIo {
     fn cue(&mut self, ev: Sfx) {
         if let (Some(c), Some((dev, _))) = (self.clip(ev), &mut self.audio) {
             dev.lock().play(c);
+        }
+    }
+
+    fn music(&mut self, t: Track) {
+        if self.area != Some(t) {
+            self.area = Some(t);
+            self.sync_music();
         }
     }
 
@@ -1232,6 +1456,14 @@ impl Io for SdlIo {
         self.save_req.take().map(|(r, _)| r)
     }
 
+    fn saved(&mut self, path: &Path, rec: &u1_assets::save::PlayerRecord, t: &Term) {
+        self.dirty = false;
+        let when: String = local_stamp().chars().take(16).collect();
+        if let Err(e) = u1_assets::slots::SaveInfo::of(rec, t, &when).write(path) {
+            eprintln!("{}: {e}", u1_assets::slots::info_path(path).display());
+        }
+    }
+
     fn save_done(&mut self, msg: &str) {
         self.note(msg);
     }
@@ -1254,7 +1486,7 @@ impl Io for SdlIo {
 }
 
 /// Which key the game gets from a press: an extra key's command at the
-/// command prompt, or the open screen's own key (Tab, F3, F6) so it closes
+/// command prompt, or the open screen's own key (Tab, F3, Z) so it closes
 /// that screen; elsewhere only the plain key.
 fn pick_key(at_prompt: bool, view: Option<u8>, plain: Option<u8>, cmd: Option<u8>) -> Option<u8> {
     if at_prompt {
@@ -1313,12 +1545,27 @@ impl SdlIo {
         }
         let opened = Instant::now();
         // One window can open the next (Options, then Keys).
+        if let Some((dev, _)) = &mut self.audio {
+            dev.lock().music.paused = true;
+        }
         while let Some(which) = self.modal_wanted.take() {
             self.in_menu = true;
+            self.current = Some(which);
             let r = self.run_one(t, which);
+            self.current = None;
             self.in_menu = false;
             self.menu_keys.clear();
             r?;
+            if self.halt {
+                return Err(Halt);
+            }
+            if self.focus_lost && self.modal_wanted.is_none() {
+                // Closed by a key while still in the background.
+                self.focus_lost = false;
+            }
+        }
+        if let Some((dev, _)) = &mut self.audio {
+            dev.lock().music.paused = false;
         }
         let paused = opened.elapsed();
         self.next = Instant::now() + POLL;
@@ -1336,7 +1583,7 @@ impl SdlIo {
                     t,
                     &mut m,
                     |m, c| m.draw(c),
-                    |io, m, k, _| match m.key(k) {
+                    |io, m, k, name| match m.key(if name == "tab" { opts::TAB } else { k }) {
                         MenuKey::Changed => {
                             io.choose(m.video, m.sound);
                             io.apply_qol(m.qol);
@@ -1372,6 +1619,16 @@ impl SdlIo {
             Modal::Slots => {
                 let base = self.save_base.clone().unwrap_or_else(|| PathBuf::from("PLAYER1.U1"));
                 let mut s = SlotScreen::new(&base);
+                // A save with no details file (the character menu's, or an
+                // older one): the file's own time.
+                for (i, (slot, _)) in s.info.iter_mut().zip(&s.slots) {
+                    if let Some(i) = i.as_mut().filter(|i| i.when.is_empty()) {
+                        let mt = std::fs::metadata(u1_assets::slots::slot_path(&base, *slot)).and_then(|m| m.modified());
+                        if let Ok(t) = mt {
+                            i.when = stamp_of(t).chars().take(16).collect();
+                        }
+                    }
+                }
                 self.run_modal(
                     t,
                     &mut s,
@@ -1389,6 +1646,46 @@ impl SdlIo {
             Modal::Log => {
                 let mut v = LogView::new(t);
                 self.run_modal(t, &mut v, |v, c| v.draw(c), |_, v, k, _| v.key(k))
+            }
+            Modal::Paused => self.run_modal(
+                t,
+                &mut (),
+                |_, c| {
+                    opts::panel(c);
+                    opts::center(c, 7, "Paused", u1_assets::term::WARN);
+                    opts::center(c, 9, "The window is in the background;", u1_assets::term::TEXT);
+                    opts::center(c, 10, "no time passes in the game.", u1_assets::term::TEXT);
+                    opts::center(c, 13, "Click the window or press a key", u1_assets::term::TEXT);
+                },
+                |_, _, _, _| false,
+            ),
+            Modal::Quit => {
+                let mut slots = self.qol.slots;
+                self.run_modal(
+                    t,
+                    &mut slots,
+                    |slots, c| {
+                        opts::panel(c);
+                        opts::center(c, 5, "Quit the game?", u1_assets::term::WARN);
+                        opts::center(c, 7, "What you did since the last save", u1_assets::term::TEXT);
+                        opts::center(c, 8, "will be lost.", u1_assets::term::TEXT);
+                        if *slots {
+                            opts::center(c, 10, "To save: Q (Quit) outdoors,", u1_assets::term::TEXT);
+                            opts::center(c, 11, "or a save slot (F2, F5).", u1_assets::term::TEXT);
+                        } else {
+                            opts::center(c, 10, "To save: Q (Quit) outdoors.", u1_assets::term::TEXT);
+                        }
+                        opts::center(c, 14, "Y: quit now   N: keep playing", u1_assets::term::TEXT);
+                    },
+                    |io, _, k, name| match k.to_ascii_lowercase() {
+                        b'y' => {
+                            io.halt = true;
+                            false
+                        }
+                        b'n' | keys::ESC | keys::ENTER => false,
+                        _ => name.is_empty(),
+                    },
+                )
             }
         }
     }
@@ -1441,6 +1738,10 @@ impl SdlIo {
         if !q.crt {
             self.crt_tex = None;
         }
+        if old.smoothing != q.smoothing {
+            // New textures with the new filtering.
+            self.set_enhanced(self.enhanced);
+        }
         if !q.slots {
             self.save_req = None;
         }
@@ -1464,6 +1765,14 @@ impl SdlIo {
         }
     }
 
+    /// Keep the window's place and size for next time, if it changed.
+    fn keep_window(&mut self) {
+        if self.geom_moved {
+            self.save_config(false);
+            self.geom_moved = false;
+        }
+    }
+
     /// Save the choices (`all`: the display and sound as well as the
     /// optional features; the keys F4 and Alt+Enter save only those).
     fn save_config(&self, all: bool) {
@@ -1480,6 +1789,9 @@ impl SdlIo {
             c.sound = Some(self.sound);
         }
         c.qol = self.qol;
+        if self.geom.is_some() {
+            c.window = self.geom;
+        }
         c.keys = self.keymap.clone();
         c.pad = self.pad.map.clone();
         c.warnings.clear();
@@ -1503,6 +1815,7 @@ impl SdlIo {
         self.enhanced = on;
         let k = if on { self.pack.as_ref().map_or(1, |p| p.scale()) as u32 } else { 1 };
         let (iw, ih) = (W as u32 * k, H as u32 * k);
+        self.scale_hint();
         let tex = match self.tc.create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGB24, iw, ih) {
             Ok(t) => t,
             Err(e) => {
@@ -1542,6 +1855,10 @@ impl SdlIo {
 struct Mixer {
     voices: Vec<(Arc<Vec<i16>>, usize)>,
     rate: usize,
+    /// The area music (its own layer and volume).
+    music: music::Player,
+    /// The effects' gain (effects volume times master; 1.0 by default).
+    sfx: f32,
 }
 
 impl Mixer {
@@ -1563,13 +1880,15 @@ impl sdl2::audio::AudioCallback for Mixer {
     type Channel = i16;
     fn callback(&mut self, out: &mut [i16]) {
         for o in out.iter_mut() {
-            let mut acc = 0i32;
+            let mut fx = 0i32;
             for (v, pos) in self.voices.iter_mut() {
                 if let Some(&x) = v.get(*pos) {
-                    acc += i32::from(x);
+                    fx += i32::from(x);
                     *pos += 1;
                 }
             }
+            let fx = if self.sfx == 1.0 { fx } else { (fx as f32 * self.sfx) as i32 };
+            let acc = self.music.sample() + fx;
             *o = acc.clamp(-32768, 32767) as i16;
         }
         self.voices.retain(|(v, p)| *p < v.len());
@@ -1581,7 +1900,10 @@ impl sdl2::audio::AudioCallback for Mixer {
 fn open_speaker(sdl: &sdl2::Sdl) -> Option<(sdl2::audio::AudioDevice<Mixer>, u32)> {
     let sub = sdl.audio().map_err(|e| eprintln!("no audio: {e}")).ok()?;
     let want = sdl2::audio::AudioSpecDesired { freq: Some(44_100), channels: Some(1), samples: Some(512) };
-    let q = sub.open_playback(None, &want, |spec| Mixer { voices: Vec::new(), rate: spec.freq.max(1) as usize }).map_err(|e| eprintln!("no audio: {e}")).ok()?;
+    let q = sub
+        .open_playback(None, &want, |spec| Mixer { voices: Vec::new(), rate: spec.freq.max(1) as usize, music: music::Player::new(spec.freq.max(1) as u32), sfx: 1.0 })
+        .map_err(|e| eprintln!("no audio: {e}"))
+        .ok()?;
     q.resume();
     let rate = q.spec().freq as u32;
     // The subsystem must outlive the queue.
@@ -1639,7 +1961,14 @@ fn play(a: &Args) -> Result<(), String> {
     let k = pack.as_ref().map_or(1, |p| p.scale()) as u32;
     let (iw, ih) = (W as u32 * k, H as u32 * k);
     let n = (a.scale / k).max(1);
-    let window = video.window("u1 - Ultima I", iw * n, ih * n).position_centered().resizable().build().map_err(|e| e.to_string())?;
+    // The window's last place and size, if the config has them.
+    let (ww, wh) = cfg.window.map_or((iw * n, ih * n), |(_, _, w, h)| (w, h));
+    let mut wb = video.window("u1 - Ultima I", ww, wh);
+    match cfg.window {
+        Some((x, y, _, _)) => wb.position(x, y),
+        None => wb.position_centered(),
+    };
+    let window = wb.resizable().build().map_err(|e| e.to_string())?;
     let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
     // The texture creator lives for the whole program.
     let tc: &'static _ = Box::leak(Box::new(canvas.texture_creator()));
@@ -1685,11 +2014,23 @@ fn play(a: &Args) -> Result<(), String> {
         restart: false,
         qol: Qol::default(),
         in_space: false,
+        fresh_wait: false,
+        clicked: false,
+        area: None,
+        tracks: Default::default(),
+        rendering: false,
         crt_tex: None,
         last_frame: None,
         save_base: None,
         save_req: None,
         toast: None,
+        focus_lost: false,
+        current: None,
+        dirty: false,
+        halt: false,
+        geom: cfg.window,
+        geom_moved: false,
+        last_rgb: None,
     };
     // The optional features: the file's, and --crt / --fullscreen.
     let mut q = cfg.qol;
@@ -1703,6 +2044,9 @@ fn play(a: &Args) -> Result<(), String> {
     q.hints |= f.hints;
     q.repeat |= f.repeat;
     q.gamepad |= f.gamepad;
+    if f.smoothing != qol::Smoothing::Off {
+        q.smoothing = f.smoothing;
+    }
     if f.confirm > 0 {
         q.confirm = f.confirm;
     }
@@ -1712,7 +2056,10 @@ fn play(a: &Args) -> Result<(), String> {
         io.apply_window();
     }
     let chosen = match front(a, mode, &mut io)? {
-        Front::Halted(_) => return Ok(()),
+        Front::Halted(_) => {
+            io.keep_window();
+            return Ok(());
+        }
         Front::Play(p) => Some(p),
         Front::Skip => None,
     };
@@ -1742,6 +2089,7 @@ fn play(a: &Args) -> Result<(), String> {
         if let Some(s) = g.stopped {
             eprintln!("stopped: {s}");
         }
+        io.keep_window();
         return Ok(());
     }
 }
@@ -1750,6 +2098,9 @@ fn main() -> ExitCode {
     let res = parse_args().and_then(|a| {
         if let Some(out) = &a.sound_demo {
             return sound_demo(&a, out);
+        }
+        if let Some(out) = &a.music_demo {
+            return music_demo(out);
         }
         install_font(&a)?;
         match &a.screenshot {
@@ -1800,6 +2151,60 @@ fn wrap_text(text: &str, width: usize) -> String {
     out
 }
 
+/// The local date and time, "YYYY-MM-DD HH:MM:SS".
+/// Where `Q` writes for `--save FILE`: FILE itself, unless it lies in the
+/// game folder, then the roster file of the same name.
+fn save_back(file: &Path, game_dir: &Path, roster: &Path) -> PathBuf {
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let in_game = canon(file).parent().is_some_and(|p| p.starts_with(canon(game_dir)));
+    match file.file_name() {
+        Some(n) if in_game => roster.join(n),
+        _ => file.to_path_buf(),
+    }
+}
+
+fn local_stamp() -> String {
+    stamp_of(std::time::SystemTime::now())
+}
+
+/// `when`, local, as "YYYY-MM-DD HH:MM:SS".
+fn stamp_of(when: std::time::SystemTime) -> String {
+    let t = when.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as libc::time_t;
+    // SAFETY: localtime_r / localtime_s write only into the zeroed `tm` we pass.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    #[cfg(unix)]
+    let ok = unsafe { !libc::localtime_r(&t, &mut tm).is_null() };
+    #[cfg(windows)]
+    let ok = unsafe { libc::localtime_s(&mut tm, &t) == 0 };
+    #[cfg(not(any(unix, windows)))]
+    let ok = false;
+    if !ok {
+        return format!("{t}");
+    }
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec)
+}
+
+/// Where the screenshot key saves: ~/Pictures/ultima1-engine when there
+/// is a Pictures folder, else the data folder's ultima1-engine/screenshots.
+fn shot_dir() -> PathBuf {
+    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let pics = home.join("Pictures");
+    if pics.is_dir() {
+        return pics.join("ultima1-engine");
+    }
+    let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| home.join(".local/share"));
+    data.join("ultima1-engine").join("screenshots")
+}
+
+/// `p` with the home folder as ~, for a note.
+fn short_path(p: &Path) -> String {
+    let s = p.display().to_string();
+    match std::env::var("HOME") {
+        Ok(h) if !h.is_empty() && s.starts_with(&h) => format!("~{}", &s[h.len()..]),
+        _ => s,
+    }
+}
+
 /// Local wall-clock time as DOS reports it: hour, minute, second, hundredths.
 fn local_time() -> [u8; 4] {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
@@ -1829,7 +2234,7 @@ mod tests {
         use u1_assets::io::keys;
         // Tab on the automap / mini-map, F3 on help, F6 on the character
         // screen: the key that opened it reaches it and closes it.
-        for k in [keys::MAP, keys::HELP, keys::CHARSHEET] {
+        for k in [keys::MAP, keys::HELP] {
             assert_eq!(pick_key(false, Some(k), None, Some(k)), Some(k));
         }
         // Other screens' keys and other prompts are unchanged.
@@ -1863,7 +2268,7 @@ mod tests {
         assert_eq!(run(down(Button::A)), vec![PadAction::Key(b' ', "space".into())]);
         assert_eq!(run(down(Button::Back)), vec![PadAction::Command(keys::MAP)]);
         assert_eq!(run(down(Button::Guide)), vec![PadAction::Command(keys::HELP)]);
-        assert_eq!(run(down(Button::LeftStick)), vec![PadAction::Command(keys::CHARSHEET)]);
+        assert!(matches!(run(down(Button::LeftStick))[..], [PadAction::Key(b'Z', _)]));
         assert_eq!(run(down(Button::Start)), vec![PadAction::Options]);
         let v = run(down(Button::DPadUp));
         assert!(matches!(v[..], [PadAction::Key(keys::UP, _), PadAction::Hold(keys::UP, _)]), "{v:?}");

@@ -94,6 +94,9 @@ pub struct Config {
     pub keys: KeyMap,
     /// Gamepad buttons.
     pub pad: PadMap,
+    /// The window's last place and size (x, y, width, height), restored
+    /// at start; fullscreen is kept in `qol`.
+    pub window: Option<(i32, i32, u32, u32)>,
     /// Lines that could not be used (reported, never fatal).
     pub warnings: Vec<String>,
     /// The file's other lines, kept as they were for saving: top-level
@@ -146,6 +149,14 @@ impl Config {
                     Some(x) => c.sound = Some(x),
                     None => c.warnings.push(format!("line {}: sound wants original, enhanced or mute", n + 1)),
                 },
+                "window" => match parse_window(&v) {
+                    Some(w) => c.window = Some(w),
+                    None => c.warnings.push(format!("line {}: window wants \"x,y,width,height\"", n + 1)),
+                },
+                // The older name of key_screenshot.
+                "screenshot_key" if !v.is_empty() => {
+                    let _ = c.keys.config_key("key_screenshot", &v);
+                }
                 k if k.starts_with("key_") => match c.keys.config_key(k, &v) {
                     Some(Ok(())) => {}
                     Some(Err(e)) => c.warnings.push(format!("line {}: {e}", n + 1)),
@@ -193,14 +204,31 @@ impl Config {
         flag(q.steady, d.steady, "steady_timing", "speaker effects no longer hold the game");
         flag(q.automap, d.automap, "automap", "Tab in a dungeon");
         flag(q.minimap, d.minimap, "minimap", "Tab outdoors");
-        flag(q.charsheet, d.charsheet, "character_screen", "F6");
+        flag(q.charsheet, d.charsheet, "character_screen", "Z shows it");
         flag(q.help, d.help, "help_screen", "F3");
         flag(q.hints, d.hints, "hints", "a line on what a command asks for");
         flag(q.repeat, d.repeat, "arrow_repeat", "our own repeat for held arrows");
         flag(q.gamepad, d.gamepad, "gamepad", "SDL game controllers");
         flag(q.footsteps, d.footsteps, "footsteps", "overworld footsteps in enhanced sound");
+        flag(q.vehicle_facing, d.vehicle_facing, "vehicle_facing", "enhanced video: vehicles face left or right");
+        flag(q.music, d.music, "music", "our own area music (F1)");
+        flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "ask before closing with unsaved progress");
+        flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after a sign's words");
+        flag(q.docking_fee, d.docking_fee, "docking_fee", "the 500 coin fee to refuel at a space station");
         if q.food_use != d.food_use {
             s += &format!("food_use = \"{}\"   # original | half | off\n", q.food_use.as_str());
+        }
+        if q.music_volume != d.music_volume {
+            s += &format!("music_volume = {}   # per cent: 10 .. 100\n", q.music_volume);
+        }
+        if q.master_volume != d.master_volume {
+            s += &format!("master_volume = {}   # per cent: 0 .. 100\n", q.master_volume);
+        }
+        if q.sfx_volume != d.sfx_volume {
+            s += &format!("sfx_volume = {}   # per cent: 0 .. 100\n", q.sfx_volume);
+        }
+        if q.smoothing != d.smoothing {
+            s += &format!("smoothing = \"{}\"   # off | linear | pixel-art\n", q.smoothing.as_str());
         }
         if q.scaling != d.scaling {
             s += &format!("scaling = \"{}\"   # whole | fill\n", q.scaling.as_str());
@@ -216,6 +244,9 @@ impl Config {
         }
         if q.repeat_rate != d.repeat_rate {
             s += &format!("repeat_rate = {}   # steps a second: 0 (the game's pace) | 4 | 8 | 12 | 16\n", q.repeat_rate);
+        }
+        if let Some((x, y, w, h)) = self.window {
+            s += &format!("window = \"{x},{y},{w},{h}\"   # x, y, width, height (remembered)\n");
         }
         for l in self.keys.config_lines().into_iter().chain(self.pad.config_lines()) {
             s += &l;
@@ -273,6 +304,26 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "arrow_repeat" => flag(v).map(|b| q.repeat = b),
         "gamepad" => flag(v).map(|b| q.gamepad = b),
         "footsteps" => flag(v).map(|b| q.footsteps = b),
+        "vehicle_facing" => flag(v).map(|b| q.vehicle_facing = b),
+        "music" => flag(v).map(|b| q.music = b),
+        "music_volume" => match v.trim_end_matches('%').parse::<u8>() {
+            Ok(d) if crate::qol::MUSIC_VOLUMES.contains(&d) => {
+                q.music_volume = d;
+                Ok(())
+            }
+            _ => Err("10, 20 .. 100"),
+        },
+        "master_volume" | "sfx_volume" => match v.trim_end_matches('%').parse::<u8>() {
+            Ok(d) if crate::qol::VOLUMES.contains(&d) => {
+                *if k == "master_volume" { &mut q.master_volume } else { &mut q.sfx_volume } = d;
+                Ok(())
+            }
+            _ => Err("0, 10 .. 100"),
+        },
+        "confirm_quit" => flag(v).map(|b| q.confirm_quit = b),
+        "wait_on_signs" => flag(v).map(|b| q.sign_wait = b),
+        "docking_fee" => flag(v).map(|b| q.docking_fee = b),
+        "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {
                 q.confirm = d;
@@ -306,6 +357,14 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         _ => return None,
     };
     Some(r)
+}
+
+/// `"x,y,width,height"`; sizes of at least 64 by 40.
+fn parse_window(v: &str) -> Option<(i32, i32, u32, u32)> {
+    let p: Vec<&str> = v.split(',').map(str::trim).collect();
+    let [x, y, w, h] = p[..] else { return None };
+    let (w, h) = (w.parse::<u32>().ok()?, h.parse::<u32>().ok()?);
+    (w >= 64 && h >= 40 && w <= 16384 && h <= 16384).then_some((x.parse().ok()?, y.parse().ok()?, w, h))
 }
 
 fn strip_comment(l: &str) -> &str {
@@ -393,6 +452,35 @@ mod tests {
     }
 
     #[test]
+    fn polish_keys_round_trip() {
+        let mut c = Config { window: Some((-5, 40, 1280, 800)), ..Default::default() };
+        assert_eq!(c.keys.config_key("key_screenshot", "f11"), Some(Ok(())));
+        assert_eq!(Config::parse("screenshot_key = \"f11\"\n").keys.screenshot(), "f11", "the older name is read");
+        c.qol.master_volume = 70;
+        c.qol.sfx_volume = 0;
+        c.qol.confirm_quit = false;
+        c.qol.sign_wait = false;
+        c.qol.docking_fee = false;
+        let t = c.to_toml();
+        assert!(t.contains("window = \"-5,40,1280,800\"") && t.contains("sfx_volume = 0"), "{t}");
+        assert_eq!(Config::parse(&t), c);
+        assert!(!Config::default().to_toml().contains("volume"), "defaults are not written");
+        let bad = Config::parse("window = \"1,2,3\"\nsfx_volume = 15\nwindow = \"0,0,10,10\"\n");
+        assert_eq!((bad.window, bad.qol.sfx_volume, bad.warnings.len()), (None, 100, 3));
+    }
+
+    #[test]
+    fn save_slots_default_on_and_old_configs() {
+        // An old config that never mentions slots now gets them; one that
+        // turned them on keeps them; one that says off stays off.
+        assert!(Config::parse("video = \"ega\"\n").qol.slots);
+        assert!(Config::parse("save_slots = true\n").qol.slots);
+        let off = Config::parse("save_slots = false\n");
+        assert!(!off.qol.slots && off.to_toml().contains("save_slots = false"));
+        assert!(!Config::default().to_toml().contains("save_slots"));
+    }
+
+    #[test]
     fn tolerant_parse() {
         let c = Config::parse("# hand edited\n\nvideo='CGA'  # four colours\nsound = \"enhanced\"\nfuture = 3\n[keys]\nvideo = \"ega\"\n");
         assert_eq!(c.video, Some(VideoChoice::Cga));
@@ -476,11 +564,10 @@ mod tests {
         let mut c = Config { qol: q, ..Default::default() };
         c.keys.bind(5, "j").unwrap();
         c.keys.bind(26, "\\").unwrap();
-        c.keys.unbind(27);
         c.keys.bind(25, "m").unwrap();
         c.pad.config_key("pad_y", "z").unwrap().unwrap();
         let text = c.to_toml();
-        assert!(text.contains("key_attack = \"j\"") && text.contains("key_character = \"none\"") && text.contains("pad_y = \"z\""), "{text}");
+        assert!(text.contains("key_attack = \"j\"") && !text.contains("key_character") && text.contains("pad_y = \"z\""), "{text}");
         let back = Config::parse(&text);
         assert!(back.warnings.is_empty(), "{:?}", back.warnings);
         assert_eq!(back, c);
@@ -535,5 +622,24 @@ mod tests {
             assert!(!back.qol.footsteps);
         }
         assert_eq!(Config::parse("food_use = \"half\"\n").qol.food_use, FoodUse::Half);
+    }
+
+    #[test]
+    fn music_and_smoothing_round_trip() {
+        use crate::qol::Smoothing;
+        let d = Config::default();
+        assert!(!d.qol.music && d.qol.smoothing == Smoothing::Off);
+        assert!(!d.to_toml().contains("music") && !d.to_toml().contains("smoothing"));
+        for sm in Smoothing::ALL {
+            let mut c = Config::default();
+            c.qol.music = true;
+            c.qol.music_volume = 80;
+            c.qol.smoothing = sm;
+            let back = Config::parse(&c.to_toml());
+            assert_eq!((back.qol.music, back.qol.music_volume, back.qol.smoothing), (true, 80, sm));
+        }
+        let c = Config::parse("smoothing = \"pixel-art\"\nmusic_volume = 55\n");
+        assert_eq!((c.qol.smoothing, c.qol.music_volume), (Smoothing::PixelArt, 50));
+        assert!(!c.warnings.is_empty());
     }
 }

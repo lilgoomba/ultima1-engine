@@ -1161,7 +1161,7 @@ fn second_group() -> u1_assets::qol::Qol {
 const DUNGEON_WALK: &str = "e{up}{up}{left}{up}{up}{right}{up}";
 // Each screen waits for a key and drops it, so each is typed twice (open,
 // close); with the screens off all of them are ignored.
-const DUNGEON_WALK_VIEWS: &str = "e{map}{map}{up}{help}{help}{up}{left}{char}{char}{up}{up}{map}{map}{right}{up}";
+const DUNGEON_WALK_VIEWS: &str = "e{map}{map}{up}{help}{help}{up}{left}{up}{up}{map}{map}{right}{up}";
 
 #[test]
 fn second_group_off_ignores_the_view_keys() {
@@ -1393,4 +1393,198 @@ fn selling_asks_first_when_set_and_no_keeps_the_item() {
     assert_eq!(daggers(&yes), before - 1);
     assert_eq!(daggers(&no), before);
     assert_eq!(yes.rec.as_bytes(), plain.rec.as_bytes());
+}
+
+/// The area music follows the game: towns, dungeons, space and back, the
+/// lair, and the death sting before the resurrection.
+#[test]
+fn area_music_follows_the_game() {
+    use u1_assets::music::Track::*;
+    let run = |x, y, keys: &str, adjust: &dyn Fn(&mut PlayerRecord)| {
+        let mut io = ScriptIo::from_text(keys);
+        play_io(x, y, &mut io, 1, &[], adjust)?;
+        Some(io.music)
+    };
+    let Some(m) = run(66, 41, "e{up}", &|_| {}) else { return };
+    assert_eq!(m, vec![Overworld, Town]);
+    assert_eq!(run(32, 27, "e", &|_| {}).unwrap(), vec![Overworld, Castle]);
+    assert_eq!(run(39, 60, "ek ", &|_| {}).unwrap(), vec![Overworld, Dungeon, Overworld]);
+    let m = run(40, 40, "B{w12}{up}{w300} ", &on_shuttle).unwrap();
+    assert_eq!(m, vec![Overworld, Space, Overworld]);
+    let m = run(40, 40, "B{w12}    ", &|r| {
+        on_shuttle(r);
+        r.set_u16(off::SHUTTLE_0, 0);
+        r.set_u16(off::SHUTTLE_1, 0);
+    })
+    .unwrap();
+    assert!(m.windows(2).any(|w| w == [Space, Death]) || m.contains(&Death), "{m:?}");
+    let m = run(40, 40, "B{w12}", &at_time_machine).unwrap();
+    assert_eq!(&m[..2], &[Overworld, Lair]);
+}
+
+/// The king's "How much?" shows every digit typed (the blinking cursor
+/// moves on past each one, as in the original), and pence buy hit points.
+#[test]
+fn king_pence_shows_all_digits_typed() {
+    let keys = format!("e{}{{up}}{{up}}{{up}}tp123", rep("{right}", 25));
+    let Some(g) = play_with(32, 27, &keys, 2, &[], |r| r.set_u16(off::COIN, 2000)) else { return };
+    let all: String = (0..25).map(|r| g.term.row_text(r)).collect::<Vec<_>>().join("\n");
+    assert!(all.contains("How much? 123"), "{all}");
+}
+
+// ------------------------------------------------------------ Ztats and the character screen
+
+fn screen_text(g: &Game) -> String {
+    (0..25).map(|r| g.term.row_text(r)).collect::<Vec<_>>().join("\n")
+}
+
+fn quests_given(r: &mut PlayerRecord, done: &[usize], active: &[usize]) {
+    for &k in done {
+        r.set_u16(off::QUESTS + 2 * k, 1);
+    }
+    for &k in active {
+        r.set_u16(off::QUESTS + 2 * k, 0xFFFF);
+    }
+}
+
+#[test]
+fn ztats_with_the_character_option_off_is_the_original() {
+    // Every other engine screen on, the character screen off: Z draws and
+    // records exactly what it does with nothing on (the original Ztats).
+    let Some(plain) = play(66, 41, "z") else { return };
+    for keys in ["z", "z ", "z {up}"] {
+        let plain = play(66, 41, keys).unwrap();
+        let mut io = ScriptIo::from_text(keys);
+        io.qol = u1_assets::qol::Qol { automap: true, minimap: true, help: true, hints: true, charsheet: false, ..Default::default() };
+        let other = play_io(66, 41, &mut io, 2, &[], |_| {}).unwrap();
+        assert_eq!(plain.term.px, other.term.px, "{keys}");
+        assert_eq!(plain.rec.as_bytes(), other.rec.as_bytes(), "{keys}");
+    }
+    let all = screen_text(&plain);
+    assert!(!all.contains("Ztats - character"), "{all}");
+}
+
+#[test]
+fn ztats_with_the_character_option_on_shows_everything_and_the_quests() {
+    let run = |keys: &str| {
+        let mut io = ScriptIo::from_text(keys);
+        io.qol = u1_assets::qol::Qol { charsheet: true, ..Default::default() };
+        play_io(66, 41, &mut io, 2, &[], |r| quests_given(r, &[3], &[2]))
+    };
+    let Some(g) = run("z") else { return };
+    let pages = g.character_pages();
+    // Every page, joined.
+    let all: String = (0..pages).map(|n| screen_text(&run(&format!("z{}", " ".repeat(n))).unwrap())).collect::<Vec<_>>().join("\n");
+    for want in ["Ztats - character", "Hit points", "Coin", "Weapons:", "Armour:", "Spells:", "Transport:", "Gems:", "Quests:"] {
+        assert!(all.contains(want), "{want}\n{all}");
+    }
+    // The stats Ztats lists are all here.
+    for i in 1..=6 {
+        let n = g.ptr(u1_assets::exe::m::STAT_NAMES, i);
+        assert!(all.contains(n.trim()), "{n}\n{all}");
+    }
+    assert!(all.contains("The Lost King:") && all.contains("Slay a Gelatinous Cube") && all.contains("Not done yet."), "{all}");
+    assert!(all.contains("King of Barataria:") && all.contains("Done! Return to the king."), "{all}");
+    // The last key closes it; nothing in the record changed.
+    let closed = run(&format!("z{}", " ".repeat(pages))).unwrap();
+    let plain = play_with(66, 41, "", 2, &[], |r| quests_given(r, &[3], &[2])).unwrap();
+    assert_eq!(plain.rec.as_bytes(), closed.rec.as_bytes());
+    assert!(!screen_text(&closed).contains("Ztats - character"));
+}
+
+#[test]
+fn every_kings_quest_reads_from_the_game_data() {
+    let Some(g) = play(66, 41, "") else { return };
+    let got: Vec<(String, String)> = (1..=8).map(|k| (g.quest_giver(k), g.quest_task(k))).collect();
+    let want = [
+        ("Lord British", "Find the Grave of the Lost Soul"),
+        ("The Lost King", "Slay a Gelatinous Cube"),
+        ("King of Barataria", "Find the Southern Sign Post"),
+        ("King of Rondorin", "Slay a Carrion Creeper"),
+        ("King of Olympus", "Find the Pillar of Ozymandias"),
+        ("King of the Black Dragon", "Slay a Lich"),
+        ("King of the White Dragon", "Find the Tower of Knowledge"),
+        ("King of Shamino", "Slay a Balron"),
+    ];
+    for (k, (w, t)) in want.iter().enumerate() {
+        assert_eq!((got[k].0.as_str(), got[k].1.as_str()), (*w, *t), "castle {}", k + 1);
+    }
+}
+
+/// Playtest report: G on a dungeon chest picked nothing up. As in the
+/// original (Get `5550` only acts in castles; elsewhere it prints "?"),
+/// G does nothing in a dungeon; a chest is opened with U (Unlock, `7b63`),
+/// standing on its square. A chest one square ahead is not "here".
+#[test]
+fn dungeon_chest_is_unlocked_not_got() {
+    use u1_assets::dungeon::Item;
+    let Some(mut g) = play(39, 60, "e") else { return };
+    let (a, b) = {
+        let d = g.dungeon.as_ref().unwrap();
+        (d.a as usize, d.b as usize)
+    };
+    g.dungeon.as_mut().unwrap().level.items[a][b] = Item::Chest;
+    let mut io = ScriptIo::from_text("");
+    let _ = g.command(&mut io, b'G');
+    assert!(said(&g, "Get?"), "{:?}", g.term.messages());
+    assert_eq!(g.dungeon.as_ref().unwrap().level.items[a][b], Item::Chest, "Get leaves the chest");
+    let _ = g.command(&mut io, b'U');
+    let gone = g.dungeon.as_ref().unwrap().level.items[a][b] == Item::None;
+    assert!(gone && said(&g, "Thou dost find") || said(&g, "trap") || said(&g, "Trap"), "{:?}", g.term.messages());
+}
+
+/// Enhanced video: a vehicle faces the way it last moved sideways, keeps it
+/// going up or down, and parks with that facing (SPEC §25).
+#[test]
+fn vehicle_faces_last_sideways_move() {
+    use u1_assets::overworld::Entity;
+    let Some(mut g) = play(66, 41, "") else { return };
+    let (x, y) = (g.ow.x, g.ow.y);
+    g.ow.entities.push(Entity { tile: 0x0B, x, y, hp: 0, aux: 0 });
+    let mut io = ScriptIo::from_text("");
+    let _ = g.command(&mut io, b'B');
+    assert!(!g.explore.face_left, "a horse starts facing right");
+    let flipped = |g: &Game| g.term.art.iter().any(|o| o.flip);
+    let _ = g.command(&mut io, keys::LEFT);
+    assert!(g.explore.face_left);
+    g.draw_world();
+    assert!(flipped(&g), "the horse picture is mirrored");
+    let _ = g.command(&mut io, keys::UP);
+    let _ = g.command(&mut io, keys::DOWN);
+    assert!(g.explore.face_left, "up and down keep the facing");
+    let p = (g.ow.x, g.ow.y);
+    let _ = g.command(&mut io, b'X');
+    assert!(g.explore.parked_left.contains(&p), "parked facing left");
+    let _ = g.command(&mut io, b'B');
+    assert!(g.explore.face_left && g.explore.parked_left.is_empty(), "boarding again keeps it");
+    let _ = g.command(&mut io, keys::RIGHT);
+    assert!(!g.explore.face_left);
+    g.draw_world();
+    assert!(!flipped(&g), "facing right draws the art as it is");
+    g.vehicle_facing = false;
+    let _ = g.command(&mut io, keys::LEFT);
+    g.draw_world();
+    assert!(!flipped(&g), "the option off never mirrors");
+}
+
+/// Playtest report: a sign's words flashed by. With "Wait on signs" (on by
+/// default) the sign's box keeps them up behind "Press any key" until a
+/// key; off, the flow is the original's short pause (SPEC §25).
+#[test]
+fn signs_wait_for_a_key_when_the_option_is_on() {
+    let waiting = |keys: &str, on: bool| {
+        let mut io = ScriptIo::from_text(keys);
+        io.qol.sign_wait = on;
+        play_io(13, 89, &mut io, 2, &[], |_| {})
+    };
+    let Some(g) = waiting("e", true) else { return };
+    let s = screen_text(&g);
+    assert!(s.contains("Press any key") && s.contains("Sign"), "{s}");
+    // Any key ends it, after the original's own pause.
+    let g = waiting("e~x", true).unwrap();
+    assert!(!screen_text(&g).contains("Press any key"));
+    // Off: the original's flow, no prompt at all.
+    let g = waiting("e", false).unwrap();
+    assert!(!screen_text(&g).contains("Press any key"));
+    assert_eq!(g.rec.as_bytes(), waiting("e~x", true).unwrap().rec.as_bytes(), "nothing else changes");
 }

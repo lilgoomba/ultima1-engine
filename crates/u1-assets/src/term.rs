@@ -125,12 +125,19 @@ pub struct ArtOp {
     /// Map cell the tile shows (outdoors: world map x,y; in towns: the
     /// town map cell), which picks among a picture's `variants`.
     pub pos: Option<(u16, u16)>,
+    /// Draw the enhanced picture mirrored left to right (a vehicle facing
+    /// the other way, SPEC §25); the original pixels are never mirrored.
+    pub flip: bool,
     pub x: usize,
     pub y: usize,
     pub w: usize,
     pub h: usize,
     /// The pixels as drawn.
     pub px: Vec<u8>,
+    /// Parts filled over since (a window's box over the edge of the map,
+    /// inclusive 320x200 rectangles): there the original shows, the rest
+    /// of the tile keeps its art.
+    pub cut: Vec<(usize, usize, usize, usize)>,
 }
 
 impl ArtOp {
@@ -248,8 +255,23 @@ impl Term {
     /// Picture notes it overlaps are dropped: a black box over black
     /// tiles must not bring their pictures back.
     pub fn fill(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, c: u8) {
-        self.art.retain(|o| o.x > x1 || x0 >= o.x + o.w || o.y > y1 || y0 >= o.y + o.h);
         let c = self.dc(c);
+        self.art.retain_mut(|o| {
+            if o.x > x1 || x0 >= o.x + o.w || o.y > y1 || y0 >= o.y + o.h {
+                return true;
+            }
+            let (cx0, cy0, cx1, cy1) = (x0.max(o.x), y0.max(o.y), x1.min(o.x + o.w - 1), y1.min(o.y + o.h - 1));
+            if (cx0, cy0, cx1, cy1) == (o.x, o.y, o.x + o.w - 1, o.y + o.h - 1) {
+                return false;
+            }
+            for y in cy0..=cy1 {
+                for x in cx0..=cx1 {
+                    o.px[(y - o.y) * o.w + x - o.x] = c;
+                }
+            }
+            o.cut.push((cx0, cy0, cx1, cy1));
+            true
+        });
         for y in y0..=y1.min(H - 1) {
             for x in x0..=x1.min(W - 1) {
                 self.px[y * W + x] = c;
@@ -604,13 +626,20 @@ impl Term {
         for r in y..y + h {
             px.extend_from_slice(&self.px[r * W + x..r * W + x + w]);
         }
-        self.art.push(ArtOp { id, under, shift: shift as u16, pos: None, x, y, w, h, px });
+        self.art.push(ArtOp { id, under, shift: shift as u16, pos: None, flip: false, x, y, w, h, px, cut: Vec::new() });
     }
 
     /// Note the map cell shown by the newest region (see [`ArtOp::pos`]).
     pub fn art_pos(&mut self, pos: (u16, u16)) {
         if let Some(o) = self.art.last_mut() {
             o.pos = Some(pos);
+        }
+    }
+
+    /// Mirror the newest region's enhanced picture (see [`ArtOp::flip`]).
+    pub fn art_flip(&mut self, flip: bool) {
+        if let Some(o) = self.art.last_mut() {
+            o.flip = flip;
         }
     }
 
@@ -621,7 +650,7 @@ impl Term {
         for r in y..y + h {
             px.extend_from_slice(&self.px[r * W + x..r * W + x + w]);
         }
-        let frame = ArtOp { id: ArtId::Space(space_part::FRAME), under: None, shift: 0, pos: None, x, y, w, h, px };
+        let frame = ArtOp { id: ArtId::Space(space_part::FRAME), under: None, shift: 0, pos: None, flip: false, x, y, w, h, px, cut: Vec::new() };
         self.sscene = Some(Box::new(SScene { fp, frame, objs: Vec::new() }));
     }
 

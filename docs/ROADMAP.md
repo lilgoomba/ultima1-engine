@@ -52,7 +52,12 @@ the tests keep the original behaviour.
   what they do, and an optional one-line hint for the key just pressed
   or the prompt shown.
 * **One character and inventory screen.** The Z-stats pages (attributes,
-  weapons, armour, spells, vehicles, gems) gathered on one screen.
+  weapons, armour, spells, vehicles, gems, enemy vessels) gathered on one
+  screen, paged if needed. Built into Z itself (features-review-1): with the
+  Character setting on, Z shows it; off, Z is the original Ztats. No
+  separate F6 key any more. Quests are listed in plain words, read from
+  the game's tables at run time: who gave each, what it is, and whether
+  it is done (then "return to the king").
 
 ## Speed
 
@@ -83,16 +88,34 @@ the tests keep the original behaviour.
   vehicles, gems and similar above a value threshold), as a yes/no prompt
   in the message window.
 
+## Built on features-review-1
+
+* **Enhanced art for vehicles.** Pack pictures for overworld tiles
+  0x0B-0x12 (CC-BY-SA); the original tiles stay the fallback.
+* **Area music** (F1, off by default; SPEC §24). Nine original chiptune
+  scores rendered at run time; independent of the effects mode (plays
+  with Original beeps or Enhanced; Mute silences all sound).
+* **Smoothing** (F1, off by default; SPEC §24): linear, or our own
+  Scale2x pixel-art scaler.
+
+## Polish (polish-1, SPEC §25)
+
+* **Options in five pages** (Video, Sound, Gameplay, Controls, Interface)
+  with a description of each setting and resets per page or for all.
+* **Pause** while any engine window is open and when the window loses focus.
+* **Master and effects volumes** beside the music volume.
+* **Save details**: date, name, level, place and a thumbnail on the slot
+  screen, kept in a `.info` file beside the save (the save is unchanged).
+* **Screenshot key** (F12, configurable) to `~/Pictures/ultima1-engine`.
+* **Window place and size remembered.**
+* **Save slots on by default** (slot 1 is the original player file; turn
+  off in F1 for the single save).
+* **Vehicles turn** left or right with the last sideways move (enhanced
+  video only, the art mirrored; F1 Video "Vehicle turn", on by default).
+* **Confirm quit** when closing the window with unsaved progress.
+* **Wait on signs**: a sign post's or pillar's words stay up behind
+  "Press any key" (F1 Gameplay "Sign wait", on by default).
+* **AppImage desktop entry and a new 16-bit style icon** (our own art).
+
 ## Future ideas (not built)
 
-* **Area music, toggle on/off.** Music for the different areas (towns,
-  castles, overworld, dungeons, space), off by default; never in
-  original-beeps mode.
-* **Smoothing filter.** An optional anti-aliasing / smoothing filter for
-  the scaled picture (plain linear filtering, or xBR/HQx-style pixel-art
-  scalers), off by default; the sharp whole-pixel picture stays the
-  default.
-* **Enhanced art for vehicles (planned).** Pack pictures for the
-  overworld vehicle tiles 0x0B-0x12 (horse, cart, raft, frigate, aircar,
-  shuttle, time machine on the map, etc.), in the same 16-bit style and
-  CC-BY-SA licence as the monsters; the original tiles stay the fallback.

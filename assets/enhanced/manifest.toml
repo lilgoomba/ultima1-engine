@@ -50,6 +50,34 @@ file = "world/dungeon.png"
 [world.0x0A] # the player on foot (transparent background)
 file = "world/player.png"
 
+# --- Features 1: vehicles on the map (tiles 0x0B-0x12). Transparent
+# backgrounds like the monsters; the frigate has the original's two
+# frames, the others one picture (the original's are not directional).
+
+[world.0x0B] # Horse
+file = "world/veh_horse.png"
+
+[world.0x0C] # Cart
+file = "world/veh_cart.png"
+
+[world.0x0D] # Raft
+file = "world/veh_raft.png"
+
+[world.0x0E] # Frigate, frame 1
+file = "world/veh_frigate0.png"
+
+[world.0x0F] # Frigate, frame 2
+file = "world/veh_frigate1.png"
+
+[world.0x10] # Aircar
+file = "world/veh_aircar.png"
+
+[world.0x11] # Shuttle (on its pad)
+file = "world/veh_shuttle.png"
+
+[world.0x12] # Time machine
+file = "world/veh_timemachine.png"
+
 # --- Playtest 1: overworld monsters (tiles 0x13-0x30, two frames per
 # kind as in the original: kind k is 0x13+2k and 0x14+2k). Transparent
 # backgrounds, drawn over the pack's terrain. Monsters the original hides

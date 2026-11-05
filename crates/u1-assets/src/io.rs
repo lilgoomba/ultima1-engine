@@ -40,10 +40,10 @@ pub mod keys {
     pub const SAVE_REQ: u8 = 0xD0;
     pub const LOAD_REQ: u8 = 0xD8;
     /// The engine's screens (SPEC §23), sent only at the command prompt
-    /// (an extra key or a script's `{map}`, `{help}`, `{char}`).
+    /// (an extra key or a script's `{map}`, `{help}`). The character
+    /// screen is Ztats (Z) with that option on.
     pub const MAP: u8 = 0xC1;
     pub const HELP: u8 = 0xC2;
-    pub const CHARSHEET: u8 = 0xC3;
 }
 
 pub trait Io {
@@ -97,6 +97,10 @@ pub trait Io {
     /// may play something. Never waits.
     fn cue(&mut self, _ev: crate::sound::Sfx) {}
 
+    /// The area the game is in (or a moment such as death), for the
+    /// engine's optional music. The original has none; by default nothing.
+    fn music(&mut self, _t: crate::music::Track) {}
+
     /// A display chosen in the options menu, with its files, for the game
     /// to take at its next safe point (the main loop's key poll).
     fn video_switch(&mut self) -> Option<crate::game::VideoSet> {
@@ -126,6 +130,14 @@ pub trait Io {
         self.poll(t)
     }
 
+    /// Wait for a fresh key press (a mouse click or pad button counts
+    /// too in front ends that have them); keys typed ahead and held-key
+    /// repeats do not end it.
+    fn any_key(&mut self, t: &Term) -> IoResult<()> {
+        self.flush();
+        self.key(t).map(drop)
+    }
+
     /// Drop keys typed ahead (front ends with a key buffer).
     fn flush(&mut self) {}
 
@@ -150,6 +162,11 @@ pub trait Io {
     fn save_request(&mut self) -> Option<crate::slots::SaveReq> {
         None
     }
+
+    /// The game wrote `rec` to `path` (Quit or a save slot); `t` is the
+    /// screen. The front end may keep its own details beside it (the save
+    /// itself is never changed).
+    fn saved(&mut self, _path: &std::path::Path, _rec: &crate::save::PlayerRecord, _t: &Term) {}
 
     /// The result of a save-slot action, to show the player.
     fn save_done(&mut self, _msg: &str) {}
@@ -189,11 +206,16 @@ pub struct ScriptIo {
     pub log: bool,
     /// `features`.
     pub qol: crate::qol::Qol,
+    /// The music asked for, a repeat of the last one left out.
+    pub music: Vec<crate::music::Track>,
 }
 
 impl ScriptIo {
     pub fn new(keys: &[u8]) -> Self {
-        ScriptIo { keys: keys.iter().copied().collect(), ..Default::default() }
+        // Scripts replay the original's flow: the engine's wait on signs
+        // is off unless a test turns it on.
+        let qol = crate::qol::Qol { sign_wait: false, ..Default::default() };
+        ScriptIo { keys: keys.iter().copied().collect(), qol, ..Default::default() }
     }
 
     /// Keys from text; `~` stands for the key that ends a timed wait and
@@ -240,7 +262,6 @@ impl ScriptIo {
                         "p" => keys::STOP_AT_PAUSE,
                         "map" => keys::MAP,
                         "help" => keys::HELP,
-                        "char" => keys::CHARSHEET,
                         _ => b'?',
                     });
                 }
@@ -252,6 +273,12 @@ impl ScriptIo {
 }
 
 impl Io for ScriptIo {
+    fn music(&mut self, t: crate::music::Track) {
+        if self.music.last() != Some(&t) {
+            self.music.push(t);
+        }
+    }
+
     fn poll(&mut self, _t: &Term) -> IoResult<Option<u8>> {
         loop {
             match self.keys.pop_front() {

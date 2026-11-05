@@ -164,6 +164,9 @@ pub struct Game {
     /// The mode the explored map was last written in (it is written again
     /// on entering or leaving a town, castle or dungeon).
     pub explore_mode: Option<u8>,
+    /// The vehicle facing option (taken from the front end's options at
+    /// each prompt).
+    pub vehicle_facing: bool,
 }
 
 impl Game {
@@ -219,6 +222,7 @@ impl Game {
             explore: Default::default(),
             reload_explore: None,
             explore_mode: None,
+            vehicle_facing: true,
         };
         g.redraw();
         g
@@ -524,6 +528,8 @@ impl Game {
         let under = (t > 9).then(|| ArtId::World(Terrain::from_cell(self.a.map.cell(mx as usize, my as usize)).tile().0 as u16));
         let pos = (mx >= 0 && my >= 0).then_some((mx as u16, my as u16));
         self.tile_over(false, t, under, pos, sx, sy, shift);
+        let left = if col == rules::PLAYER_COL && row == rules::PLAYER_ROW { self.explore.face_left } else { self.explore.parked_left.contains(&(mx, my)) };
+        self.term.art_flip(self.vehicle_facing && vehicle_flip(t, left));
     }
 
     /// `af57(p)`: the per-poll outdoor animation, `p` counting the polls
@@ -625,6 +631,13 @@ impl Game {
     /// blinking cursor first (four frames from OUT.EXE `3a24`, in the text
     /// colour); a key blanks it (frame 4) and the next poll starts at frame 1.
     pub fn poll_key(&mut self, io: &mut dyn Io) -> IoResult<Option<u8>> {
+        let vf = io.features().vehicle_facing;
+        if vf != self.vehicle_facing {
+            self.vehicle_facing = vf;
+            if self.mode == OUTDOORS {
+                self.draw_world();
+            }
+        }
         self.draw_cursor(self.cursor_phase);
         self.cursor_phase = (self.cursor_phase + 1) & 3;
         let k = io.poll(&self.term)?;
@@ -677,11 +690,14 @@ impl Game {
         Ok(())
     }
 
-    /// `b0b5`: up to four digits typed at (col,row).
+    /// `b0b5`: up to four digits typed at (col,row). The text cursor is
+    /// put at the next digit's place before each key, as the original, so
+    /// the blinking cursor never sits on (and blanks) a typed digit.
     pub fn number(&mut self, io: &mut dyn Io, col: usize, row: usize) -> IoResult<i16> {
         let mut digits: Vec<u8> = Vec::new();
         let mut n = 0usize;
         while n < 4 {
+            self.term.cursor(col + n, row);
             let k = self.key(io)?;
             if k == keys::BACKSPACE || k == keys::LEFT {
                 n = n.saturating_sub(1);
@@ -724,7 +740,7 @@ impl Game {
     /// the save slots alone.
     pub fn save_explore(&self, io: &dyn Io) {
         let qol = io.features();
-        if !(qol.automap || qol.minimap) {
+        if !(qol.automap || qol.minimap || (qol.vehicle_facing && self.explore.has_facing())) {
             return;
         }
         if let Some(p) = &self.save_to {
@@ -740,6 +756,7 @@ impl Game {
         if self.hits() <= 0 || self.food() <= 0 {
             self.death(io)?;
         }
+        io.music(crate::music::Track::for_mode(self.mode));
         self.term.ornament_left(0, 24);
         self.term.cursor(1, 24);
         if self.mode == OUTDOORS {
@@ -783,7 +800,7 @@ impl Game {
                     crate::views::View::Map if self.mode == crate::dgame::DUNGEON => qol.automap,
                     crate::views::View::Map => qol.minimap,
                     crate::views::View::Help => qol.help,
-                    crate::views::View::Character => qol.charsheet,
+                    crate::views::View::Character => false,
                 };
                 if on {
                     io.command_prompt(false);
@@ -941,6 +958,11 @@ impl Game {
         }
         self.to_ow();
         self.ow.messages.clear();
+        match d {
+            Dir::West => self.explore.face_left = true,
+            Dir::East => self.explore.face_left = false,
+            _ => {}
+        }
         let (x0, y0) = (self.ow.x, self.ow.y);
         self.ow.step_only(d, &self.a.map, &self.a.t, &self.a.locs);
         let msgs: Vec<String> = self.ow.messages.drain(..).collect();
@@ -974,6 +996,7 @@ impl Game {
         };
         let t = self.ow.entities[i].tile;
         self.ow.entities.remove(i);
+        self.explore.face_left = self.explore.parked_left.remove(&(self.ow.x, self.ow.y));
         let mut tr = u16::from(t - 0x0B) + 1;
         if tr > 4 {
             tr -= 1;
@@ -1083,7 +1106,11 @@ impl Game {
         let old = tile_for_transport(self.transport());
         if self.ow.entities.len() < 39 {
             self.ow.entities.push(Entity { tile: old, x, y, hp: 0, aux: u16::from(old) });
+            if self.explore.face_left {
+                self.explore.parked_left.insert((x, y));
+            }
         }
+        self.explore.face_left = false;
         self.rec.set_u16(off::TRANSPORT, 0);
         self.player_aux = u16::from(old);
         self.sayln(m::XIT);
@@ -1100,6 +1127,7 @@ impl Game {
 
     /// Death and resurrection `c47c` (verified from original executable).
     pub fn death(&mut self, io: &mut dyn Io) -> IoResult<()> {
+        io.music(crate::music::Track::Death);
         if self.mode == crate::dgame::DUNGEON {
             self.restore_dungeon_borders();
             self.dungeon = None;
@@ -1344,10 +1372,24 @@ impl Game {
             self.snd(io, 6);
         }
         self.wait(io)?;
+        if io.features().sign_wait {
+            self.press_any_key(io)?;
+        }
         if l != 6 {
             self.nl();
         }
         self.redraw();
+        Ok(())
+    }
+
+    /// The engine's "Wait on signs": "Press any key" on the sign's box
+    /// (row 14, below its text) until a fresh key, click or pad button.
+    fn press_any_key(&mut self, io: &mut dyn Io) -> IoResult<()> {
+        let (col, row) = (self.term.col, self.term.row);
+        self.term.print_at(13, 14, "Press any key");
+        io.any_key(&self.term)?;
+        self.term.fill(104, 112, 207, 119, BLACK);
+        self.term.cursor(col, row);
         Ok(())
     }
 
@@ -1512,16 +1554,22 @@ impl Game {
         self.show_coin();
     }
 
-    /// Fire: the frigate's cannons outdoors; elsewhere "Fire?".
+    /// Fire: the frigate's cannons or the aircar's lasers outdoors
+    /// ("Fire what?" on anything else); elsewhere "Fire?".
     fn cmd_fire(&mut self, io: &mut dyn Io) -> IoResult<()> {
-        if self.mode != OUTDOORS || self.transport() != 4 {
+        if self.mode != OUTDOORS {
             self.err(io, m::FIRE_Q);
             return Ok(());
         }
         self.say(m::FIRE);
-        self.term.print(" ");
-        self.say(m::CANNONS);
-        self.say(m::COLON);
+        match self.transport() {
+            4 => self.say(m::CANNONS),
+            5 => self.say(m::LASERS),
+            _ => {
+                self.err(io, m::FIRE_WHAT);
+                return Ok(());
+            }
+        }
         let d = match self.key_timeout(io)? {
             keys::LEFT => Dir::West,
             keys::RIGHT => Dir::East,
@@ -1608,11 +1656,14 @@ impl Game {
                     let _ = std::fs::create_dir_all(d);
                 }
                 let qol = io.features();
-                if qol.automap || qol.minimap {
+                if qol.automap || qol.minimap || (qol.vehicle_facing && self.explore.has_facing()) {
                     let _ = self.explore.save(&p);
                 }
                 match std::fs::write(&p, self.rec.as_bytes()) {
-                    Ok(()) => io.save_done(&format!("Saved to {}", name(s))),
+                    Ok(()) => {
+                        io.saved(&p, &self.rec, &self.term);
+                        io.save_done(&format!("Saved to {}", name(s)))
+                    }
                     Err(_) => io.save_done(&format!("Could not save to {}", name(s))),
                 }
             }
@@ -1648,8 +1699,9 @@ impl Game {
                 self.term.println("");
                 return;
             }
+            io.saved(&p, &self.rec, &self.term);
             let qol = io.features();
-            if qol.automap || qol.minimap {
+            if qol.automap || qol.minimap || (qol.vehicle_facing && self.explore.has_facing()) {
                 // Our own file beside the save (SPEC §23.1).
                 let _ = self.explore.save(&p);
             }
@@ -1709,6 +1761,12 @@ impl Game {
     /// Ztats `bfe6`.
     pub(crate) fn cmd_ztats(&mut self, io: &mut dyn Io) -> IoResult<()> {
         self.sayln(m::ZTATS);
+        if io.features().charsheet {
+            // The engine's combined screen (SPEC §23.2): all of Ztats and
+            // more; the screen is put back as it was.
+            let saved = self.term.clone();
+            return self.show_character(io, saved);
+        }
         self.term.clear_view();
         self.term.ornament_left(13, 0);
         self.say(m::INVENTORY);
@@ -1782,5 +1840,17 @@ impl Game {
         self.press_space(io)?;
         self.term.restore_border(100, 220);
         Ok(())
+    }
+}
+
+/// Whether a world tile's enhanced picture is mirrored for a vehicle
+/// facing `left`. The horse, cart, raft and frigate (both frames) are
+/// drawn facing right; the aircar facing left; the shuttle and the
+/// time machine, and everything that is not a vehicle, never turn.
+pub fn vehicle_flip(tile: usize, left: bool) -> bool {
+    match tile {
+        0x0B..=0x0F => left,
+        0x10 => !left,
+        _ => false,
     }
 }

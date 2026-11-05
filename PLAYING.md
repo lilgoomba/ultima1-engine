@@ -54,7 +54,9 @@ The game folder is only ever read.
 
 With no options the game starts like the original: the title sequence,
 then the character menu (create a character, or continue one). Other
-starts: `--player N` (the game's `PLAYERn.U1`), `--save FILE`, `--gen`
+starts: `--player N` (character N of your roster, saved back there;
+the game's own `PLAYERn.U1` the first time), `--save FILE` (saved
+back to FILE; to the roster when FILE is one of the game's files), `--gen`
 (straight to the character menu). `--help` lists every option.
 
 ## 4. Keys
@@ -67,25 +69,49 @@ never reads:
 
 | Key | What it does |
 |---|---|
-| F1 | Options: display (Enhanced, EGA, CGA, Tandy), sound (original beeps, enhanced, mute), and the optional features. Everything optional is **off** by default. |
-| F2 | Save slots (turn on "Save slots" in F1) |
-| F3 | Command help screen (turn on "Help screen" in F1) |
+| F1 | Options, in five pages (Video, Sound, Gameplay, Controls, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default, except save slots, the quit confirmation and (enhanced video only) vehicle turning. The game is paused while it is open. |
+| F2 | Save slots (on by default; slot 1 is your character's own file, the one Q writes) |
+| F3 | Command help screen (turn on "Help screen" in F1); in space it lists the space commands |
 | F4 | Turbo: every wait 4x shorter (always available) |
-| F5 / F9 | Quicksave / quickload (with save slots on) |
-| F6 | Character page (turn on "Character" in F1) |
+| F5 / F9 | Quicksave / quickload |
 | Tab | Dungeon automap / world map (turn on the maps in F1) |
 | PgUp / PgDn | Message log (turn on "Message log" in F1) |
+| Z | Character screen instead of the original Ztats (turn on "Character" in F1) |
+| F12 | Screenshot, saved to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`); change the key in F1 → Controls → Keys (last row) |
 | Alt+Enter | Fullscreen on/off |
 
+A sign post's or pillar's words stay up until you press a key (F1,
+Gameplay: Sign wait; on by default, off for the original's short pause).
+
+Docking at a space station costs 500 coin to refuel, as in the original;
+F1, Gameplay: Docking fees Off refuels free. Either way, ready a vacuum
+or reflect suit before docking, or the open space doors kill you.
+At "Choose thy ship:" type the port number, or press the arrow toward
+the ship you want (it shows in yellow) and Enter, Space or pad A.
+
+The game also pauses when its window loses focus. Closing the window with
+progress not yet saved asks first (F1, Interface: Confirm quit). The
+window's size and place are remembered.
+
+In dungeons, as in the original, G (Get) does nothing (it answers "Get?").
+Step onto a chest's square and press U (Unlock) to open it (it may be
+trapped); a coffin is opened with O. The name of what you can see ahead
+("Chest") is printed in the message window each time the view is drawn.
+
 The enhanced mode (F1, Video: Enhanced) draws our own CC-BY-SA art over
-the same game; the original EGA picture is the default.
+the same game; the original EGA picture is the default. There, vehicles
+face left or right the way they last moved sideways (F1, Video: Vehicle
+turn; up and down keep the facing, and a vehicle you leave keeps its
+facing, saved beside your save in its `.map` file).
 
 ## 5. Where saves and settings live
 
 * **Saves and characters**: `~/.local/share/ultima1-engine/saves/`
   (`$XDG_DATA_HOME/ultima1-engine/saves`). The roster files
   (`PLAYER1.U1` ... `PLAYER4.U1`) are original 820-byte records; save slots
-  and maps sit beside them. The first time, the characters that came with
+  and maps sit beside them, and each save made in the engine gets a small
+  `.info` file (date, place, thumbnail for the slot screen) - the save itself
+  stays an original record. The first time, the characters that came with
   the game are copied there. Saves never go into the game folder, so your
   original files are never changed and a read-only game folder (a CD) is
   fine. `--save-to FILE` or `--roster DIR` choose another place.

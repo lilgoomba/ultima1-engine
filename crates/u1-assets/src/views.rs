@@ -37,7 +37,7 @@ impl View {
         match self {
             View::Map => keys::MAP,
             View::Help => keys::HELP,
-            View::Character => keys::CHARSHEET,
+            View::Character => b'Z',
         }
     }
 
@@ -45,7 +45,6 @@ impl View {
         match k {
             keys::MAP => Some(View::Map),
             keys::HELP => Some(View::Help),
-            keys::CHARSHEET => Some(View::Character),
             _ => None,
         }
     }
@@ -62,6 +61,40 @@ pub fn hint(cmd: u8, mode: u8) -> Option<&'static str> {
         b'T' if town => "(B buy, S sell)",
         _ => return None,
     })
+}
+
+/// The ruler of a castle, from its name.
+pub fn king_of(castle: &str) -> String {
+    let c = castle.trim();
+    let c = c.strip_prefix("The ").or_else(|| c.strip_prefix("the ")).unwrap_or(c);
+    let core = if let Some(r) = c.strip_prefix("Castle of ") {
+        r.to_string()
+    } else if let Some(r) = c.strip_prefix("Castle ") {
+        r.to_string()
+    } else if let Some(r) = c.strip_suffix("'s Castle") {
+        format!("the {r}")
+    } else {
+        c.to_string()
+    };
+    if core.starts_with("Lord ") {
+        core
+    } else if let Some(r) = core.strip_prefix("the ").filter(|r| r.ends_with("King")) {
+        format!("The {r}")
+    } else {
+        format!("King of {core}")
+    }
+}
+
+fn with_article(n: &str) -> String {
+    let n = n.trim();
+    let low = n.to_ascii_lowercase();
+    if low.starts_with("a ") || low.starts_with("an ") || low.starts_with("the ") {
+        n.to_string()
+    } else if n.starts_with(['A', 'E', 'I', 'O', 'U', 'a', 'e', 'i', 'o', 'u']) {
+        format!("an {n}")
+    } else {
+        format!("a {n}")
+    }
 }
 
 /// Text centred on a 40-column row.
@@ -120,7 +153,7 @@ impl Game {
             View::Map if self.mode == crate::dgame::DUNGEON => self.draw_automap(),
             View::Map => return self.show_minimap(io, saved),
             View::Help => self.draw_help(),
-            View::Character => self.draw_character(),
+            View::Character => return self.show_character(io, saved),
         }
         io.view_open(Some(v.key()));
         let r = io.key(&self.term);
@@ -443,8 +476,103 @@ impl Game {
 
     // ------------------------------------------------------------ character
 
-    pub fn draw_character(&mut self) {
-        self.view_frame("Character", "F6 or any key: back");
+    /// The combined Ztats and character screen (SPEC §23.2): Ztats (Z, or
+    /// its extra key) opens it when the Character option is on. Every page
+    /// waits for a key; the last one closes it, as the original's Ztats.
+    pub fn show_character(&mut self, io: &mut dyn Io, saved: crate::term::Term) -> IoResult<()> {
+        let pages = self.character_pages();
+        for p in 0..pages {
+            self.draw_character(p);
+            io.view_open(Some(b'Z'));
+            let r = io.key(&self.term);
+            io.view_open(None);
+            r?;
+        }
+        self.term = saved;
+        Ok(())
+    }
+
+    /// The lines below the stats: (column, text, highlighted) per row.
+    fn character_lines(&self) -> Vec<Vec<(usize, String, bool)>> {
+        let mut out: Vec<Vec<(usize, String, bool)>> = Vec::new();
+        let lists = [
+            ("Weapons", slot::WEAPON, m::WEAPON_LONG, 1, 15, self.rec.u16_at(off::READY_WEAPON) as usize),
+            ("Armour", slot::ARMOUR, m::ARMOUR_NAMES, 1, 5, self.rec.u16_at(off::READY_ARMOUR) as usize),
+            ("Spells", slot::SPELL, m::SPELL_NAMES, 1, 10, self.rec.u16_at(off::READY_SPELL) as usize),
+            ("Transport", slot::VEHICLE, m::TRANSPORT_NAMES, 1, 7, self.transport() as usize),
+            ("Gems", slot::GEM, m::GEM_NAMES, 0, 3, usize::MAX),
+        ];
+        for (title, base, names, first, last, cur) in lists {
+            let mut line = vec![(2, format!("{title}:"), false)];
+            let mut col = 13usize;
+            let mut any = false;
+            for i in first..=last {
+                let q = self.qty(base, i);
+                if q == 0 {
+                    continue;
+                }
+                any = true;
+                let mut s = self.ptr(names, i).trim().to_string();
+                if q > 1 {
+                    s += &format!(" x{q}");
+                }
+                if i == cur {
+                    s += "*";
+                }
+                if col > 13 && col + s.len() + 2 > 38 {
+                    out.push(std::mem::take(&mut line));
+                    col = 13;
+                }
+                if col > 13 {
+                    line.push((col - 2, ", ".into(), false));
+                }
+                line.push((col, s.clone(), i == cur));
+                col += s.len() + 2;
+            }
+            if !any {
+                line.push((col, "none".into(), false));
+            }
+            out.push(line);
+        }
+        let mut quests = Vec::new();
+        for k in 1..=8 {
+            let st = self.rec.quest(k);
+            if matches!(st, QuestState::Active | QuestState::Done) {
+                quests.push((k, st == QuestState::Done));
+            }
+        }
+        if quests.is_empty() {
+            out.push(vec![(2, "Quests:".into(), false), (13, "none".into(), false)]);
+        } else {
+            out.push(vec![(2, "Quests:".into(), false)]);
+        }
+        for (k, done) in quests {
+            let who = self.quest_giver(k);
+            out.push(vec![(3, format!("{who}:"), false)]);
+            out.push(vec![(5, self.quest_task(k), false)]);
+            out.push(vec![(5, if done { "Done! Return to the king.".into() } else { "Not done yet.".into() }, done)]);
+        }
+        let en = self.w(off::ENEMIES);
+        if en > 0 {
+            out.push(vec![(2, format!("Enemy vessels destroyed {en}"), false)]);
+        }
+        if self.rec.u16_at(off::READY_WEAPON) != 0 || self.rec.u16_at(off::READY_ARMOUR) != 0 {
+            out.push(vec![(2, "* ready".into(), true)]);
+        }
+        out
+    }
+
+    /// Rows 13..=21 hold the lines; more spill onto further pages.
+    const CHAR_ROWS: usize = 9;
+
+    pub fn character_pages(&self) -> usize {
+        self.character_lines().len().div_ceil(Self::CHAR_ROWS).max(1)
+    }
+
+    pub fn draw_character(&mut self, page: usize) {
+        let pages = self.character_pages();
+        let foot = if page + 1 < pages { format!("Page {} of {pages}: any key for more", page + 1) } else { "Any key: back".into() };
+        self.view_frame("Ztats - character", &foot);
         let (w, t, hi) = (self.vc(WHITE, 3), self.vc(TEXT, 1), self.vc(WARN, 2));
         let name = self.rec.name();
         let level = (self.exp() as u16) / 1000 + 1;
@@ -470,86 +598,43 @@ impl Game {
             let (col, row) = (2 + 19 * ((i - 1) % 2), 9 + (i - 1) / 2);
             self.term.print_at_attr(col, row, &format!("{:<13}{}", n.trim(), self.stat(i)), t);
         }
-        let lists = [
-            ("Weapons", slot::WEAPON, m::WEAPON_LONG, 1, 15, self.rec.u16_at(off::READY_WEAPON) as usize),
-            ("Armour", slot::ARMOUR, m::ARMOUR_NAMES, 1, 5, self.rec.u16_at(off::READY_ARMOUR) as usize),
-            ("Spells", slot::SPELL, m::SPELL_NAMES, 1, 10, self.rec.u16_at(off::READY_SPELL) as usize),
-            ("Transport", slot::VEHICLE, m::TRANSPORT_NAMES, 1, 7, self.transport() as usize),
-            ("Gems", slot::GEM, m::GEM_NAMES, 0, 3, usize::MAX),
-        ];
-        let mut row = 13usize;
-        for (title, base, names, first, last, cur) in lists {
-            if row > 21 {
-                break;
+        let lines = self.character_lines();
+        for (r, line) in lines.iter().skip(page * Self::CHAR_ROWS).take(Self::CHAR_ROWS).enumerate() {
+            for (col, s, h) in line {
+                let title = *col <= 3 && s.ends_with(':');
+                let a = if *h {
+                    hi
+                } else if title {
+                    w
+                } else {
+                    t
+                };
+                let s: String = s.chars().take(38 - col).collect();
+                self.term.print_at_attr(*col, 13 + r, &s, a);
             }
-            self.term.print_at_attr(2, row, &format!("{title}:"), w);
-            let mut col = 13usize;
-            let mut any = false;
-            for i in first..=last {
-                let q = self.qty(base, i);
-                if q == 0 {
-                    continue;
-                }
-                any = true;
-                let n = self.ptr(names, i);
-                let mut s = n.trim().to_string();
-                if q > 1 {
-                    s += &format!(" x{q}");
-                }
-                if i == cur {
-                    s += "*";
-                }
-                if col > 13 && col + s.len() + 2 > 38 {
-                    row += 1;
-                    col = 13;
-                    if row > 21 {
-                        break;
-                    }
-                }
-                if col > 13 {
-                    self.term.print_at_attr(col - 2, row, ", ", t);
-                }
-                self.term.print_at_attr(col, row, &s, if i == cur { hi } else { t });
-                col += s.len() + 2;
-            }
-            if !any {
-                self.term.print_at_attr(col, row, "none", t);
-            }
-            row += 1;
-        }
-        if row <= 21 {
-            let mut q: Vec<String> = Vec::new();
-            for k in 1..=8 {
-                match self.rec.quest(k) {
-                    QuestState::Active => q.push(format!("{} (given)", self.castle_short(k))),
-                    QuestState::Done => q.push(format!("{} (done)", self.castle_short(k))),
-                    _ => {}
-                }
-            }
-            self.term.print_at_attr(2, row, "Quests:", w);
-            if q.is_empty() {
-                self.term.print_at_attr(13, row, "none", t);
-            }
-            for s in q {
-                if row > 21 {
-                    break;
-                }
-                self.term.print_at_attr(13, row, &s.chars().take(26).collect::<String>(), t);
-                row += 1;
-            }
-        }
-        let en = self.w(off::ENEMIES);
-        if en > 0 {
-            self.term.print_at_attr(2, 22, &format!("Enemy vessels destroyed {en}"), t);
-        }
-        if self.rec.u16_at(off::READY_WEAPON) != 0 || self.rec.u16_at(off::READY_ARMOUR) != 0 {
-            self.term.print_at_attr(29, 22, "* ready", hi);
         }
     }
 
-    fn castle_short(&self, k: usize) -> String {
-        let n = self.ptr(m::LOCATION_NAMES, 32 + k);
-        n.trim().trim_start_matches("the ").to_string()
+    /// Who gives castle `k`'s quest, from the castle's name in the game
+    /// data: "Lord British", "The Lost King", "King of the Black Dragon".
+    pub fn quest_giver(&self, k: usize) -> String {
+        king_of(&self.ptr(m::LOCATION_NAMES, 32 + k))
+    }
+
+    /// What castle `k`'s quest asks, in our words, with the monster or the
+    /// place read from the game data (the original's quest window).
+    pub fn quest_task(&self, k: usize) -> String {
+        if k % 2 == 0 {
+            let who = self.s(m::KILL_TARGETS[k / 2 - 1]);
+            format!("Slay {}", with_article(who.trim()))
+        } else {
+            let (ptr, _) = m::QUEST_PLACES[k / 2];
+            let o = self.a.exe.w(ptr) as usize;
+            let place = self.s(o);
+            let place = place.trim();
+            let place = place.strip_prefix("The ").map_or(place.to_string(), |r| format!("the {r}"));
+            format!("Find {place}")
+        }
     }
 
     // ------------------------------------------------------------ help
@@ -591,13 +676,49 @@ impl Game {
         }
         self.term.print_at_attr(1, 16, "Engine keys", w);
         let eng =
-            [("F1", "options"), ("F2", "save slots"), ("F5/F9", "qsave/qload"), ("PgUp", "message log"), ("Tab", "map (if on)"), ("F6", "character"), ("F3", "this help"), ("Alt+Ent", "fullscreen")];
+            [("F1", "options"), ("F2", "save slots"), ("F5/F9", "qsave/qload"), ("PgUp", "message log"), ("Tab", "map (if on)"), ("Z", "ztats+sheet"), ("F3", "this help"), ("Alt+Ent", "fullscreen")];
         for (i, (k, d)) in eng.iter().enumerate() {
             let (col, row) = (1 + 20 * (i % 2), 17 + i / 2);
             self.term.print_at_attr(col, row, k, w);
             self.term.print_at_attr(col + k.len() + 1, row, d, t);
         }
         self.term.print_at_attr(1, 21, "Keys can be changed: F1, Keys.", t);
+    }
+
+    /// The command help in space (F3 there): space has its own commands.
+    pub fn draw_space_help(&mut self) {
+        self.view_frame("Commands in space", "F3 or any key: back");
+        let (w, t) = (self.vc(WHITE, 3), self.vc(TEXT, 1));
+        let cmds: [(&str, &str); 13] = [
+            ("V", "view: map or front"),
+            ("", "On the map (top-down):"),
+            ("Left/Right", "turn"),
+            ("Up", "thrust"),
+            ("Down", "retro (and undock)"),
+            ("Space", "pass"),
+            ("", "In the front view:"),
+            ("Arrows", "move the sights"),
+            ("1-8", "speed"),
+            ("Space", "centre the sights"),
+            ("F", "fire"),
+            ("H", "hyperspace jump"),
+            ("", ""),
+        ];
+        for (i, (k, d)) in cmds.iter().enumerate() {
+            let row = 3 + i;
+            if k.is_empty() {
+                self.term.print_at_attr(1, row, d, w);
+            } else {
+                self.term.print_at_attr(3, row, k, w);
+                self.term.print_at_attr(15, row, d, t);
+            }
+        }
+        let more = [("I", "inform: where am I"), ("N", "noise on/off"), ("Z", "ztats")];
+        for (i, (k, d)) in more.iter().enumerate() {
+            self.term.print_at_attr(3, 16 + i, k, w);
+            self.term.print_at_attr(15, 16 + i, d, t);
+        }
+        self.term.print_at_attr(1, 20, "Dock: fly into a free port.", t);
     }
 
     // ------------------------------------------------------------ hints

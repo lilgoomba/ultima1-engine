@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(keys_of(&press(&mut p, "rightstick")), vec![b'Z']);
         assert_eq!(press(&mut p, "back"), vec![PadAction::Command(keys::MAP)]);
         assert_eq!(press(&mut p, "guide"), vec![PadAction::Command(keys::HELP)]);
-        assert_eq!(press(&mut p, "leftstick"), vec![PadAction::Command(keys::CHARSHEET)]);
+        assert_eq!(keys_of(&press(&mut p, "leftstick")), vec![b'Z']);
         assert_eq!(press(&mut p, "start"), vec![PadAction::Options]);
         assert_eq!(p.event(PadEvent::Button("back", true), true, false), vec![], "no screens over a window");
         assert_eq!(press(&mut p, "misc1"), vec![], "unknown buttons do nothing");

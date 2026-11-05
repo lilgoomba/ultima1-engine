@@ -239,6 +239,7 @@ pub mod m {
     pub const FIRE: usize = 0x0BD0;
     pub const FIRE_WHAT: usize = 0x0BD6;
     pub const CANNONS: usize = 0x0BDC;
+    pub const LASERS: usize = 0x0BE6;
     pub const DROP_WEAPON: usize = 0x040E;
     pub const DROP_ARMOUR: usize = 0x041A;
 

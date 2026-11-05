@@ -7,7 +7,7 @@
 use crate::exe::Exe;
 use crate::game::Game;
 use crate::gamedir::GameDir;
-use crate::io::{Halt, Io, IoResult};
+use crate::io::{keys, Halt, Io, IoResult};
 use crate::rng::U1Rng;
 use crate::save::off;
 use crate::sound::Sfx;
@@ -23,6 +23,9 @@ const C_WHITE: u8 = 15;
 const C_BLUE: u8 = 1;
 const C_RED: u8 = 12;
 const C_FRAME: u8 = 7;
+/// The ship choice: the picked ship (yellow) and the hint (grey).
+const C_PICK: u8 = 14;
+const C_HINT: u8 = 7;
 
 /// Data-segment offsets in SPACE.EXE.
 mod d {
@@ -260,6 +263,7 @@ struct Space<'a> {
 /// Run the space program from a shuttle launch until it hands back to
 /// OUT. Assumes the record is in sync with the live game.
 pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
+    io.music(crate::music::Track::Space);
     let Some(files) = g.space.take() else { return Ok(SpaceEnd::Landed) };
     io.in_space(true);
     let mut s = Space::new(g, io, files);
@@ -442,10 +446,24 @@ impl<'a> Space<'a> {
             // DOSBox shows every ~165 s.
             let mut n: u16 = 0;
             self.prompt();
+            // At the command prompt the engine's keys (F3, rebound extra
+            // keys) are delivered as in OUT.
+            self.io.command_prompt(true);
             let key = loop {
                 self.tick()?;
                 let k = self.io.poll_now(&self.g.term)?;
                 self.switch_video();
+                if k == Some(keys::HELP) || k == Some(keys::MAP) {
+                    // F3: the command help for space (with the help
+                    // screen on); Tab has no map out here, so it is
+                    // ignored as when the map is off.
+                    if k == Some(keys::HELP) && self.io.features().help {
+                        self.io.command_prompt(false);
+                        self.show_help()?;
+                        self.io.command_prompt(true);
+                    }
+                    continue;
+                }
                 n = n.wrapping_add(1);
                 if !self.fp {
                     self.delay(2)?;
@@ -457,6 +475,7 @@ impl<'a> Space<'a> {
                     break b' ';
                 }
             };
+            self.io.command_prompt(false);
             self.command(key)?;
             if self.redraw {
                 self.draw_all();
@@ -552,6 +571,19 @@ impl<'a> Space<'a> {
                 self.snd(1);
             }
         }
+        Ok(())
+    }
+
+    /// F3 in space: the space command help over the screen until a key,
+    /// then the screen exactly as it was.
+    fn show_help(&mut self) -> R<()> {
+        let saved = self.g.term.clone();
+        self.g.draw_space_help();
+        self.io.view_open(Some(keys::HELP));
+        let r = self.io.key(&self.g.term);
+        self.io.view_open(None);
+        r?;
+        self.g.term = saved;
         Ok(())
     }
 
@@ -1290,14 +1322,15 @@ impl<'a> Space<'a> {
             self.println(d::VACUUM_2);
             return self.death();
         }
-        if self.g.coin() < 500 {
+        let fee = if self.io.features().docking_fee { 500 } else { 0 };
+        if self.g.coin() < fee {
             self.println(d::FEE_1);
             self.println(d::FEE_2);
             self.puts(d::FEE_3);
             self.io.key(&self.g.term)?;
             self.g.term.println("");
         } else {
-            self.g.add(off::COIN, -500);
+            self.g.add(off::COIN, -fee);
             let s = self.slot_mut();
             s.fuel = Self::max_fuel(s.ty);
             s.shield = Self::max_shield(s.ty);
@@ -1305,7 +1338,7 @@ impl<'a> Space<'a> {
         if count > 1 {
             loop {
                 self.puts(d::CHOOSE);
-                let k = self.io.key(&self.g.term)?;
+                let k = self.choose_key()?;
                 if (b' '..=b'~').contains(&k) {
                     self.g.term.print(&(k as char).to_string());
                 }
@@ -1333,6 +1366,48 @@ impl<'a> Space<'a> {
         self.prompt();
         self.g.term.cursor(1, 24);
         Ok(())
+    }
+
+    /// The engine's addition to "Choose thy ship: ": an arrow picks the
+    /// ship docked at that side of the station (shown after the prompt in
+    /// yellow), Enter or Space takes it. Any other key is the original's
+    /// answer (1-4); until an arrow is pressed nothing on screen differs.
+    fn choose_key(&mut self) -> R<u8> {
+        let (col, row) = (self.g.term.col, self.g.term.row);
+        if self.io.features().hints {
+            self.g.term.print_at_attr(col, row, "(arrows)", C_HINT);
+            self.g.term.cursor(col, row);
+        }
+        let mut sel: Option<i16> = None;
+        loop {
+            let k = self.io.key(&self.g.term)?;
+            let side = match k {
+                keys::LEFT => "left",
+                keys::RIGHT => "right",
+                keys::UP => "top",
+                keys::DOWN => "bottom",
+                keys::ENTER | b' ' if sel.is_some() => {
+                    self.g.term.print_at(col, row, &" ".repeat(12));
+                    self.g.term.cursor(col, row);
+                    return Ok(b'1' + sel.unwrap_or(0) as u8);
+                }
+                _ => {
+                    if sel.is_some() || self.io.features().hints {
+                        self.g.term.print_at(col, row, &" ".repeat(12));
+                        self.g.term.cursor(col, row);
+                    }
+                    return Ok(k);
+                }
+            };
+            let found = (0..4).filter_map(|i| self.docked_port(i)).find(|&p| self.ptr(d::PORT_NAMES, p as usize).trim() == side);
+            if let Some(p) = found {
+                sel = Some(p);
+                let pn = self.ptr(d::PORT_NAMES, p as usize);
+                let t = format!("{} {:<10}", p + 1, pn.trim());
+                self.g.term.print_at_attr(col, row, &t, C_PICK);
+                self.g.term.cursor(col, row);
+            }
+        }
     }
 
     /// `1a97`: Pass (top-down) or re-centre the sights.
@@ -1540,15 +1615,26 @@ impl<'a> Space<'a> {
         self.g.term.cursor(10, 24);
         self.srand(s);
         self.new_stars();
+        // The jump's streaks: star mode 1 draws without erasing (each star
+        // leaves a trail out from the centre), mode 3 erases them again.
+        // The original runs these loops flat out, which on its PC took
+        // about a second and a half each; a vertical retrace every second
+        // step keeps that pace here (unpaced they would never be seen).
         self.star_mode = 1;
-        for _ in 0..=200 {
+        for i in 0..=200 {
             self.stars();
+            if i % 2 == 1 {
+                self.retrace(1)?;
+            }
         }
         self.srand(s);
         self.new_stars();
         self.star_mode = 3;
-        for _ in 0..200 {
+        for i in 0..200 {
             self.stars();
+            if i % 2 == 1 {
+                self.retrace(1)?;
+            }
         }
         self.star_mode = 2;
         let mut sp = 8;
@@ -1786,5 +1872,72 @@ mod real_game {
         let _ = s.dock();
         assert_eq!(s.g.coin(), 100);
         assert_eq!(s.sec().slots[0].fuel, 7);
+        // "Docking fees" off: no charge, the refill anyway.
+        let mut io = ScriptIo::from_text("x1");
+        io.qol.docking_fee = false;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.g.rec.set_u16(off::COIN, 100);
+        let mut h = *s.sec();
+        s.cur = 0;
+        h.slots[0].fuel = 7;
+        s.gal[3][3] = h;
+        let _ = s.dock();
+        assert_eq!(s.g.coin(), 100);
+        assert_eq!(s.sec().slots[0].fuel, Space::max_fuel(s.sec().slots[0].ty));
+        // The suit is still needed.
+        let mut io = ScriptIo::from_text("x1");
+        io.qol.docking_fee = false;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.g.rec.set_u16(off::READY_ARMOUR, 3);
+        let _ = s.dock();
+        assert_eq!(s.g.hits(), 0);
+    }
+
+    #[test]
+    fn arrows_pick_the_ship_at_that_side() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::READY_ARMOUR, 4);
+        g.rec.set_u16(off::COIN, 1000);
+        for (tok, side) in [("{left}", "left"), ("{right}", "right"), ("{up}", "top"), ("{down}", "bottom")] {
+            let mut io = ScriptIo::from_text(&format!("{tok}{{enter}}1"));
+            let mut s = Space::new(&mut g, &mut io, files.clone());
+            s.make_galaxy();
+            s.g.rec.set_u16(off::COIN, 1000);
+            let name = |s: &Space, i: usize| s.docked_port(i).map(|p| s.ptr(d::PORT_NAMES, p as usize).trim().to_string());
+            let there = (0..4).any(|i| name(&s, i).as_deref() == Some(side));
+            let _ = s.dock();
+            if there {
+                assert_eq!(name(&s, s.cur).as_deref(), Some(side));
+            } else {
+                // No ship there: the arrow does nothing and the 1 decides.
+                assert_eq!(s.docked_port(s.cur), Some(0), "{side}");
+            }
+        }
+    }
+
+    #[test]
+    fn f3_shows_the_space_help_and_puts_the_screen_back() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("x");
+        io.qol.help = true;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.frame();
+        s.draw_all();
+        let before = s.g.term.px.clone();
+        assert!(s.show_help().is_ok());
+        assert!(s.g.term.px == before);
+        // A script that ends with the help up leaves it showing.
+        let mut io = ScriptIo::from_text("");
+        io.qol.help = true;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.frame();
+        s.draw_all();
+        let before = s.g.term.px.clone();
+        assert!(s.show_help().is_err());
+        assert!(s.g.term.px != before);
     }
 }

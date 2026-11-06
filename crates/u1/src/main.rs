@@ -32,7 +32,7 @@ use u1_assets::explore::Explore;
 use u1_assets::game::{Assets, Game, VideoSet};
 use u1_assets::gamedir::{self, GameDir, VideoMode};
 use u1_assets::gen::GenEnd;
-use u1_assets::input::{PadAction, PadEvent, PadInput, Repeater};
+use u1_assets::input::{HeldArrows, PadAction, PadEvent, PadInput, Repeater};
 use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
 use u1_assets::keymap::{KeyMap, RebindKey, RebindScreen};
 use u1_assets::locations::LocationTable;
@@ -747,6 +747,8 @@ struct SdlIo {
     pad: PadInput,
     /// The engine's arrow repeat (SPEC §23.3).
     held: Repeater,
+    /// Directions currently down (steady aim); cleared on focus/menu.
+    arrows: HeldArrows,
     /// The gamepad subsystem and the pads open.
     gc: Option<sdl2::GameControllerSubsystem>,
     pads: Vec<sdl2::controller::GameController>,
@@ -1053,6 +1055,8 @@ impl SdlIo {
                     match win_event {
                         We::FocusLost => {
                             self.focus_lost = true;
+                            self.held.clear();
+                            self.arrows.clear();
                             if !self.in_menu {
                                 self.in_menu = true;
                                 self.modal_wanted = Some(Modal::Paused);
@@ -1153,12 +1157,17 @@ impl SdlIo {
                         self.menu_keys.push_back((c.unwrap_or(0), name));
                         continue;
                     }
-                    if let Some(a) = c.filter(|&c| is_arrow(c) && self.qol.repeat) {
-                        // The engine's repeat replaces the system's.
-                        if repeat {
-                            continue;
+                    if let Some(a) = c.filter(|&c| is_arrow(c)) {
+                        if !repeat {
+                            self.arrows.press(a, k.into_i32());
                         }
-                        self.hold_arrow(a, k.into_i32());
+                        if self.qol.repeat {
+                            // The engine's repeat replaces the system's.
+                            if repeat {
+                                continue;
+                            }
+                            self.hold_arrow(a, k.into_i32());
+                        }
                     }
                     let extra = self.keymap.code_for(&name).filter(|&x| self.wanted_code(x));
                     if repeat && self.fresh_wait {
@@ -1172,6 +1181,7 @@ impl SdlIo {
                 Event::MouseButtonDown { .. } if self.fresh_wait && !self.in_menu => self.clicked = true,
                 Event::KeyUp { keycode: Some(k), .. } => {
                     self.held.release(k.into_i32());
+                    self.arrows.release(k.into_i32());
                 }
                 Event::ControllerDeviceAdded { which, .. } if self.qol.gamepad => self.open_pad(which),
                 Event::ControllerButtonDown { .. } | Event::ControllerButtonUp { .. } | Event::ControllerAxisMotion { .. } if self.qol.gamepad => {
@@ -1242,8 +1252,16 @@ impl SdlIo {
                 PadAction::Command(c) if self.wanted_code(c) => self.pending.push_back((None, Some(c))),
                 PadAction::Command(_) => {}
                 PadAction::Options => self.open(Modal::Options),
-                PadAction::Hold(a, by) => self.hold_arrow(a, by),
-                PadAction::Release(by) => self.held.release(by),
+                PadAction::Hold(a, by) => {
+                    self.arrows.press(a, by);
+                    if self.qol.repeat {
+                        self.hold_arrow(a, by);
+                    }
+                }
+                PadAction::Release(by) => {
+                    self.held.release(by);
+                    self.arrows.release(by);
+                }
             }
         }
     }
@@ -1338,6 +1356,21 @@ impl Io for SdlIo {
         Ok(self.next_key())
     }
 
+    fn held_aim(&self) -> (i8, i8) {
+        if self.in_menu {
+            (0, 0)
+        } else {
+            self.arrows.dir()
+        }
+    }
+
+    fn aim_clock_ms(&self) -> u64 {
+        // Steady clock from process start; only deltas matter.
+        static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        let start = START.get_or_init(std::time::Instant::now);
+        start.elapsed().as_millis() as u64
+    }
+
     fn retrace(&mut self, t: &Term, n: u32) -> IoResult<()> {
         self.wait(t, self.scaled(Duration::from_micros(14_286) * n, Wait::Poll))
     }
@@ -1349,6 +1382,7 @@ impl Io for SdlIo {
     fn any_key(&mut self, t: &Term) -> IoResult<()> {
         self.pending.clear();
         self.held.clear();
+        self.arrows.clear();
         self.clicked = false;
         self.fresh_wait = true;
         let r = loop {
@@ -1570,6 +1604,7 @@ impl SdlIo {
         let paused = opened.elapsed();
         self.next = Instant::now() + POLL;
         self.held.clear();
+        self.arrows.clear();
         self.present(t)?;
         Ok(paused)
     }
@@ -1747,6 +1782,9 @@ impl SdlIo {
         }
         if !q.repeat {
             self.held.clear();
+        }
+        if !q.steady_aim {
+            self.arrows.clear();
         }
         if q.gamepad && !old.gamepad {
             self.open_pads();
@@ -1989,6 +2027,7 @@ fn play(a: &Args) -> Result<(), String> {
         keymap: cfg.keys.clone(),
         pad: PadInput::new(cfg.pad.clone()),
         held: Repeater::default(),
+        arrows: HeldArrows::default(),
         // Opened even with the setting off (it reads nothing until a pad
         // is opened), so the menu can turn the gamepad on.
         gc: sdl.game_controller().map_err(|e| eprintln!("no gamepad support: {e}")).ok(),

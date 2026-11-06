@@ -6,6 +6,7 @@
 //! `Io` whenever it waits; the SDL front end implements it with a window,
 //! tests and the screenshot mode with a list of keys.
 
+use std::cell::Cell;
 use std::collections::VecDeque;
 
 use crate::term::Term;
@@ -130,6 +131,24 @@ pub trait Io {
         self.poll(t)
     }
 
+    /// Directions held for space steady aim: each axis in -1, 0 or 1.
+    /// Cleared on focus loss and when a menu opens. Default: none.
+    fn held_aim(&self) -> (i8, i8) {
+        (0, 0)
+    }
+
+    /// Monotonic milliseconds for time-based steady aim. Scripted tests
+    /// drive this; the SDL front end uses a real clock.
+    fn aim_clock_ms(&self) -> u64 {
+        0
+    }
+
+    /// Tests: set held aim directions.
+    fn set_held_aim(&mut self, _d: (i8, i8)) {}
+
+    /// Tests: set the aim clock.
+    fn set_aim_clock_ms(&mut self, _ms: u64) {}
+
     /// Wait for a fresh key press (a mouse click or pad button counts
     /// too in front ends that have them); keys typed ahead and held-key
     /// repeats do not end it.
@@ -208,6 +227,10 @@ pub struct ScriptIo {
     pub qol: crate::qol::Qol,
     /// The music asked for, a repeat of the last one left out.
     pub music: Vec<crate::music::Track>,
+    /// Held aim directions for tests (`held_aim`).
+    pub held_aim: Cell<(i8, i8)>,
+    /// Scripted clock for time-based steady aim.
+    pub clock_ms: Cell<u64>,
 }
 
 impl ScriptIo {
@@ -273,6 +296,22 @@ impl ScriptIo {
 }
 
 impl Io for ScriptIo {
+    fn held_aim(&self) -> (i8, i8) {
+        self.held_aim.get()
+    }
+
+    fn aim_clock_ms(&self) -> u64 {
+        self.clock_ms.get()
+    }
+
+    fn set_held_aim(&mut self, d: (i8, i8)) {
+        self.held_aim.set(d);
+    }
+
+    fn set_aim_clock_ms(&mut self, ms: u64) {
+        self.clock_ms.set(ms);
+    }
+
     fn music(&mut self, t: crate::music::Track) {
         if self.music.last() != Some(&t) {
             self.music.push(t);

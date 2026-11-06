@@ -6,8 +6,11 @@ No tagged releases yet; entries are by branch.
 
 ### Added
 - Steady aim option (F1 → Controls, `steady_aim`, off by default): in the
-  space front view the sights move only while an arrow is pressed or
-  held, instead of the original's continuous drift.
+  space front view the sights glide while an arrow or pad direction is
+  held, driven by elapsed time (not OS key-repeat), and stop on release,
+  focus loss or the options menu. 2 fuel per newly held direction.
+- Enemy speed option (F1 → Controls, `enemy_speed`, Original by default;
+  Half slows only front-view fighter flee/grow).
 
 ## polish-1 (merged into main)
 

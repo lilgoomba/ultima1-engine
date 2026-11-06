@@ -218,8 +218,9 @@ const FLAMES: [[&[Flame]; 4]; 3] = [
     ],
 ];
 
-/// Steady aim: pixels the sights move per arrow press or repeat.
-const STEADY_STEP: i16 = 4;
+/// Steady aim: pixels per second while a direction is held (~4 px per
+/// 16 ms frame, close to the original's per-tick drift rate).
+const STEADY_AIM_PX_PER_SEC: f32 = 240.0;
 
 fn sign(v: i16) -> i16 {
     v.signum()
@@ -251,8 +252,15 @@ struct Space<'a> {
     cy: i16,
     dvx: i16,
     dvy: i16,
-    /// Steady aim: the direction last paid for (0 none).
-    aim_dir: i16,
+    /// Steady aim: bit0 left, bit1 right, bit2 up, bit3 down already paid.
+    aim_paid: u8,
+    /// Sub-pixel leftovers for time-based steady aim.
+    aim_fx: f32,
+    aim_fy: f32,
+    /// Last `aim_clock_ms` sample.
+    aim_last_ms: Option<u64>,
+    /// Front-view enemy phase so Half speed can skip every other tick.
+    enemy_phase: u8,
     star_mode: i16,
     rel: [(i16, i16); 40],
     old: [(i16, i16); 40],
@@ -313,7 +321,11 @@ impl<'a> Space<'a> {
             cy: 79,
             dvx: 0,
             dvy: 0,
-            aim_dir: 0,
+            aim_paid: 0,
+            aim_fx: 0.0,
+            aim_fy: 0.0,
+            aim_last_ms: None,
+            enemy_phase: 0,
             star_mode: 2,
             rel: [(0, 0); 40],
             old: [(0, 0); 40],
@@ -475,16 +487,20 @@ impl<'a> Space<'a> {
                     self.delay(2)?;
                 }
                 if let Some(k) = k {
-                    break k.to_ascii_uppercase();
+                    let k = k.to_ascii_uppercase();
+                    // Steady aim in the front view: arrows are held-state
+                    // only (movement is in the tick). OS key-repeat must
+                    // not become commands or re-charge fuel.
+                    if self.fp && self.io.features().steady_aim && matches!(k, keys::LEFT | keys::RIGHT | keys::UP | keys::DOWN) {
+                        continue;
+                    }
+                    break k;
                 }
                 if n >= 1500 {
                     break b' ';
                 }
             };
             self.io.command_prompt(false);
-            if !matches!(key, keys::LEFT | keys::RIGHT | keys::UP | keys::DOWN) {
-                self.aim_dir = 0;
-            }
             self.command(key)?;
             if self.redraw {
                 self.draw_all();
@@ -1108,6 +1124,9 @@ impl<'a> Space<'a> {
 
     /// `3330`: one tick of front view: stars and the fighter.
     fn fp_tick(&mut self) -> R<()> {
+        if self.io.features().steady_aim {
+            self.steady_aim_tick();
+        }
         if self.flame != 0 {
             self.flame -= 1;
         }
@@ -1122,8 +1141,17 @@ impl<'a> Space<'a> {
         self.eoy = self.ey;
         let dx = self.cx - self.ex;
         let dy = self.cy - self.ey;
-        self.ex -= sign(dx);
-        self.ey -= sign(dy);
+        // Half enemy speed: flee and grow only on every other tick. Aim,
+        // stars, laser and alien fire still run every tick.
+        self.enemy_phase = self.enemy_phase.wrapping_add(1);
+        let enemy_step = match self.io.features().enemy_speed {
+            crate::qol::EnemySpeed::Original => true,
+            crate::qol::EnemySpeed::Half => self.enemy_phase % 2 == 0,
+        };
+        if enemy_step {
+            self.ex -= sign(dx);
+            self.ey -= sign(dy);
+        }
         if self.ex > 280 || self.ex < 30 || self.ey > 125 || self.ey < 24 {
             if self.eox != 0 {
                 self.fighter(self.eox, self.eoy, self.esize, false);
@@ -1133,17 +1161,19 @@ impl<'a> Space<'a> {
             if self.eox != 0 {
                 self.fighter(self.eox, self.eoy, self.esize, false);
             }
-            if (self.hyper && self.grow >= 8 - self.speed) || self.grow > 15 {
-                let r = self.rnd(1, (self.speed + 3) * 10);
-                if r > 20 || self.hyper {
-                    self.esize += 1;
+            if enemy_step {
+                if (self.hyper && self.grow >= 8 - self.speed) || self.grow > 15 {
+                    let r = self.rnd(1, (self.speed + 3) * 10);
+                    if r > 20 || self.hyper {
+                        self.esize += 1;
+                    }
+                    if self.esize > 6 {
+                        self.spawn();
+                    }
+                    self.grow = 0;
+                } else {
+                    self.grow += 1;
                 }
-                if self.esize > 6 {
-                    self.spawn();
-                }
-                self.grow = 0;
-            } else {
-                self.grow += 1;
             }
         }
         if self.ex != 0 {
@@ -1215,9 +1245,6 @@ impl<'a> Space<'a> {
         if !self.fp {
             return self.td_move(dir);
         }
-        if self.io.features().steady_aim {
-            return self.steady_arrow(dir);
-        }
         let name = self.ptr(d::FP_NAMES, dir as usize);
         self.g.term.println(&name);
         if self.slot().fuel < 2 {
@@ -1234,35 +1261,80 @@ impl<'a> Space<'a> {
         Ok(())
     }
 
-    /// Steady aim (option): one step of the sights per press, and no
-    /// drift afterwards. A held arrow repeats, so the sights move while it
-    /// is held and stop when it is let go. The original's 2 fuel is paid
-    /// when a direction is started, not for each repeat of it.
-    fn steady_arrow(&mut self, dir: i16) -> R<()> {
+    /// Steady aim (option): move the sights while arrows are held, at a
+    /// fixed pixels-per-second rate from the aim clock (not OS key
+    /// repeat). Stops on release. 2 fuel is paid when a direction starts,
+    /// not each frame.
+    fn steady_aim_tick(&mut self) {
         self.dvx = 0;
         self.dvy = 0;
-        if self.aim_dir != dir {
+        let (hx, hy) = self.io.held_aim();
+        let now = self.io.aim_clock_ms();
+        if hx == 0 && hy == 0 {
+            self.aim_paid = 0;
+            self.aim_fx = 0.0;
+            self.aim_fy = 0.0;
+            self.aim_last_ms = Some(now);
+            return;
+        }
+        // bit0 left, bit1 right, bit2 up, bit3 down
+        let mut bits = 0u8;
+        if hx < 0 {
+            bits |= 1;
+        }
+        if hx > 0 {
+            bits |= 2;
+        }
+        if hy < 0 {
+            bits |= 4;
+        }
+        if hy > 0 {
+            bits |= 8;
+        }
+        let fresh = bits & !self.aim_paid;
+        if fresh != 0 {
+            // One name / 2 fuel per newly held axis (not per frame).
+            let dir = if fresh & 1 != 0 {
+                1
+            } else if fresh & 2 != 0 {
+                2
+            } else if fresh & 4 != 0 {
+                3
+            } else {
+                4
+            };
             let name = self.ptr(d::FP_NAMES, dir as usize);
             self.g.term.println(&name);
             if self.slot().fuel < 2 {
                 self.println(d::NOT_ENOUGH_FUEL);
-                return Ok(());
+                self.aim_last_ms = Some(now);
+                return;
             }
             self.use_fuel(2);
-            self.aim_dir = dir;
+            self.aim_paid |= fresh;
         }
-        let (sx, sy) = match dir {
-            1 => (-STEADY_STEP, 0),
-            2 => (STEADY_STEP, 0),
-            3 => (0, -STEADY_STEP),
-            _ => (0, STEADY_STEP),
+        let dt = match self.aim_last_ms {
+            Some(t) => now.saturating_sub(t),
+            None => 0,
         };
+        self.aim_last_ms = Some(now);
+        if dt == 0 {
+            return;
+        }
+        let step = STEADY_AIM_PX_PER_SEC * (dt as f32) / 1000.0;
+        self.aim_fx += hx as f32 * step;
+        self.aim_fy += hy as f32 * step;
+        let sx = self.aim_fx.trunc() as i16;
+        let sy = self.aim_fy.trunc() as i16;
+        if sx == 0 && sy == 0 {
+            return;
+        }
+        self.aim_fx -= sx as f32;
+        self.aim_fy -= sy as f32;
         self.crosshair(BLACK);
-        // The original's limits: the sights stay inside 20..300 x 20..140.
         self.cx = (self.cx + sx).clamp(24, 296);
         self.cy = (self.cy + sy).clamp(24, 136);
         self.crosshair(C_WHITE);
-        Ok(())
     }
 
     /// `16d3`: top-down turning, thrust and retro.
@@ -1843,7 +1915,7 @@ mod real_game {
     }
 
     #[test]
-    fn steady_aim_stops_the_sights_and_the_original_drifts() {
+    fn steady_aim_is_time_based_and_stops_on_release() {
         let Some((mut g, files)) = setup() else { return };
         // Original: one press sets a drift that goes on frame after frame.
         let mut io = ScriptIo::from_text("");
@@ -1856,25 +1928,76 @@ mod real_game {
             s.stars();
         }
         assert_eq!((s.cx, s.dvx, s.slot().fuel), (159 + 20, 4, 498));
-        // Steady aim: a step per press, nothing after; 2 fuel per direction.
+
+        // Steady aim: held right for 100 ms at 240 px/s -> 24 px; release stops.
         let mut io = ScriptIo::from_text("");
         io.qol.steady_aim = true;
         let mut s = Space::new(&mut g, &mut io, files.clone());
         s.make_galaxy();
         s.fp = true;
         s.slot_mut().fuel = 500;
-        assert!(s.cmd_arrow(2).is_ok());
-        assert!(s.cmd_arrow(2).is_ok());
-        for _ in 0..5 {
-            s.stars();
-        }
-        assert_eq!((s.cx, s.cy, s.dvx, s.slot().fuel), (159 + 2 * STEADY_STEP, 79, 0, 498));
-        assert!(s.cmd_arrow(3).is_ok());
-        assert_eq!((s.cy, s.slot().fuel), (79 - STEADY_STEP, 496));
-        for _ in 0..100 {
-            assert!(s.cmd_arrow(2).is_ok());
-        }
-        assert_eq!(s.cx, 296, "kept inside the view");
+        s.io.set_held_aim((1, 0));
+        s.io.set_aim_clock_ms(0);
+        s.steady_aim_tick(); // pay fuel, dt=0
+        assert_eq!(s.slot().fuel, 498);
+        assert_eq!(s.cx, 159);
+        s.io.set_aim_clock_ms(100);
+        s.steady_aim_tick();
+        assert_eq!((s.cx, s.dvx, s.slot().fuel), (159 + 24, 0, 498), "24 px in 100 ms, fuel once");
+        // Another 100 ms while held: another 24 px, still no extra fuel.
+        s.io.set_aim_clock_ms(200);
+        s.steady_aim_tick();
+        assert_eq!((s.cx, s.slot().fuel), (159 + 48, 498));
+        // Release: no further motion.
+        s.io.set_held_aim((0, 0));
+        s.io.set_aim_clock_ms(500);
+        s.steady_aim_tick();
+        assert_eq!(s.cx, 159 + 48);
+        // Re-hold charges again.
+        s.io.set_held_aim((1, 0));
+        s.io.set_aim_clock_ms(500);
+        s.steady_aim_tick();
+        assert_eq!(s.slot().fuel, 496);
+    }
+
+    #[test]
+    fn enemy_half_speed_flees_slower_without_changing_aim() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut run = |half: bool| {
+            let mut io = ScriptIo::from_text("");
+            if half {
+                io.qol.enemy_speed = crate::qol::EnemySpeed::Half;
+            }
+            let mut s = Space::new(&mut g, &mut io, files.clone());
+            s.make_galaxy();
+            s.fp = true;
+            s.sec_mut().enemies = 3;
+            s.ex = 100;
+            s.ey = 79;
+            s.cx = 159;
+            s.cy = 79;
+            s.esize = 1;
+            s.grow = 0;
+            // Skip stars/retrace/drawing: drive the flee step only.
+            let start = s.ex;
+            for _ in 0..10 {
+                s.enemy_phase = s.enemy_phase.wrapping_add(1);
+                let step = match s.io.features().enemy_speed {
+                    crate::qol::EnemySpeed::Original => true,
+                    crate::qol::EnemySpeed::Half => s.enemy_phase % 2 == 0,
+                };
+                if step {
+                    let dx = s.cx - s.ex;
+                    s.ex -= sign(dx);
+                }
+            }
+            (start, s.ex, s.cx)
+        };
+        let (a0, a1, acx) = run(false);
+        let (b0, b1, bcx) = run(true);
+        assert_eq!(acx, bcx, "sights untouched");
+        assert_eq!(a0 - a1, 10, "original flees 1 px/tick");
+        assert_eq!(b0 - b1, 5, "half flees every other tick");
     }
 
     #[test]

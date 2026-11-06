@@ -1910,11 +1910,17 @@ vacuum or reflect suit readied, the space doors still kill).
 **Steady aim.** Off by default (F1 Controls, `steady_aim`). In the
 original's front view an arrow sets a drift of 4 pixels a frame for the
 sights, which keeps going until another arrow, Space (centre) or the edge
-of the view, and costs 2 fuel each press. With steady aim each arrow press
-(or key repeat of a held arrow) moves the sights 4 pixels at once and
-leaves no drift, so they stop when the key is let go; 2 fuel is paid when
-a direction is started, not for each repeat, and the sights keep inside
-the original's limits.
+of the view, and costs 2 fuel each press. With steady aim the sights move
+only while a direction is held (keyboard or pad), at a fixed pixels-per-
+second rate from a clock, not from OS key-repeat; they stop on release,
+when the window loses focus, or when a menu opens. 2 fuel is paid when a
+direction starts being held, not each frame. The sights keep inside the
+original's limits.
+
+**Enemy speed.** Original by default (F1 Controls, `enemy_speed`). Half
+makes a front-view fighter flee and grow only every other tick, so it
+stays in view about twice as long. Aim, star field, laser fire, alien
+fire chance and damage are unchanged. Top-down sectors are unchanged.
 
 **F3 in space.** With the help screen on (F1 "Help screen"), F3 at the
 space command prompt shows the space commands (views, turning, thrust,

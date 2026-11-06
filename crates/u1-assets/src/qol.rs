@@ -20,6 +20,33 @@ pub enum Scaling {
 
 /// How fast food goes outdoors (an optional engine rule change).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EnemySpeed {
+    #[default]
+    /// The original: the fighter flees one pixel per front-view tick.
+    Original,
+    /// Half: the fighter flees and grows every other tick, so it stays
+    /// in view about twice as long. Aim, fire, stars and damage are unchanged.
+    Half,
+}
+
+impl EnemySpeed {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "original" | "full" => Some(Self::Original),
+            "half" => Some(Self::Half),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Original => "Original",
+            Self::Half => "Half",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FoodUse {
     /// The original's rate.
     #[default]
@@ -186,6 +213,9 @@ pub struct Qol {
     /// repeat) and stay put, instead of the original's drift until
     /// another direction or the edge.
     pub steady_aim: bool,
+    /// Front-view fighters flee (and grow) at this pace. Aim, fire and
+    /// the rest of the simulation are unchanged.
+    pub enemy_speed: EnemySpeed,
 }
 
 impl Default for Qol {
@@ -222,6 +252,7 @@ impl Default for Qol {
             sign_wait: true,
             docking_fee: true,
             steady_aim: false,
+            enemy_speed: EnemySpeed::Original,
         }
     }
 }

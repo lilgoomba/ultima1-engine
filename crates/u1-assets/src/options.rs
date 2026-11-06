@@ -57,6 +57,7 @@ pub enum Row {
     SignWait,
     DockFee,
     SteadyAim,
+    EnemySpeed,
 }
 
 /// The menu's pages (tabs), in order.
@@ -88,14 +89,14 @@ impl Page {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
             Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::SignWait, Row::DockFee],
-            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::SteadyAim, Row::Keys],
+            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::SteadyAim, Row::EnemySpeed, Row::Keys],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
         }
     }
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 34] = [
+pub const ROWS: [Row; 35] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
@@ -121,6 +122,7 @@ pub const ROWS: [Row; 34] = [
     Row::RepeatRate,
     Row::Gamepad,
     Row::SteadyAim,
+    Row::EnemySpeed,
     Row::Keys,
     Row::Slots,
     Row::Log,
@@ -179,6 +181,7 @@ impl Row {
             Row::SignWait => "Sign wait",
             Row::DockFee => "Docking fees",
             Row::SteadyAim => "Steady aim",
+            Row::EnemySpeed => "Enemy speed",
         }
     }
 
@@ -218,7 +221,8 @@ impl Row {
             Row::ConfirmQuit => "Ask before closing the window with progress not saved.",
             Row::SignWait => "Keep a sign's words up until a key.",
             Row::DockFee => "Pay 500 coin to refuel at a station.",
-            Row::SteadyAim => "Space sights move only while an arrow is pressed.",
+            Row::SteadyAim => "Space sights glide while an arrow is held; stop on release.",
+            Row::EnemySpeed => "How fast front-view fighters flee and grow (aim and fire unchanged).",
         }
     }
 }
@@ -342,6 +346,7 @@ impl OptionsMenu {
                 Row::SignWait => q.sign_wait = d.sign_wait,
                 Row::DockFee => q.docking_fee = d.docking_fee,
                 Row::SteadyAim => q.steady_aim = d.steady_aim,
+                Row::EnemySpeed => q.enemy_speed = d.enemy_speed,
             }
         }
     }
@@ -406,6 +411,7 @@ impl OptionsMenu {
             Row::SignWait => on(q.sign_wait),
             Row::DockFee => on(q.docking_fee),
             Row::SteadyAim => on(q.steady_aim),
+            Row::EnemySpeed => q.enemy_speed.label().into(),
         }
     }
 
@@ -478,6 +484,12 @@ impl OptionsMenu {
                     Row::SignWait => q.sign_wait ^= true,
                     Row::DockFee => q.docking_fee ^= true,
                     Row::SteadyAim => q.steady_aim ^= true,
+                    Row::EnemySpeed => {
+                        q.enemy_speed = match q.enemy_speed {
+                            qol::EnemySpeed::Original => qol::EnemySpeed::Half,
+                            qol::EnemySpeed::Half => qol::EnemySpeed::Original,
+                        }
+                    }
                 }
                 if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);

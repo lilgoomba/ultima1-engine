@@ -527,10 +527,12 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | Sign wait | **on** | | A sign's words stay up behind "Press any key". Off: the original's short pause. |
 | Docking fees | **on** | | The original's 500-coin refuel fee at a space station. Off: refuelling is free (the suit rule is unchanged). |
 | Ship choice by arrow | always | Left/Right, Enter/Space, pad A | At "Choose thy ship", the arrows pick the port on that side (shown in yellow); digits still work. |
-| Steady aim | off | arrows / pad (front view in space) | F1 → Controls. While an arrow is held the sights glide at a fixed speed (not OS key-repeat) and stop on release, focus loss or the options menu; 2 fuel per newly held direction. Off: the original's drift. |
-| Enemy speed | Original | | F1 → Controls. Half: front-view fighters flee and grow every other tick (about twice as long on screen). Aim, lasers, alien fire chance, stars and damage are unchanged. |
-| Space map | Original | I in space | F1 → Controls. Enhanced: a labelled 7×7 grid, legend (fighters / star / station / empty) and a steady yellow “you” frame; same intel as the original scan. |
-| Kill counter | off | | F1 → Controls. Shows fighter kills toward Space Ace on the space HUD as `K:n/20`, or `Ace!` once you have 20+ (save word 0xA6; keeps counting after Ace). |
+| Steady aim | off | arrows / pad (front view in space) | F1 → Space. While an arrow is held the sights glide at a fixed speed (not OS key-repeat) and stop on release, focus loss or the options menu; 2 fuel per newly held direction. Off: the original's drift. |
+| Enemy speed | Original | | F1 → Space. Half: front-view fighters flee and grow every other tick (about twice as long on screen). Aim, lasers, alien fire chance, stars and damage are unchanged. |
+| Space map | Original | I in space | F1 → Space. Enhanced: a labelled 7×7 grid, legend (fighters / star / station / empty) and a steady yellow “you” frame; same intel as the original scan. |
+| Hit box | off | | F1 → Space. Slightly larger fighter hit box (+2 px); damage unchanged. |
+| Ace need | 20 | | F1 → Space. Kills for Space Ace: 20, 10 or 5 (HUD and award). |
+| Kill counter | off | | F1 → Space. HUD `K:n/N` or `Ace!` (N from Ace need). |
 | F3 in space | with Help screen | F3 | Lists the space commands; F3 or any key closes it. |
 | Hyperspace pacing | always | H | The "Lightspeed!" star streaks are paced (about 1.7 s per phase) so they are seen, as on the original's PC. |
 
@@ -543,7 +545,9 @@ docking_fee = true
 steady_aim = false     # space sights glide while an arrow is held
 enemy_speed = "original"  # original | half
 space_map = "original"    # original | enhanced
-space_kills = false      # HUD: n/20 toward Space Ace
+space_kills = false
+space_ace_need = 20       # 20 | 10 | 5
+wide_hits = false       # slightly larger fighter hit box (+2 px)
 vehicle_facing = true
 key_screenshot = "f12"
 window = "100,80,1280,800"

@@ -60,6 +60,8 @@ pub enum Row {
     EnemySpeed,
     SpaceMap,
     SpaceKills,
+    WideHits,
+    AceNeed,
 }
 
 /// The menu's pages (tabs), in order.
@@ -69,11 +71,12 @@ pub enum Page {
     Sound,
     Gameplay,
     Controls,
+    Space,
     Interface,
 }
 
 impl Page {
-    pub const ALL: [Page; 5] = [Page::Video, Page::Sound, Page::Gameplay, Page::Controls, Page::Interface];
+    pub const ALL: [Page; 6] = [Page::Video, Page::Sound, Page::Gameplay, Page::Controls, Page::Space, Page::Interface];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -81,6 +84,7 @@ impl Page {
             Page::Sound => "Sound",
             Page::Gameplay => "Gameplay",
             Page::Controls => "Controls",
+            Page::Space => "Space",
             Page::Interface => "Interface",
         }
     }
@@ -91,14 +95,15 @@ impl Page {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
             Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::SignWait, Row::DockFee],
-            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::SteadyAim, Row::EnemySpeed, Row::SpaceMap, Row::SpaceKills, Row::Keys],
+            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys],
+            Page::Space => &[Row::SteadyAim, Row::EnemySpeed, Row::WideHits, Row::SpaceMap, Row::SpaceKills, Row::AceNeed],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
         }
     }
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 37] = [
+pub const ROWS: [Row; 39] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
@@ -123,11 +128,13 @@ pub const ROWS: [Row; 37] = [
     Row::RepeatDelay,
     Row::RepeatRate,
     Row::Gamepad,
+    Row::Keys,
     Row::SteadyAim,
     Row::EnemySpeed,
+    Row::WideHits,
     Row::SpaceMap,
     Row::SpaceKills,
-    Row::Keys,
+    Row::AceNeed,
     Row::Slots,
     Row::Log,
     Row::Automap,
@@ -142,7 +149,7 @@ pub const ROWS: [Row; 37] = [
 const VALUE_COL: usize = 17;
 
 /// The most rows a page has.
-pub const SHOWN: usize = 9;
+pub const SHOWN: usize = 8;
 
 /// Keys the menu reads besides the game's: Tab (next page) and the
 /// message log's page keys (`msglog::keys`).
@@ -188,6 +195,8 @@ impl Row {
             Row::EnemySpeed => "Enemy speed",
             Row::SpaceMap => "Space map",
             Row::SpaceKills => "Kill counter",
+            Row::WideHits => "Hit box",
+            Row::AceNeed => "Ace need",
         }
     }
 
@@ -230,7 +239,9 @@ impl Row {
             Row::SteadyAim => "Space sights glide while an arrow is held; stop on release.",
             Row::EnemySpeed => "How fast front-view fighters flee and grow (aim and fire unchanged).",
             Row::SpaceMap => "I in space: original scan icons, or a clearer labelled grid.",
-            Row::SpaceKills => "Show fighter kills toward Space Ace (x/20) on the space HUD.",
+            Row::SpaceKills => "Show fighter kills toward Space Ace on the space HUD.",
+            Row::WideHits => "Slightly larger fighter hit box (aim only; damage unchanged).",
+            Row::AceNeed => "Fighter kills required for Space Ace (HUD and award).",
         }
     }
 }
@@ -357,6 +368,8 @@ impl OptionsMenu {
                 Row::EnemySpeed => q.enemy_speed = d.enemy_speed,
                 Row::SpaceMap => q.space_map = d.space_map,
                 Row::SpaceKills => q.space_kills = d.space_kills,
+                Row::WideHits => q.wide_hits = d.wide_hits,
+                Row::AceNeed => q.space_ace_need = d.space_ace_need,
             }
         }
     }
@@ -424,6 +437,8 @@ impl OptionsMenu {
             Row::EnemySpeed => q.enemy_speed.label().into(),
             Row::SpaceMap => q.space_map.label().into(),
             Row::SpaceKills => on(q.space_kills),
+            Row::WideHits => on(q.wide_hits),
+            Row::AceNeed => q.space_ace_need.label().into(),
         }
     }
 
@@ -509,6 +524,10 @@ impl OptionsMenu {
                         }
                     }
                     Row::SpaceKills => q.space_kills ^= true,
+                    Row::WideHits => q.wide_hits ^= true,
+                    Row::AceNeed => {
+                        q.space_ace_need = qol::cycle(&qol::SpaceAceNeed::ALL, q.space_ace_need, k == keys::LEFT)
+                    }
                 }
                 if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);
@@ -544,7 +563,7 @@ impl OptionsMenu {
         panel(t);
         center(t, 2, "Options  (the game is paused)", TEXT);
         // The tabs, on two lines; the page shown in the warning colour.
-        for (line, pages) in [(3, 0..3), (4, 3..5)] {
+        for (line, pages) in [(3, 0..3), (4, 3..6)] {
             let text: Vec<String> = pages.clone().map(|i| format!("{} {}", i + 1, Page::ALL[i].label())).collect();
             let width = text.iter().map(|s| s.len()).sum::<usize>() + 2 * (text.len() - 1);
             let mut col = 2 + (36 - width) / 2;
@@ -719,7 +738,7 @@ mod tests {
             assert_eq!(t.at(x, y), f.at(x, y), "nothing outside the box");
         }
         assert!(t.row_text(2).contains("Options"));
-        assert!(t.row_text(3).contains("1 Video") && t.row_text(4).contains("5 Interface"));
+        assert!(t.row_text(3).contains("1 Video") && t.row_text(4).contains("6 Interface"));
         assert!(t.row_text(6).contains("Video:") && t.row_text(6).contains("<CGA>"));
         assert!(t.row_text(7).contains("Fullscreen:") && t.row_text(7).contains("<Off>"));
         assert!(t.row_text(12).contains("The display"), "the description under the last Video row");

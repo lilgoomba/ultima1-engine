@@ -20,6 +20,8 @@ No tagged releases yet; entries are by branch.
   space HUD shows fighter kills toward Space Ace (`K:n/20`, then `Ace!`).
   Enhanced map layout tightened so the grid and prompt no longer overlap.
 - Enhanced Inform no longer clears the status panel (Shld/Fuel/Exp/Coin/Kills).
+- Space options page: Hit box (forgiving +2 px, off by default) and Ace need
+  (20/10/5, default 20) for Space Ace HUD and award; no save-format change.
 
 ## polish-1 (merged into main)
 

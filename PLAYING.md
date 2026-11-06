@@ -69,7 +69,7 @@ never reads:
 
 | Key | What it does |
 |---|---|
-| F1 | Options, in five pages (Video, Sound, Gameplay, Controls, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default, except save slots, the quit confirmation and (enhanced video only) vehicle turning. The game is paused while it is open. |
+| F1 | Options, in six pages (Video, Sound, Gameplay, Controls, Space, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default, except save slots, the quit confirmation and (enhanced video only) vehicle turning. The game is paused while it is open. |
 | F2 | Save slots (on by default; slot 1 is your character's own file, the one Q writes) |
 | F3 | Command help screen (turn on "Help screen" in F1); in space it lists the space commands |
 | F4 | Turbo: every wait 4x shorter (always available) |
@@ -90,13 +90,15 @@ At "Choose thy ship:" type the port number, or press the arrow toward
 the ship you want (it shows in yellow) and Enter, Space or pad A.
 
 In the space front view an arrow sets the sights drifting until another
-arrow or Space, as in the original. F1, Controls: Steady aim makes them
-glide only while an arrow is held (and stop when it is let go). F1,
-Controls: Enemy speed Half keeps fighters in view longer; it does not
-change your aim, lasers or damage. Space map Enhanced makes I show a
-labelled galaxy grid with a legend; Original keeps the classic scan.
-Kill counter (off by default) shows fighter kills toward Space Ace as
-n/20 on the space status panel; after 20 it shows Ace!.
+arrow or Space, as in the original. F1, Space: Steady aim makes them
+glide only while an arrow is held (and stop when it is let go). Enemy
+speed Half keeps fighters in view longer; it does not change your aim,
+lasers or damage. Space map Enhanced makes I show a labelled galaxy
+grid with a legend; Original keeps the classic scan. Hit box (off by
+default) slightly enlarges the fighter hit rectangle (+2 px; damage
+unchanged). Ace need is 20, 10 or 5 (default 20) for both the Space Ace
+award and the kill HUD. Kill counter (off by default) shows `K:n/N` on
+the space status panel, or `Ace!` once you have reached the need.
 
 The game also pauses when its window loses focus. Closing the window with
 progress not yet saved asks first (F1, Interface: Confirm quit). The

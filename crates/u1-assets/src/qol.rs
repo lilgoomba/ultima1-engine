@@ -18,7 +18,37 @@ pub enum Scaling {
     Fill,
 }
 
-/// How fast food goes outdoors (an optional engine rule change).
+/// Fighter kills required for the Space Ace award (HUD and ceremony).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpaceAceNeed {
+    /// Original: twentieth kill.
+    #[default]
+    Twenty = 20,
+    Ten = 10,
+    Five = 5,
+}
+
+impl SpaceAceNeed {
+    pub const ALL: [SpaceAceNeed; 3] = [SpaceAceNeed::Twenty, SpaceAceNeed::Ten, SpaceAceNeed::Five];
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "20" | "twenty" => Some(Self::Twenty),
+            "10" | "ten" => Some(Self::Ten),
+            "5" | "five" => Some(Self::Five),
+            _ => None,
+        }
+    }
+    pub fn get(self) -> u16 { self as u16 }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Twenty => "20",
+            Self::Ten => "10",
+            Self::Five => "5",
+        }
+    }
+    pub fn as_str(self) -> &'static str { self.label() }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpaceMap {
     /// The original sector-scan icons and blinking cell.
@@ -78,6 +108,7 @@ impl EnemySpeed {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// How fast food goes outdoors (an optional engine rule change).
 pub enum FoodUse {
     /// The original's rate.
     #[default]
@@ -251,6 +282,10 @@ pub struct Qol {
     pub space_map: SpaceMap,
     /// Show space fighter kills toward Space Ace (save 0xA6) on the HUD.
     pub space_kills: bool,
+    /// Kills required for Space Ace (HUD and award); save still stores the raw count.
+    pub space_ace_need: SpaceAceNeed,
+    /// Expand the front-view fighter hit box by a few pixels (damage unchanged).
+    pub wide_hits: bool,
 }
 
 impl Default for Qol {
@@ -290,6 +325,8 @@ impl Default for Qol {
             enemy_speed: EnemySpeed::Original,
             space_map: SpaceMap::Original,
             space_kills: false,
+            space_ace_need: SpaceAceNeed::Twenty,
+            wide_hits: false,
         }
     }
 }

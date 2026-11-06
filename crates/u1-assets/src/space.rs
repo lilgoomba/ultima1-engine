@@ -273,6 +273,8 @@ struct Space<'a> {
     aim_last_ms: Option<u64>,
     /// Front-view enemy phase so Half speed can skip every other tick.
     enemy_phase: u8,
+    /// Space Ace ceremony already shown this flight (or earned before entry).
+    ace_done: bool,
     star_mode: i16,
     rel: [(i16, i16); 40],
     old: [(i16, i16); 40],
@@ -338,6 +340,7 @@ impl<'a> Space<'a> {
             aim_fy: 0.0,
             aim_last_ms: None,
             enemy_phase: 0,
+            ace_done: false,
             star_mode: 2,
             rel: [(0, 0); 40],
             old: [(0, 0); 40],
@@ -453,9 +456,15 @@ impl<'a> Space<'a> {
             return;
         }
         let k = self.g.w(off::ENEMIES);
+        let need = self.ace_need();
         // Longest pre-Ace string is "K:19/20" (7); Ace is "Ace!" (4). Pad to
         // 8 chars so a shorter string clears a longer one, staying in 31..38.
-        let (line, attr) = if k >= 20 { ("Ace!    ".to_string(), C_PICK) } else { (format!("K:{k}/20 "), TEXT) };
+        // Session Ace (ace_done) survives a raised threshold; no save-format Ace bit.
+        let (line, attr) = if self.ace_done || k >= need {
+            ("Ace!    ".to_string(), C_PICK)
+        } else {
+            (format!("K:{k}/{need} "), TEXT)
+        };
         debug_assert!(line.chars().count() <= 8, "{line}");
         let mut out: String = line.chars().take(8).collect();
         while out.chars().count() < 8 {
@@ -463,6 +472,22 @@ impl<'a> Space<'a> {
         }
         self.g.term.print_at_attr(31, 20, &out, attr);
     }
+    fn ace_need(&self) -> i16 {
+        i16::try_from(self.io.features().space_ace_need.get()).unwrap_or(20)
+    }
+
+    /// If the Ace threshold was lowered under an existing kill count, award once.
+    fn sync_ace(&mut self) -> R<()> {
+        let need = self.ace_need();
+        let kills = self.g.w(off::ENEMIES);
+        if !self.ace_done && kills >= need {
+            self.ace_done = true;
+            self.space_ace()?;
+            self.show_kills();
+        }
+        Ok(())
+    }
+
     fn use_shield(&mut self, n: i16) {
         let s = self.slot_mut();
         s.shield = (s.shield - n).max(0);
@@ -489,6 +514,7 @@ impl<'a> Space<'a> {
         let seed = self.g.rec.u16_at(off::SEED);
         self.srand(seed.wrapping_mul(2));
         self.make_galaxy();
+        self.ace_done = self.g.w(off::ENEMIES) >= self.ace_need();
         let t = self.timer();
         self.srand(t.wrapping_add(seed));
         self.new_stars();
@@ -516,6 +542,7 @@ impl<'a> Space<'a> {
                 self.tick()?;
                 let k = self.io.poll_now(&self.g.term)?;
                 self.switch_video();
+                self.sync_ace()?;
                 if k == Some(keys::HELP) || k == Some(keys::MAP) {
                     // F3: the command help for space (with the help
                     // screen on); Tab has no map out here, so it is
@@ -1698,18 +1725,26 @@ impl<'a> Space<'a> {
             self.fighter(self.ex, self.ey, self.esize, false);
         }
         let (x0, y0) = (self.wd(d::HIT_X0 + 2 * sz), self.wd(d::HIT_Y0 + 2 * sz));
-        if x0 <= dx && dx <= w && y0 <= dy && dy <= h {
+        // Optional forgiving margin: expand the original hit rectangle only.
+        let m = if self.io.features().wide_hits { 2 } else { 0 };
+        if x0 - m <= dx && dx <= w + m && y0 - m <= dy && dy <= h + m {
             self.snd_ev(2, Sfx::Explosion);
             self.println(d::HIT);
             self.g.add(off::EXPERIENCE, 100);
             self.show_exp();
             self.g.add(off::ENEMIES, 1);
             let kills = self.g.w(off::ENEMIES);
+            let need = self.ace_need();
             self.show_kills();
-            if kills == 20 {
+            // Match original cadence: ceremony exactly at the need, "still Ace"
+            // after. Session flag blocks a second ceremony when F1 lowers the
+            // need under an existing total (see sync_ace); fire itself keys off
+            // the count so a fresh Space after Ace still says "still a Space Ace".
+            if kills == need {
+                self.ace_done = true;
                 self.space_ace()?;
-                self.show_kills(); // Ace panel redraws the view
-            } else if kills > 20 {
+                self.show_kills();
+            } else if kills > need {
                 self.println(d::STILL_ACE);
             }
             self.sec_mut().enemies -= 1;
@@ -2393,7 +2428,16 @@ mod real_game {
         assert!(fuel.contains("4444"), "{fuel}");
         assert!(exp.contains("1111"), "{exp}");
         assert!(coin.contains("2222"), "{coin}");
-        assert!(kills.contains("K:5/20"), "{kills}");
+        assert!(kills.contains("K:5/20"), "{kills}"); // default need 20
+        let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
+        let path = std::path::Path::new("/workspace/u1-shots/space-aim/enhanced-map-status.png");
+        let _ = std::fs::create_dir_all(path.parent().unwrap());
+        let f = std::fs::File::create(path).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&rgb).unwrap();
+        assert!(path.is_file());
     }
 
     #[test]
@@ -2481,6 +2525,97 @@ mod real_game {
         enc.set_depth(png::BitDepth::Eight);
         enc.write_header().unwrap().write_image_data(&rgb).unwrap();
         assert!(path.is_file());
+    }
+
+    #[test]
+    fn wide_hits_expands_hit_box_without_changing_damage() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        fighter_in_sights(&mut s);
+        s.esize = 1;
+        // Place sights just outside the original box for size 1.
+        let sz = s.esize as usize;
+        let (w, h) = (s.wd(d::HIT_W + 2 * sz), s.wd(d::HIT_H + 2 * sz));
+        let (_x0, y0) = (s.wd(d::HIT_X0 + 2 * sz), s.wd(d::HIT_Y0 + 2 * sz));
+        // dx one past the right edge.
+        s.cx = s.ex + w + 1;
+        s.cy = s.ey + (y0 + h) / 2;
+        s.slot_mut().fuel = 500;
+        let exp = s.g.exp();
+        assert!(s.cmd_fire().is_ok());
+        assert_eq!(s.g.w(off::ENEMIES), 0, "original miss");
+        assert_eq!(s.g.exp(), exp);
+        // Same geometry with wide hits: hit, +100 exp only (no extra damage rules).
+        drop(s);
+        let mut io = ScriptIo::from_text("");
+        io.qol.wide_hits = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        fighter_in_sights(&mut s);
+        s.esize = 1;
+        s.cx = s.ex + w + 1;
+        s.cy = s.ey + (y0 + h) / 2;
+        s.slot_mut().fuel = 500;
+        let exp = s.g.exp();
+        assert!(s.cmd_fire().is_ok());
+        assert_eq!(s.g.w(off::ENEMIES), 1, "forgiving hit");
+        assert_eq!(s.g.exp(), exp + 100);
+    }
+
+    #[test]
+    fn ace_need_five_awards_and_hud_match() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 4);
+        let mut io = ScriptIo::from_text("{w1}");
+        io.qol.space_ace_need = crate::qol::SpaceAceNeed::Five;
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        assert!(!s.ace_done);
+        fighter_in_sights(&mut s);
+        assert!(s.cmd_fire().is_ok());
+        assert_eq!(s.g.w(off::ENEMIES), 5);
+        assert!(s.ace_done);
+        s.show_kills();
+        let field: String = s.g.term.row_text(20).chars().skip(31).take(8).collect();
+        assert!(field.starts_with("Ace!"), "{field}");
+    }
+
+    #[test]
+    fn lowering_ace_need_under_existing_kills_awards_once() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 12);
+        // Session started under need=20 (not yet Ace), then F1 lowers to 10.
+        // Recreate Space after the option change (Io is exclusively borrowed).
+        let mut io = ScriptIo::from_text("{w1}");
+        io.qol.space_ace_need = crate::qol::SpaceAceNeed::Twenty;
+        {
+            let s = Space::new(&mut g, &mut io, files.clone());
+            assert!(!s.ace_done, "12 < 20");
+            assert!(s.g.w(off::ENEMIES) < s.ace_need());
+        }
+        io.qol.space_ace_need = crate::qol::SpaceAceNeed::Ten;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        // Mid-session: ace_done still false until sync sees kills >= new need.
+        assert!(!s.ace_done);
+        assert!(s.sync_ace().is_ok());
+        assert!(s.ace_done);
+        assert!(s.sync_ace().is_ok());
+        assert!(s.ace_done);
+        assert_eq!(s.g.w(off::ENEMIES), 12, "save count unchanged");
+    }
+
+    #[test]
+    fn already_ace_on_entry_skips_ceremony() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 25);
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_ace_need = crate::qol::SpaceAceNeed::Twenty;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.ace_done = s.g.w(off::ENEMIES) >= s.ace_need();
+        assert!(s.ace_done);
+        assert!(s.sync_ace().is_ok());
+        assert!(s.ace_done);
     }
 
     #[test]

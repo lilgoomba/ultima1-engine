@@ -1919,6 +1919,17 @@ pause. They stop on release, focus loss, or a menu. 2 fuel is paid when a
 direction starts being held, not each frame. The sights keep inside the
 original's limits.
 
+**Hit box.** Off by default (F1 Space, `wide_hits`). When on, the front-view
+fighter hit test grows by 2 pixels on each side of the original rectangle;
+experience and damage are unchanged.
+
+**Ace need.** 20 by default (F1 Space, `space_ace_need` = 20|10|5). The HUD
+denominator and the Space Ace award both use this count. The save still
+stores the raw kill total (0xA6). Ceremony runs once when kills first reach
+the need (or when the need is lowered under an existing total); further
+kills print "still a Space Ace". Entering space already at/above the need
+skips the ceremony.
+
 **Kill counter.** Off by default (F1 Controls, `space_kills`). When on,
 the space status panel shows the save's enemy-vessel count (word 0xA6)
 as `K:n/20` toward Space Ace; at 20 or more it shows `Ace!` (the original

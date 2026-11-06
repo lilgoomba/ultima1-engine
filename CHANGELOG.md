@@ -11,6 +11,8 @@ No tagged releases yet; entries are by branch.
   focus loss or the options menu. 2 fuel per newly held direction.
 - Enemy speed option (F1 → Controls, `enemy_speed`, Original by default;
   Half slows only front-view fighter flee/grow).
+- Steady aim advances once per vertical retrace (with a one-frame dt cap)
+  so held movement no longer jumps once per speed wait.
 
 ## polish-1 (merged into main)
 

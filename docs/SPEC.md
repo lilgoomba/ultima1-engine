@@ -1912,8 +1912,10 @@ original's front view an arrow sets a drift of 4 pixels a frame for the
 sights, which keeps going until another arrow, Space (centre) or the edge
 of the view, and costs 2 fuel each press. With steady aim the sights move
 only while a direction is held (keyboard or pad), at a fixed pixels-per-
-second rate from a clock, not from OS key-repeat; they stop on release,
-when the window loses focus, or when a menu opens. 2 fuel is paid when a
+second rate from a clock, not from OS key-repeat. Each front-view vertical
+retrace updates and redraws them (so a multi-retrace speed wait cannot
+become one jump); each update applies at most one frame of motion after a
+pause. They stop on release, focus loss, or a menu. 2 fuel is paid when a
 direction starts being held, not each frame. The sights keep inside the
 original's limits.
 

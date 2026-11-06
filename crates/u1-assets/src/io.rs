@@ -231,6 +231,8 @@ pub struct ScriptIo {
     pub held_aim: Cell<(i8, i8)>,
     /// Scripted clock for time-based steady aim.
     pub clock_ms: Cell<u64>,
+    /// Each `retrace(n)` call's n (for cadence tests).
+    pub retrace_slices: std::cell::RefCell<Vec<u32>>,
 }
 
 impl ScriptIo {
@@ -310,6 +312,14 @@ impl Io for ScriptIo {
 
     fn set_aim_clock_ms(&mut self, ms: u64) {
         self.clock_ms.set(ms);
+    }
+
+    fn retrace(&mut self, _t: &Term, n: u32) -> IoResult<()> {
+        // One vertical retrace ≈ 1/70 s; advance the aim clock so space
+        // steady-aim tests see the same cadence as the SDL front end.
+        self.retrace_slices.borrow_mut().push(n);
+        self.clock_ms.set(self.clock_ms.get().saturating_add(14 * u64::from(n)));
+        Ok(())
     }
 
     fn music(&mut self, t: crate::music::Track) {

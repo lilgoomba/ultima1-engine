@@ -221,6 +221,9 @@ const FLAMES: [[&[Flame]; 4]; 3] = [
 /// Steady aim: pixels per second while a direction is held (~4 px per
 /// 16 ms frame, close to the original's per-tick drift rate).
 const STEADY_AIM_PX_PER_SEC: f32 = 240.0;
+/// Never apply more than one display frame of motion in one update, so a
+/// long `retrace(n)` wait or a pause cannot become one big jump.
+const STEADY_AIM_MAX_DT_MS: u64 = 16;
 
 fn sign(v: i16) -> i16 {
     v.signum()
@@ -382,6 +385,16 @@ impl<'a> Space<'a> {
         Ok(())
     }
     fn retrace(&mut self, n: u32) -> R<()> {
+        // Steady aim must advance and redraw once per vertical retrace.
+        // A single wait for n retraces left dt = n×14 ms and the sights
+        // jumped (e.g. speed 1: 8×14 ≈ 112 ms → ~27 px at 240 px/s).
+        if self.fp && self.io.features().steady_aim && n > 0 {
+            for _ in 0..n {
+                self.steady_aim_tick();
+                self.io.retrace(&self.g.term, 1)?;
+            }
+            return Ok(());
+        }
         self.io.retrace(&self.g.term, n)?;
         Ok(())
     }
@@ -1124,9 +1137,9 @@ impl<'a> Space<'a> {
 
     /// `3330`: one tick of front view: stars and the fighter.
     fn fp_tick(&mut self) -> R<()> {
-        if self.io.features().steady_aim {
-            self.steady_aim_tick();
-        }
+        // Aim updates run inside `retrace` at one-retrace cadence when
+        // steady aim is on; do not also step once here (that doubled the
+        // first slice and still left a long blind wait before).
         if self.flame != 0 {
             self.flame -= 1;
         }
@@ -1313,11 +1326,14 @@ impl<'a> Space<'a> {
             self.use_fuel(2);
             self.aim_paid |= fresh;
         }
-        let dt = match self.aim_last_ms {
+        let raw = match self.aim_last_ms {
             Some(t) => now.saturating_sub(t),
             None => 0,
         };
         self.aim_last_ms = Some(now);
+        // Drop catch-up after a menu/focus pause or a missed pump: one
+        // frame of motion max, never a rubber-band jump.
+        let dt = raw.min(STEADY_AIM_MAX_DT_MS);
         if dt == 0 {
             return;
         }
@@ -1915,6 +1931,7 @@ mod real_game {
     }
 
     #[test]
+
     fn steady_aim_is_time_based_and_stops_on_release() {
         let Some((mut g, files)) = setup() else { return };
         // Original: one press sets a drift that goes on frame after frame.
@@ -1929,7 +1946,8 @@ mod real_game {
         }
         assert_eq!((s.cx, s.dvx, s.slot().fuel), (159 + 20, 4, 498));
 
-        // Steady aim: held right for 100 ms at 240 px/s -> 24 px; release stops.
+        // Steady aim: 16 ms at 240 px/s -> 3 px (truncated); release stops;
+        // a long pause is capped so it cannot jump.
         let mut io = ScriptIo::from_text("");
         io.qol.steady_aim = true;
         let mut s = Space::new(&mut g, &mut io, files.clone());
@@ -1941,23 +1959,53 @@ mod real_game {
         s.steady_aim_tick(); // pay fuel, dt=0
         assert_eq!(s.slot().fuel, 498);
         assert_eq!(s.cx, 159);
-        s.io.set_aim_clock_ms(100);
+        s.io.set_aim_clock_ms(16);
         s.steady_aim_tick();
-        assert_eq!((s.cx, s.dvx, s.slot().fuel), (159 + 24, 0, 498), "24 px in 100 ms, fuel once");
-        // Another 100 ms while held: another 24 px, still no extra fuel.
-        s.io.set_aim_clock_ms(200);
+        assert_eq!((s.cx, s.dvx, s.slot().fuel), (159 + 3, 0, 498), "3 px in 16 ms, fuel once");
+        // Fake a 500 ms hitch: only one frame of motion applies.
+        s.io.set_aim_clock_ms(516);
+        let before = s.cx;
         s.steady_aim_tick();
-        assert_eq!((s.cx, s.slot().fuel), (159 + 48, 498));
-        // Release: no further motion.
+        let hitch = s.cx - before;
+        assert!((3..=4).contains(&hitch), "catch-up capped to one frame, got {hitch}");
+        // Release: no further motion even if the clock runs.
         s.io.set_held_aim((0, 0));
-        s.io.set_aim_clock_ms(500);
+        s.io.set_aim_clock_ms(800);
         s.steady_aim_tick();
-        assert_eq!(s.cx, 159 + 48);
+        assert_eq!(s.cx, before + hitch);
         // Re-hold charges again.
         s.io.set_held_aim((1, 0));
-        s.io.set_aim_clock_ms(500);
+        s.io.set_aim_clock_ms(800);
         s.steady_aim_tick();
         assert_eq!(s.slot().fuel, 496);
+    }
+
+    #[test]
+    fn steady_aim_follows_retrace_cadence_with_small_steps() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.steady_aim = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.speed = 1; // 8 retraces ≈ 112 ms total — the jumpy case before the fix
+        s.slot_mut().fuel = 500;
+        s.io.set_held_aim((1, 0));
+        s.io.set_aim_clock_ms(0);
+        let n = s.wd(d::RETRACE + 2 * s.speed as usize);
+        assert_eq!(n, 8, "speed 1 waits eight retraces");
+        let start = s.cx;
+        // Same path fp_tick uses: N single-retrace slices with aim each.
+        assert!(s.retrace(n as u32).is_ok());
+        let moved = s.cx - start;
+        assert_eq!(s.dvx, 0, "no original drift");
+        assert_eq!(s.slot().fuel, 498, "fuel once for the hold");
+        drop(s);
+        let slices = io.retrace_slices.borrow().clone();
+        assert_eq!(slices, vec![1; 8], "retrace(n) split into n×1, not one wait of n");
+        // 7 or 8 frame steps of ~3 px (first slice often dt=0): about 21–24 px.
+        assert!((18..=32).contains(&moved), "moved {moved} over 8 frames at 240 px/s");
+        assert!(moved / 8 <= 4, "average step too large: {moved}/8");
     }
 
     #[test]

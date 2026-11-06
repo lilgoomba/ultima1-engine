@@ -376,8 +376,12 @@ impl Game {
         self.say(name);
         self.hostile = true;
         self.snd_ev(io, 2, Sfx::Alarm);
-        let dmg = if self.god_mode { i32::from(self.npcs[i].hp) } else { dmg };
-        if dmg >= i32::from(self.npcs[i].hp) {
+        // God mode: a successful hit is always fatal so death side-effects
+        // (castle jester key, guard XP, princess flag) still run. Do not
+        // rely on fabricating a damage value that merely equals current HP.
+        let fatal = self.god_mode || dmg >= i32::from(self.npcs[i].hp);
+        let dmg = if self.god_mode { i32::from(self.npcs[i].hp).max(dmg) } else { dmg };
+        if fatal {
             self.sayln(m::KILLED);
             if tile == NPC_PRINCESS {
                 self.door_open = false;

@@ -692,7 +692,7 @@ impl Lair<'_> {
         }
         if hit && self.rnd(1, 100) <= chance {
             let dmg = if self.g.god_mode { self.hp } else { dmg };
-            self.hp = self.hp.wrapping_sub(dmg);
+            self.hp = if self.g.god_mode { 0 } else { self.hp.wrapping_sub(dmg) };
             self.puts(d::HIT_MONDAIN);
             self.num(dmg);
             self.println(d::DAMAGE);

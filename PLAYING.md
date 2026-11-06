@@ -82,7 +82,9 @@ never reads:
 
 A sign post's or pillar's words, and the princess rescue reward text,
 stay up until you press a key (F1, Gameplay: Message pauses; on by
-default, off for the original's short pause). Pubs, shops and the time
+default, off for the original's short pause). The same option also keeps
+the "Please wait whilst thy game loads" screen up for about 2½ seconds
+after it appears (off: the original short flash). Pubs, shops and the time
 machine are unchanged.
 
 Docking at a space station costs 500 coin to refuel, as in the original;

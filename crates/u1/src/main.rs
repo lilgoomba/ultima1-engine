@@ -531,11 +531,15 @@ fn front(a: &Args, mode: VideoMode, io: &mut dyn Io) -> Result<Front, String> {
     let (t, r) = u1_assets::front::character(&g, &dir, &mut mode, &mut clock, io).map_err(|e| e.to_string())?;
     match r {
         Ok(GenEnd::Play { path, .. }) => {
-            // The "please wait" screen stays up while the game loads (a
-            // display chosen now is the game's).
-            if io.pause(&t, 9).is_err() && io.display_restart().is_none() {
+            // The "please wait" screen is already drawn. Dwell after that
+            // presentation (Message pauses on → readable ~2.5 s; off →
+            // original ~0.5 s). Flush after so a held roster key cannot
+            // bleed into the game; the window keeps pumping during pause.
+            let ticks = u1_assets::gen::loading_dwell_ticks(io.features().message_pauses());
+            if io.pause(&t, ticks).is_err() && io.display_restart().is_none() {
                 return Ok(Front::Halted(t));
             }
+            io.flush();
             Ok(Front::Play(path))
         }
         Err(Halt) => Ok(Front::Halted(t)),
@@ -1353,6 +1357,7 @@ impl Io for SdlIo {
 
     fn flush(&mut self) {
         self.pending.clear();
+        self.held.clear();
     }
 
     fn any_key(&mut self, t: &Term) -> IoResult<()> {
@@ -2269,6 +2274,17 @@ fn keycode_to_byte(k: sdl2::keyboard::Keycode, shift: bool) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn loading_dwell_follows_message_pauses() {
+        use u1_assets::gen::{loading_dwell_ticks, LOADING_DWELL_ORIGINAL, LOADING_DWELL_READABLE};
+        assert_eq!(loading_dwell_ticks(false), LOADING_DWELL_ORIGINAL);
+        assert_eq!(loading_dwell_ticks(true), LOADING_DWELL_READABLE);
+        // Wall time of the readable dwell (engine tick = 54_925 µs).
+        let ms = u64::from(LOADING_DWELL_READABLE) * 54_925 / 1_000;
+        assert!((2_400..=2_700).contains(&ms), "{ms} ms");
+        assert!(LOADING_DWELL_READABLE > LOADING_DWELL_ORIGINAL);
+    }
+
     #[test]
     fn screen_key_closes_its_screen() {
         use super::pick_key;

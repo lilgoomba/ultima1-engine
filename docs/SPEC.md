@@ -1888,7 +1888,9 @@ Closing the window after keys reached the game since its last save asks
 screens, and a game just saved, close at once. This only guards the
 window's close button; the game's own Q works exactly as the original.
 
-**God mode.** Off by default (F1 Controls, `god_mode`, CLI `--god` / `--features god`). Testing cheat only; not written into the player save. When on, Hits never decrease from combat, traps, or similar paths. Story deaths that force-set Hits (e.g. docking without a vacuum suit) still end the flight. A successful player hit kills instantly; misses unchanged. Space lasers already one-shot fighters; under god mode shield drain leaves at least 1 so the pilot is not drained to story-death. Off is exact original.
+**God mode.** Off by default (F1 Controls, `god_mode`, CLI `--god` / `--features god`). Testing cheat only; not written into the player save. When on, Hits never decrease from combat, traps, or similar paths. Story deaths that force-set Hits (e.g. docking without a vacuum suit) still end the flight. A successful player hit kills instantly (death side-effects still run: castle jester key, guard XP, dungeon loot/quests); misses unchanged. The jester's "I've got the key!" line is still the original rare roll (R(1,255)<15 when he bumps you and steals nothing), not guaranteed. Space lasers already one-shot fighters; under god mode shield drain leaves at least 1 so the pilot is not drained to story-death. Off is exact original.
+
+**Loading dwell.** After the character program draws "Please wait whilst / thy game loads", the front end pauses before starting OUT: **9** timer ticks (~0.5 s) when Message pauses is off (the historical `pause(9)`), or **46** ticks (~2.5 s) when it is on (default). The screen is presented first; the wait keeps pumping SDL so the window stays responsive and can close. Keys held from picking the roster slot are flushed afterward. No press-any-key. Other messages unchanged.
 
 **Message pauses.** Config `wait_on_signs` (default on; alias
 `message_pauses` / `message_pause`), F1 Gameplay row "Message pauses"

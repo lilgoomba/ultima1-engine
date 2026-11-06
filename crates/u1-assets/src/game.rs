@@ -1502,7 +1502,9 @@ impl Game {
         }
         self.draw_world_tile(col, row, shot);
         let i = self.ow.entity_at(cell.0, cell.1).expect("monster");
-        let dmg = if self.god_mode { i32::from(self.ow.entities[i].hp) } else { dmg };
+        let cur = i32::from(self.ow.entities[i].hp);
+        let fatal = self.god_mode || dmg >= cur;
+        let dmg = if fatal { cur.max(dmg) } else { dmg };
         let hp = (self.ow.entities[i].hp as i16).wrapping_sub(dmg as i16);
         self.ow.entities[i].hp = hp as u16;
         self.say(if hp <= 0 { m::KILLED_THE } else { m::HIT_THE });

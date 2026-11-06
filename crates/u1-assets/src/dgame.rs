@@ -473,11 +473,12 @@ impl Game {
         self.snd(io, snd);
         let (ua, ub) = (a as usize, b as usize);
         let hp = i32::from(self.ds().level.hp[ua][ub]);
+        // God mode: a hit that lands is always fatal (quests/loot still run).
         let dmg = if self.god_mode && dmg != KILL { hp } else { dmg };
         if dmg != KILL {
             self.say(m::HIT_EX);
         }
-        if hp > dmg {
+        if !self.god_mode && hp > dmg {
             self.term.num(dmg as u16, 1, ' ', TEXT, true);
             self.sayln(m::DAMAGE);
             self.dsm().level.hp[ua][ub] -= dmg as i16;

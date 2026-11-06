@@ -54,6 +54,26 @@ mod o {
     pub const CURSOR: usize = 0x9fe;
 }
 
+/// Original timer ticks after the "please wait" screen is drawn (~0.5 s at
+/// 18.2 Hz). The original stayed up while OUT.EXE loaded from disk; modern
+/// loads finish almost at once, so this alone flashes by.
+pub const LOADING_DWELL_ORIGINAL: u32 = 9;
+
+/// Readable dwell when Message pauses is on (~2.5 s at 18.2 Hz). No
+/// press-any-key; the front end keeps polling so the window stays responsive.
+pub const LOADING_DWELL_READABLE: u32 = 46;
+
+/// How long the "Please wait whilst / thy game loads" screen stays after it
+/// is drawn. Tied to Message pauses (default on): off keeps the original
+/// short pause; on gives a readable dwell. Other messages are unchanged.
+pub fn loading_dwell_ticks(message_pauses: bool) -> u32 {
+    if message_pauses {
+        LOADING_DWELL_READABLE
+    } else {
+        LOADING_DWELL_ORIGINAL
+    }
+}
+
 /// GEN.EXE's text and cursor shapes plus the video mode it runs in.
 pub struct GenFiles {
     exe: Exe,
@@ -683,5 +703,25 @@ impl<'a> Gen<'a> {
     /// The record most recently generated (for tests).
     pub fn record(&self) -> &[u8] {
         &self.rec
+    }
+}
+
+#[cfg(test)]
+mod dwell_tests {
+    use super::*;
+
+    #[test]
+    fn loading_dwell_original_when_message_pauses_off() {
+        assert_eq!(loading_dwell_ticks(false), LOADING_DWELL_ORIGINAL);
+        assert_eq!(LOADING_DWELL_ORIGINAL, 9, "must match the historical pause(&t, 9)");
+    }
+
+    #[test]
+    fn loading_dwell_readable_when_message_pauses_on() {
+        assert_eq!(loading_dwell_ticks(true), LOADING_DWELL_READABLE);
+        // ~2.5 s at the engine's 18.2 Hz tick (54_925 µs); keep a readable band.
+        let ms = u64::from(LOADING_DWELL_READABLE) * 54_925 / 1_000;
+        assert!((2_400..=2_700).contains(&ms), "readable dwell ms = {ms}");
+        assert!(LOADING_DWELL_READABLE > LOADING_DWELL_ORIGINAL);
     }
 }

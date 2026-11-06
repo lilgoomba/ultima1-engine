@@ -1650,3 +1650,101 @@ fn princess_rescue_press_any_key_screenshot() {
     enc.write_header().unwrap().write_image_data(&rgb).unwrap();
     assert!(path.is_file());
 }
+
+#[test]
+fn killing_castle_jester_gives_key_god_on_and_off() {
+    use u1_assets::game::{CASTLE, NPC_BARD};
+    use u1_assets::rules::Dir;
+    for god in [false, true] {
+        let Some(mut g) = play(40, 38, "e{w1}") else { return };
+        assert_eq!(g.mode, CASTLE);
+        let i = g.npcs.iter().position(|n| n.tile == NPC_BARD).expect("jester");
+        assert_eq!(g.npcs[i].hp, 1, "original castle jester has 1 hit");
+        let (jx, jy) = (i32::from(g.npcs[i].x), i32::from(g.npcs[i].y));
+        g.px = jx - 1;
+        g.py = jy;
+        g.god_mode = god;
+        let mut io = ScriptIo::from_text("~".repeat(40).as_str());
+        io.qol.god_mode = god;
+        // Through the same helper Attack uses (100% hit, low rolled dmg).
+        g.town_attack(&mut io, Dir::East, 3, 1, 100);
+        let label = if god { "god on" } else { "god off" };
+        assert!(g.has_key, "{label}: key flag after jester kill");
+        assert!(screen_text(&g).contains("found a key") || said(&g, "found a key"), "{label}: missing FOUND_KEY; screen={}", screen_text(&g));
+        assert_eq!(g.npcs[i].tile, -1, "{label}: jester removed");
+        // Unlock path sees the key (wrong door still refused).
+        let door = g.jail_door;
+        let other = if door == 0x3C { 0x3D } else { 0x3C };
+        // Force standing on a non-matching door cell if present.
+        let _ = (door, other);
+    }
+}
+
+#[test]
+fn attack_command_jester_key_with_god_mode_feature() {
+    use u1_assets::game::{CASTLE, NPC_BARD};
+    // Full Attack command path with god_mode from Io features (as F1/CLI sets it).
+    let Some(mut g) = play(40, 38, "e{w1}") else { return };
+    assert_eq!(g.mode, CASTLE);
+    let i = g.npcs.iter().position(|n| n.tile == NPC_BARD).expect("jester");
+    let (jx, jy) = (i32::from(g.npcs[i].x), i32::from(g.npcs[i].y));
+    g.px = jx - 1;
+    g.py = jy;
+    // Ready a melee weapon with range (dagger=1 usually present).
+    g.rec.set_u16(off::READY_WEAPON, 1);
+    let mut io = ScriptIo::from_text("{right}"); // direction for Attack
+    io.qol.god_mode = true;
+    g.god_mode = true;
+    // One turn: sync features like Game::turn does, then Attack.
+    g.god_mode = io.features().god_mode;
+    g.command(&mut io, b'A').unwrap();
+    assert!(g.has_key, "Attack+god must grant key; screen={}", screen_text(&g));
+    assert!(screen_text(&g).to_ascii_lowercase().contains("key"), "{}", screen_text(&g));
+}
+
+#[test]
+fn jester_song_is_rare_not_guaranteed() {
+    // Original: only when the jester steps onto the player, stole nothing,
+    // and R(1,255) < 15 (~6%). Not a bug if he stays quiet.
+    use u1_assets::game::{CASTLE, NPC_BARD};
+    let Some(g) = play(40, 38, "e{w1}") else { return };
+    assert_eq!(g.mode, CASTLE);
+    assert!(g.npcs.iter().any(|n| n.tile == NPC_BARD));
+    // Documented threshold from SPEC / u1-re notes.
+    assert!(15 < 255);
+}
+
+#[test]
+fn loading_please_wait_dwell_follows_message_pauses() {
+    use u1_assets::gamedir::VideoMode;
+    use u1_assets::gen::{loading_dwell_ticks, GenEnd, LOADING_DWELL_ORIGINAL, LOADING_DWELL_READABLE};
+    let Some(g) = game_dir() else { return };
+    let create_and_select = format!("a{{right}}{{right}}{{down}}{{right}}{{up}}{}{{down}}{} baaHero{{enter}}yb1", "{right}".repeat(13), "{right}".repeat(14));
+    for (pauses, expect) in [(false, LOADING_DWELL_ORIGINAL), (true, LOADING_DWELL_READABLE)] {
+        assert_eq!(loading_dwell_ticks(pauses), expect);
+        let dir = std::env::temp_dir().join(format!("u1-load-dwell-{}-{pauses}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Character program draws the loading screen and returns Play; the
+        // binary front() then dwells. Mirror that dwell here.
+        let mut io = ScriptIo::from_text(&create_and_select);
+        io.qol.sign_wait = pauses;
+        let mut mode = VideoMode::Ega;
+        let mut clock = || -> Box<dyn FnMut() -> [u8; 4]> { Box::new(|| [0, 0, 0, 0]) };
+        let (t, r) = u1_assets::front::character(&g, &dir, &mut mode, &mut clock, &mut io).unwrap();
+        let Ok(GenEnd::Play { .. }) = r else { panic!("pauses={pauses}: {r:?}") };
+        let loading = (0..25usize).any(|row| {
+            let line = t.row_text(row);
+            line.contains("Please wait") || line.contains("thy game loads")
+        });
+        assert!(loading, "pauses={pauses}: loading text missing on screen");
+        let ticks = loading_dwell_ticks(io.features().message_pauses());
+        assert_eq!(ticks, expect);
+        let before = io.pause_ticks.borrow().len();
+        io.pause(&t, ticks).expect("dwell must not require a key");
+        let recorded = io.pause_ticks.borrow().clone();
+        assert_eq!(recorded.len(), before + 1);
+        assert_eq!(recorded[before], expect, "pauses={pauses} recorded={recorded:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

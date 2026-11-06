@@ -471,8 +471,31 @@ fn defeating_mondain_shows_the_ending() {
         return;
     };
     assert!(bot.saw("Hit Mondain!"));
-    assert!(g.term.row_text(24).contains("Press CONTROL-ALT-DEL to Restart"), "{:?}", g.term.messages());
-    assert!(g.stopped.unwrap().contains("Mondain"));
+    assert!(g.term.row_text(24).contains("Press any key to return to title screen"), "{:?}", g.term.messages());
+    assert!(g.return_to_title);
+    assert_eq!(g.stopped, Some("victory"));
+    // Same-process next-session ingredients: actual title + roster + fresh Game.
+    let Some(files) = game_dir() else { return };
+    let mut mode = g.a.video;
+    let mut title_io = ScriptIo::from_text("{p}");
+    let title = u1_assets::front::intro(&files, &mut mode, &mut title_io).unwrap().unwrap();
+    assert!(title.row_text(8).contains("Ultima I"));
+    let roster = std::env::temp_dir().join(format!("u1-post-victory-{}", std::process::id()));
+    std::fs::create_dir_all(&roster).unwrap();
+    let original = Game::default_record("Next Hero", 49, 40);
+    let path = roster.join("PLAYER1.U1");
+    std::fs::write(&path, original.as_bytes()).unwrap();
+    let mut next_io = ScriptIo::from_text("b1");
+    let mut clock = || -> Box<dyn FnMut() -> [u8; 4]> { Box::new(|| [0, 0, 0, 0]) };
+    let (_, selected) = u1_assets::front::character(&files, &roster, &mut mode, &mut clock, &mut next_io).unwrap();
+    let u1_assets::gen::GenEnd::Play { path: chosen, .. } = selected.unwrap();
+    let record = PlayerRecord::parse(&std::fs::read(chosen).unwrap()).unwrap();
+    let mut second = Game::new(g.a.clone(), record, 1);
+    let _ = second.run(&mut ScriptIo::from_text(""));
+    assert!(!second.return_to_title && second.stopped.is_none());
+    assert_eq!(second.rec.name(), "Next Hero");
+    assert_eq!(std::fs::read(&path).unwrap(), original.as_bytes());
+    std::fs::remove_dir_all(roster).unwrap();
     // For side-by-sides with DOSBox: the closing screens as PPM files.
     if let (Some(dir), Some(f)) = (std::env::var_os("U1_LAIR_FRAMES"), &bot.frames) {
         for (i, rgb) in f.iter().enumerate() {

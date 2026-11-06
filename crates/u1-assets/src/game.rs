@@ -154,6 +154,8 @@ pub struct Game {
     pub mondain: Option<crate::mondain::MondainFiles>,
     /// OUT was restarted (after space); the turn ends without a world turn.
     pub restarted: bool,
+    /// Victory acknowledged: front end returns to title, never saved.
+    pub return_to_title: bool,
     /// Next blinking-cursor frame (`3a50`).
     pub cursor_phase: u8,
     /// What the player has seen, for the automap and the mini-map (SPEC
@@ -221,6 +223,7 @@ impl Game {
             space: None,
             mondain: None,
             restarted: false,
+            return_to_title: false,
             god_mode: false,
             explore: Default::default(),
             reload_explore: None,
@@ -1061,12 +1064,15 @@ impl Game {
 
     /// The time machine with all four gems: OUT hands over to MONDAIN.EXE.
     /// A fallen player comes back through OUT's death and resurrection; a
-    /// victory ends the game (the original waits for a reboot).
+    /// acknowledged victory returns to the desktop title/roster loop.
     fn time_travel(&mut self, io: &mut dyn Io) -> IoResult<()> {
         self.ow.transport = self.transport();
         self.sync_record();
         match crate::mondain::run_mondain(self, io)? {
-            crate::mondain::MondainEnd::Won => self.stopped = Some("Mondain is defeated; the game ends here as in the original"),
+            crate::mondain::MondainEnd::Won => {
+                self.return_to_title = true;
+                self.stopped = Some("victory");
+            }
             crate::mondain::MondainEnd::Died => self.restart_out(),
         }
         Ok(())

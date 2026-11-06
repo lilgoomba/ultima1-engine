@@ -63,6 +63,7 @@ pub enum Row {
     WideHits,
     AceNeed,
     GodMode,
+    AttackGem,
 }
 
 /// The menu's pages (tabs), in order.
@@ -96,7 +97,7 @@ impl Page {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
             Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::MessagePauses, Row::DockFee],
-            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys, Row::GodMode],
+            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys, Row::GodMode, Row::AttackGem],
             Page::Space => &[Row::SteadyAim, Row::EnemySpeed, Row::WideHits, Row::SpaceMap, Row::SpaceKills, Row::AceNeed],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
         }
@@ -104,7 +105,7 @@ impl Page {
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 40] = [
+pub const ROWS: [Row; 41] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
@@ -131,6 +132,7 @@ pub const ROWS: [Row; 40] = [
     Row::Gamepad,
     Row::Keys,
     Row::GodMode,
+    Row::AttackGem,
     Row::SteadyAim,
     Row::EnemySpeed,
     Row::WideHits,
@@ -200,6 +202,7 @@ impl Row {
             Row::WideHits => "Hit box",
             Row::AceNeed => "Ace need",
             Row::GodMode => "God mode",
+            Row::AttackGem => "Attack gem",
         }
     }
 
@@ -245,6 +248,7 @@ impl Row {
             Row::SpaceKills => "Show fighter kills toward Space Ace on the space HUD.",
             Row::WideHits => "Slightly larger fighter hit box (aim only; damage unchanged).",
             Row::AceNeed => "Kills for Ace and princess time-machine eligibility.",
+            Row::AttackGem => "Lair: a successful attack destroys the gem, like G.",
             Row::GodMode => "Testing cheat: Hits stay up; your hits kill at once.",
         }
     }
@@ -375,6 +379,7 @@ impl OptionsMenu {
                 Row::WideHits => q.wide_hits = d.wide_hits,
                 Row::AceNeed => q.space_ace_need = d.space_ace_need,
                 Row::GodMode => q.god_mode = d.god_mode,
+                Row::AttackGem => q.attack_gem = d.attack_gem,
             }
         }
     }
@@ -445,6 +450,7 @@ impl OptionsMenu {
             Row::WideHits => on(q.wide_hits),
             Row::AceNeed => q.space_ace_need.label().into(),
             Row::GodMode => on(q.god_mode),
+            Row::AttackGem => on(q.attack_gem),
         }
     }
 
@@ -534,6 +540,7 @@ impl OptionsMenu {
                     Row::WideHits => q.wide_hits ^= true,
                     Row::AceNeed => q.space_ace_need = qol::cycle(&qol::SpaceAceNeed::ALL, q.space_ace_need, k == keys::LEFT),
                     Row::GodMode => q.god_mode ^= true,
+                    Row::AttackGem => q.attack_gem ^= true,
                 }
                 if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);

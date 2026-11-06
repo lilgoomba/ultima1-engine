@@ -525,6 +525,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | AppImage desktop entry | | | The AppImage carries a desktop entry and our own 16-bit style icon (CC-BY-SA 4.0). |
 | Vehicle facing | **on** | | Enhanced video: vehicles face the way they last moved sideways; kept in the `.map` sidecar. |
 | `--save FILE` fix | | | Saves back to FILE (or to the roster when FILE is in the game folder), no longer over roster character 1. `--player N` plays character N. |
+| Attack gem | **off** | F1 → Controls | In Mondain's lair, successful in-range attacks can destroy the gem like G, including its original explosion cost. Config `attack_gem`. |
 | God mode | **off** | | F1 → Controls (testing). Hits never fall; a successful hit kills instantly. Not in the save. CLI `--god` / `--features god`. |
 | Message pauses | **on** | | First title: 2.8-second timed dwell (off: previous timing).  Signs and princess rescue stay up behind "Press any key" (`wait_on_signs`; alias `message_pauses`). Off: original short pause. Not pubs/shops. |
 | Docking fees | **on** | | The original's 500-coin refuel fee at a space station. Off: refuelling is free (the suit rule is unchanged). |
@@ -617,3 +618,5 @@ artifact.
 GPL-3.0-or-later. See [LICENSE](LICENSE).
 *Ultima* is a trademark of Electronic Arts. This project is not affiliated
 with or endorsed by Electronic Arts or GOG. It ships no game content.
+
+Victory ends with a fresh-key return to the title/roster in the same window, not a reboot prompt. No automatic character-save overwrite.

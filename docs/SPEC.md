@@ -1169,7 +1169,12 @@ side. Strings, the galaxy layout tables and the ship and fighter sprites
   At 0 he falls; without the gem taken he rises again (+25 per turn).
 * **Ending.** With the gem taken and Mondain at 0, the victory panel is
   shown, then the `NIF.BIN` picture and the closing text with the
-  restart prompt. The original stops there; so does the engine.
+  restart prompt. The original stops there. Desktop engine override:
+  "Press any key to return to title screen" waits for a fresh key, then
+  signals the front end to run the real title/roster again in-process.
+  Close/halt is not victory acknowledgement. Input/modal/save-slot state
+  and old CLI start overrides are reset; config/roster files are preserved.
+  No automatic player save and no OS key synthesis/reboot occur.
 * **Death in the lair** returns to OUT with hits and food at 0 (§14).
 
 ## 14. Death and resurrection: Phase 6
@@ -2038,3 +2043,10 @@ Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.
   <https://gigi.nullneuron.net/gigilabs/ultima-1-reverse-engineering-decoding-savegame-files/>
 
 First title (Ultima I / The First Age of Darkness / 1987 copyright): Message pauses on keeps it visible for 2.8 seconds after presentation, unaffected by turbo/message speed or held keys; no key required. Off retains the previous engine 12-tick pause. Character-menu loading retains its 9-tick pause.
+
+**Attack gem.** Off by default, F1 Controls, config `attack_gem`. Original
+G interaction remains unchanged. The optional shot target uses normal
+direction/range and hit-chance checks; a hit destroys the gem in one step
+through the same destruction/explosion/HP-cost routine as G. God mode is
+not required. Neither gem destruction alone nor a missed attack bypasses
+Mondain's existing death/transformation/victory prerequisites.

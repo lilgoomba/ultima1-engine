@@ -218,6 +218,7 @@ impl Config {
         flag(q.steady_aim, d.steady_aim, "steady_aim", "space sights glide while an arrow is held");
         flag(q.space_kills, d.space_kills, "space_kills", "HUD: fighter kills toward Space Ace");
         flag(q.wide_hits, d.wide_hits, "wide_hits", "slightly larger fighter hit box in space");
+        flag(q.attack_gem, d.attack_gem, "attack_gem", "allow successful attacks to destroy Mondain's gem");
         flag(q.god_mode, d.god_mode, "god_mode", "testing cheat: Hits never fall; hits kill instantly");
         if q.enemy_speed != d.enemy_speed {
             s += &format!(
@@ -347,6 +348,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "space_map" => crate::qol::SpaceMap::parse(v).map(|x| q.space_map = x).ok_or("original or enhanced"),
         "space_kills" => flag(v).map(|b| q.space_kills = b),
         "wide_hits" => flag(v).map(|b| q.wide_hits = b),
+        "attack_gem" => flag(v).map(|b| q.attack_gem = b),
         "god_mode" => flag(v).map(|b| q.god_mode = b),
         "space_ace_need" => crate::qol::SpaceAceNeed::parse(v).map(|x| q.space_ace_need = x).ok_or("20, 10 or 5"),
         "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
@@ -465,6 +467,14 @@ pub fn resolve(cli: Cli, cfg: &Config, detected: VideoMode) -> Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attack_gem_is_opt_in_and_round_trips() {
+        assert!(!Config::default().qol.attack_gem);
+        let c = Config::parse("attack_gem = true\n");
+        assert!(c.qol.attack_gem);
+        assert_eq!(Config::parse(&c.to_toml()), c);
+    }
 
     #[test]
     fn round_trip() {

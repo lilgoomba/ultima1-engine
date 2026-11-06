@@ -112,6 +112,7 @@ for one run (automap, minimap, character, help, hints, confirm=N, repeat,
 gamepad, god); --god is the testing cheat (Hits never fall; hits kill). In screenshots --keys may hold {map} {help}, and --rebind
 draws the key window.";
 
+#[derive(Clone)]
 struct Args {
     game_dir: PathBuf,
     player: Option<u8>,
@@ -153,39 +154,45 @@ struct Args {
     menu_row: usize,
 }
 
+impl Default for Args {
+    fn default() -> Self {
+        Args {
+            game_dir: PathBuf::new(),
+            player: None,
+            save: None,
+            pos: None,
+            mode: None,
+            scale: 3,
+            seed: None,
+            times: Vec::new(),
+            save_to: None,
+            screenshot: None,
+            keys: String::new(),
+            counter: 0,
+            font: std::env::var_os("U1_FONT").map(PathBuf::from),
+            intro: false,
+            gen: false,
+            roster: None,
+            sound: SoundMode::Original,
+            sound_demo: None,
+            music_demo: None,
+            enhanced: false,
+            pack: None,
+            cli: config::Cli::default(),
+            options_shot: false,
+            slots_shot: false,
+            log_shot: false,
+            crt: false,
+            fullscreen: false,
+            features: Qol::default(),
+            rebind_shot: false,
+            menu_row: 0,
+        }
+    }
+}
+
 fn parse_args() -> Result<Args, String> {
-    let mut a = Args {
-        game_dir: PathBuf::new(),
-        player: None,
-        save: None,
-        pos: None,
-        mode: None,
-        scale: 3,
-        seed: None,
-        times: Vec::new(),
-        save_to: None,
-        screenshot: None,
-        keys: String::new(),
-        counter: 0,
-        font: std::env::var_os("U1_FONT").map(PathBuf::from),
-        intro: false,
-        gen: false,
-        roster: None,
-        sound: SoundMode::Original,
-        sound_demo: None,
-        music_demo: None,
-        enhanced: false,
-        pack: None,
-        cli: config::Cli::default(),
-        options_shot: false,
-        slots_shot: false,
-        log_shot: false,
-        crt: false,
-        fullscreen: false,
-        features: Qol::default(),
-        rebind_shot: false,
-        menu_row: 0,
-    };
+    let mut a = Args::default();
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
     while let Some(k) = it.next() {
@@ -1183,6 +1190,30 @@ impl SdlIo {
         }
     }
 
+    fn reset_for_title(&mut self) {
+        self.pending.clear();
+        self.held.clear();
+        self.menu_keys.clear();
+        self.pad = PadInput::new(self.pad.map.clone());
+        self.at_prompt = false;
+        self.view_key = None;
+        self.in_space = false;
+        self.space_front_view = false;
+        self.fresh_wait = false;
+        self.clicked = false;
+        self.focus_lost = false;
+        self.modal_wanted = None;
+        self.in_menu = false;
+        self.current = None;
+        self.save_req = None;
+        self.save_base = None;
+        self.toast = None;
+        self.dirty = false;
+        self.front = true;
+        self.restart = false;
+        self.next = Instant::now();
+    }
+
     fn steady_front(&self) -> bool {
         steady_aim_context(self.in_space, self.space_front_view, self.qol.steady_aim)
     }
@@ -2085,7 +2116,7 @@ fn play(a: &Args) -> Result<(), String> {
         // apply_qol only touches the window for a change.
         io.apply_window();
     }
-    let chosen = match front(a, mode, &mut io)? {
+    let mut chosen = match front(a, mode, &mut io)? {
         Front::Halted(_) => {
             io.keep_window();
             return Ok(());
@@ -2097,12 +2128,13 @@ fn play(a: &Args) -> Result<(), String> {
     // game.
     io.front = false;
     io.restart = false;
+    let mut active_args = a.clone();
     let mut reload = None;
     let mut carried: Option<Explore> = None;
     loop {
         let mode = io.wanted;
         io.video_shown(mode);
-        let (mut g, _) = load(a, mode, chosen.as_deref(), reload.take())?;
+        let (mut g, _) = load(&active_args, mode, chosen.as_deref(), reload.take())?;
         if let Some(e) = carried.take() {
             g.explore = e;
         }
@@ -2110,6 +2142,25 @@ fn play(a: &Args) -> Result<(), String> {
         io.in_space = false;
         io.at_prompt = false;
         let _ = g.run(&mut io);
+        if g.return_to_title && !io.halt {
+            // Drop this Game without saving/overwriting the roster. Keep the
+            // window/config, but discard all transient input/modal/slot state.
+            io.reset_for_title();
+            active_args.for_title_return();
+            reload = None;
+            carried = None;
+            chosen = match front(&active_args, io.wanted, &mut io)? {
+                Front::Play(path) => Some(path),
+                Front::Halted(_) => {
+                    io.keep_window();
+                    return Ok(());
+                }
+                Front::Skip => unreachable!("title return explicitly enables intro"),
+            };
+            io.front = false;
+            io.restart = false;
+            continue;
+        }
         // A save slot was loaded: the game starts again from it.
         if let Some(r) = g.reload.take() {
             reload = Some(r);
@@ -2121,6 +2172,16 @@ fn play(a: &Args) -> Result<(), String> {
         }
         io.keep_window();
         return Ok(());
+    }
+}
+
+impl Args {
+    fn for_title_return(&mut self) {
+        self.intro = true;
+        self.gen = false;
+        self.player = None;
+        self.save = None;
+        self.pos = None;
     }
 }
 
@@ -2326,6 +2387,19 @@ fn keycode_to_byte(k: sdl2::keyboard::Keycode, shift: bool) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn victory_title_return_drops_start_overrides_not_roster_or_preferences() {
+        let mut a = Args { save: Some("old-save.U1".into()), player: Some(3), pos: Some((99, 99)), roster: Some("my-roster".into()), gen: true, ..Default::default() };
+        a.features.attack_gem = true;
+        a.for_title_return();
+        assert!(a.intro && !a.gen);
+        assert!(a.save.is_none() && a.player.is_none() && a.pos.is_none());
+        assert_eq!(a.roster, Some("my-roster".into()));
+        assert!(a.features.attack_gem);
+        a.for_title_return(); // second session can also return
+        assert!(a.intro);
+    }
+
     #[test]
     fn dwell_times_from_presentation_and_pumps_until_elapsed() {
         let mut shown = None;

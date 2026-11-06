@@ -162,3 +162,17 @@ If an earlier rescue only gave 500 of each, enter a castle and rescue a
 princess again after meeting the requirements. Changing Ace need uses
 your existing raw kill count; raising it may make a future rescue
 ineligible but does not remove an already placed machine.
+
+In Mondain's lair, **G (Get)** next to the gem already destroys it, with
+the original explosion costing three quarters of your current Hits
+(God mode prevents that damage). Optional **F1 → Controls → Attack gem**
+(`attack_gem = true`, off by default) also lets a successful in-range
+weapon/projectile attack destroy it immediately, using the same effect
+and cost. Misses and out-of-range attacks do not destroy it; God mode
+is not required. Defeating Mondain is still necessary to win.
+
+After the victory picture: **Press any key to return to title screen**.
+Use a fresh press (held/queued keys do not dismiss it). The same window
+returns to the actual title sequence and character roster; you can
+create a new character or select an existing one. This does not save
+over your character or change your options. No reboot keys are needed.

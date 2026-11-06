@@ -38,7 +38,9 @@ impl SpaceAceNeed {
             _ => None,
         }
     }
-    pub fn get(self) -> u16 { self as u16 }
+    pub fn get(self) -> u16 {
+        self as u16
+    }
     pub fn label(self) -> &'static str {
         match self {
             Self::Twenty => "20",
@@ -46,7 +48,9 @@ impl SpaceAceNeed {
             Self::Five => "5",
         }
     }
-    pub fn as_str(self) -> &'static str { self.label() }
+    pub fn as_str(self) -> &'static str {
+        self.label()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

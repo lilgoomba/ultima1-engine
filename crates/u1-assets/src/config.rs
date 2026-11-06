@@ -345,8 +345,8 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "enemy_speed" => crate::qol::EnemySpeed::parse(v).map(|x| q.enemy_speed = x).ok_or("original or half"),
         "space_map" => crate::qol::SpaceMap::parse(v).map(|x| q.space_map = x).ok_or("original or enhanced"),
         "space_kills" => flag(v).map(|b| q.space_kills = b),
-"wide_hits" => flag(v).map(|b| q.wide_hits = b),
-"space_ace_need" => crate::qol::SpaceAceNeed::parse(v).map(|x| q.space_ace_need = x).ok_or("20, 10 or 5"),
+        "wide_hits" => flag(v).map(|b| q.wide_hits = b),
+        "space_ace_need" => crate::qol::SpaceAceNeed::parse(v).map(|x| q.space_ace_need = x).ok_or("20, 10 or 5"),
         "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {

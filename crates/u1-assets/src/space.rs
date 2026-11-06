@@ -460,11 +460,7 @@ impl<'a> Space<'a> {
         // Longest pre-Ace string is "K:19/20" (7); Ace is "Ace!" (4). Pad to
         // 8 chars so a shorter string clears a longer one, staying in 31..38.
         // Session Ace (ace_done) survives a raised threshold; no save-format Ace bit.
-        let (line, attr) = if self.ace_done || k >= need {
-            ("Ace!    ".to_string(), C_PICK)
-        } else {
-            (format!("K:{k}/{need} "), TEXT)
-        };
+        let (line, attr) = if self.ace_done || k >= need { ("Ace!    ".to_string(), C_PICK) } else { (format!("K:{k}/{need} "), TEXT) };
         debug_assert!(line.chars().count() <= 8, "{line}");
         let mut out: String = line.chars().take(8).collect();
         while out.chars().count() < 8 {

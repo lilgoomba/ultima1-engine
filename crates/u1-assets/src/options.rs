@@ -525,9 +525,7 @@ impl OptionsMenu {
                     }
                     Row::SpaceKills => q.space_kills ^= true,
                     Row::WideHits => q.wide_hits ^= true,
-                    Row::AceNeed => {
-                        q.space_ace_need = qol::cycle(&qol::SpaceAceNeed::ALL, q.space_ace_need, k == keys::LEFT)
-                    }
+                    Row::AceNeed => q.space_ace_need = qol::cycle(&qol::SpaceAceNeed::ALL, q.space_ace_need, k == keys::LEFT),
                 }
                 if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);

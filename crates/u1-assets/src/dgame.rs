@@ -471,11 +471,12 @@ impl Game {
             return;
         }
         self.snd(io, snd);
+        let (ua, ub) = (a as usize, b as usize);
+        let hp = i32::from(self.ds().level.hp[ua][ub]);
+        let dmg = if self.god_mode && dmg != KILL { hp } else { dmg };
         if dmg != KILL {
             self.say(m::HIT_EX);
         }
-        let (ua, ub) = (a as usize, b as usize);
-        let hp = i32::from(self.ds().level.hp[ua][ub]);
         if hp > dmg {
             self.term.num(dmg as u16, 1, ' ', TEXT, true);
             self.sayln(m::DAMAGE);

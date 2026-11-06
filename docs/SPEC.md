@@ -1888,6 +1888,8 @@ Closing the window after keys reached the game since its last save asks
 screens, and a game just saved, close at once. This only guards the
 window's close button; the game's own Q works exactly as the original.
 
+**God mode.** Off by default (F1 Controls, `god_mode`, CLI `--god` / `--features god`). Testing cheat only; not written into the player save. When on, Hits never decrease from combat, traps, or similar paths. Story deaths that force-set Hits (e.g. docking without a vacuum suit) still end the flight. A successful player hit kills instantly; misses unchanged. Space lasers already one-shot fighters; under god mode shield drain leaves at least 1 so the pilot is not drained to story-death. Off is exact original.
+
 **Message pauses.** Config `wait_on_signs` (default on; alias
 `message_pauses` / `message_pause`), F1 Gameplay row "Message pauses"
 (replaces the old "Sign wait" label). Covers landmark sign posts/pillars

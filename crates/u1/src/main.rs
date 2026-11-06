@@ -108,7 +108,7 @@ and a world mini-map (Tab), a character screen (Ztats, Z, shows it), a command h
 dropping things worth a set amount, extra keys for the commands (F1, Keys),
 a gamepad and the engine's own arrow repeat. --features LIST turns some on
 for one run (automap, minimap, character, help, hints, confirm=N, repeat,
-gamepad); in screenshots --keys may hold {map} {help}, and --rebind
+gamepad, god); --god is the testing cheat (Hits never fall; hits kill). In screenshots --keys may hold {map} {help}, and --rebind
 draws the key window.";
 
 struct Args {
@@ -254,6 +254,7 @@ fn parse_args() -> Result<Args, String> {
             "--smoothing" => a.features.smoothing = qol::Smoothing::parse(&v()?).ok_or("--smoothing wants off, linear or pixel-art")?,
             "--fullscreen" => a.fullscreen = true,
             "--features" => features(&mut a.features, &v()?)?,
+            "--god" => a.features.god_mode = true,
             "--rebind" => a.rebind_shot = true,
             "--menu-row" => a.menu_row = v()?.parse().map_err(|_| "bad --menu-row")?,
             "--pack" => a.pack = Some(v()?.into()),
@@ -346,13 +347,14 @@ fn features(q: &mut Qol, list: &str) -> Result<(), String> {
             "hints" => q.hints = true,
             "repeat" => q.repeat = true,
             "gamepad" => q.gamepad = true,
+            "god" | "god_mode" => q.god_mode = true,
             "all" => {
                 let c = q.confirm;
                 *q = Qol { automap: true, minimap: true, charsheet: true, help: true, hints: true, ..*q };
                 q.confirm = c;
             }
             c if c.starts_with("confirm=") => q.confirm = c[8..].parse().map_err(|_| "--features confirm=N wants a number")?,
-            other => return Err(format!("unknown feature {other} (automap, minimap, character, help, hints, confirm=N, repeat, gamepad, all)")),
+            other => return Err(format!("unknown feature {other} (automap, minimap, character, help, hints, confirm=N, repeat, gamepad, god, all)")),
         }
     }
     Ok(())

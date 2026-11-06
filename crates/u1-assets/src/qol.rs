@@ -290,6 +290,9 @@ pub struct Qol {
     pub space_ace_need: SpaceAceNeed,
     /// Expand the front-view fighter hit box by a few pixels (damage unchanged).
     pub wide_hits: bool,
+    /// Testing cheat: Hits never fall; a successful hit kills instantly.
+    /// Not stored in the save. Off by default.
+    pub god_mode: bool,
 }
 
 impl Qol {
@@ -338,6 +341,7 @@ impl Default for Qol {
             space_kills: false,
             space_ace_need: SpaceAceNeed::Twenty,
             wide_hits: false,
+            god_mode: false,
         }
     }
 }

@@ -376,6 +376,7 @@ impl Game {
         self.say(name);
         self.hostile = true;
         self.snd_ev(io, 2, Sfx::Alarm);
+        let dmg = if self.god_mode { i32::from(self.npcs[i].hp) } else { dmg };
         if dmg >= i32::from(self.npcs[i].hp) {
             self.sayln(m::KILLED);
             if tile == NPC_PRINCESS {

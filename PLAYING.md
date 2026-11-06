@@ -87,7 +87,11 @@ machine are unchanged.
 
 Docking at a space station costs 500 coin to refuel, as in the original;
 F1, Gameplay: Docking fees Off refuels free. Either way, ready a vacuum
-or reflect suit before docking, or the open space doors kill you.
+or reflect suit before docking, or the open space doors kill you
+(that story death still ends the flight even with God mode on).
+F1, Controls: God mode (off by default; also `--god`) is a testing cheat:
+Hits never fall, and any successful hit of yours kills at once. It is not
+stored in the save.
 At "Choose thy ship:" type the port number, or press the arrow toward
 the ship you want (it shows in yellow) and Enter, Space or pad A.
 

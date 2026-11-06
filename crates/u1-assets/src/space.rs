@@ -284,6 +284,7 @@ pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
     io.music(crate::music::Track::Space);
     let Some(files) = g.space.take() else { return Ok(SpaceEnd::Landed) };
     io.in_space(true);
+    g.god_mode = io.features().god_mode;
     let mut s = Space::new(g, io, files);
     let r = s.main();
     let died = s.g.hits() <= 0;
@@ -680,8 +681,9 @@ impl<'a> Space<'a> {
 
     /// `f25`: hits and food to zero, then leave.
     fn death(&mut self) -> R<()> {
-        self.g.set(off::HITS, 0);
-        self.g.set(off::FOOD, 0);
+        // Story / suit / drained-ship death: still ends the flight even in god mode.
+        self.g.force_set(off::HITS, 0);
+        self.g.force_set(off::FOOD, 0);
         self.g.term.stat(21, 0, true);
         self.g.term.stat(22, 0, true);
         self.exit()
@@ -1250,10 +1252,19 @@ impl<'a> Space<'a> {
             self.println(d::BEEN_HIT);
             self.snd_ev(2, Sfx::Hurt);
             let n = self.slot().shield.min(321);
-            self.use_shield(n);
-            if self.slot().shield == 0 {
-                self.println(d::DRAINED);
-                self.death()?;
+            if self.g.god_mode {
+                // Hits never fall; keep a point of shield so the flight continues.
+                let leave = self.slot().shield.saturating_sub(n).max(1);
+                let take = self.slot().shield - leave;
+                if take > 0 {
+                    self.use_shield(take);
+                }
+            } else {
+                self.use_shield(n);
+                if self.slot().shield == 0 {
+                    self.println(d::DRAINED);
+                    self.death()?;
+                }
             }
         }
         self.prompt();

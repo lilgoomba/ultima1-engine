@@ -62,6 +62,7 @@ pub enum Row {
     SpaceKills,
     WideHits,
     AceNeed,
+    GodMode,
 }
 
 /// The menu's pages (tabs), in order.
@@ -95,7 +96,7 @@ impl Page {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
             Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::MessagePauses, Row::DockFee],
-            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys],
+            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys, Row::GodMode],
             Page::Space => &[Row::SteadyAim, Row::EnemySpeed, Row::WideHits, Row::SpaceMap, Row::SpaceKills, Row::AceNeed],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
         }
@@ -103,7 +104,7 @@ impl Page {
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 39] = [
+pub const ROWS: [Row; 40] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
@@ -129,6 +130,7 @@ pub const ROWS: [Row; 39] = [
     Row::RepeatRate,
     Row::Gamepad,
     Row::Keys,
+    Row::GodMode,
     Row::SteadyAim,
     Row::EnemySpeed,
     Row::WideHits,
@@ -197,6 +199,7 @@ impl Row {
             Row::SpaceKills => "Kill counter",
             Row::WideHits => "Hit box",
             Row::AceNeed => "Ace need",
+            Row::GodMode => "God mode",
         }
     }
 
@@ -242,6 +245,7 @@ impl Row {
             Row::SpaceKills => "Show fighter kills toward Space Ace on the space HUD.",
             Row::WideHits => "Slightly larger fighter hit box (aim only; damage unchanged).",
             Row::AceNeed => "Fighter kills required for Space Ace (HUD and award).",
+            Row::GodMode => "Testing cheat: Hits stay up; your hits kill at once.",
         }
     }
 }
@@ -370,6 +374,7 @@ impl OptionsMenu {
                 Row::SpaceKills => q.space_kills = d.space_kills,
                 Row::WideHits => q.wide_hits = d.wide_hits,
                 Row::AceNeed => q.space_ace_need = d.space_ace_need,
+                Row::GodMode => q.god_mode = d.god_mode,
             }
         }
     }
@@ -439,6 +444,7 @@ impl OptionsMenu {
             Row::SpaceKills => on(q.space_kills),
             Row::WideHits => on(q.wide_hits),
             Row::AceNeed => q.space_ace_need.label().into(),
+            Row::GodMode => on(q.god_mode),
         }
     }
 
@@ -527,6 +533,7 @@ impl OptionsMenu {
                     Row::SpaceKills => q.space_kills ^= true,
                     Row::WideHits => q.wide_hits ^= true,
                     Row::AceNeed => q.space_ace_need = qol::cycle(&qol::SpaceAceNeed::ALL, q.space_ace_need, k == keys::LEFT),
+                    Row::GodMode => q.god_mode ^= true,
                 }
                 if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);
@@ -683,19 +690,19 @@ mod tests {
     }
 
     #[test]
-    fn digit_keys_select_every_page_including_sixth() {
-        assert_eq!(Page::ALL.len(), 6, "Space page added a sixth tab");
+    fn digit_keys_select_every_page() {
+        assert_eq!(Page::ALL.len(), 6, "six option pages");
         let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
         let expect = [(b'1', Page::Video), (b'2', Page::Sound), (b'3', Page::Gameplay), (b'4', Page::Controls), (b'5', Page::Space), (b'6', Page::Interface)];
         for (digit, page) in expect {
             assert_eq!(m.key(digit), MenuKey::Stay, "digit {}", digit as char);
             assert_eq!((m.page(), m.row), (page, 0), "key {} → {:?}", digit as char, page);
         }
-        let on_iface = m.page();
+        let on_last = m.page();
         assert_eq!(m.key(b'7'), MenuKey::Stay, "past last page is a no-op");
-        assert_eq!(m.page(), on_iface, "7 must not change page");
+        assert_eq!(m.page(), on_last, "7 must not change page");
         assert_eq!(m.key(b'0'), MenuKey::Stay);
-        assert_eq!(m.page(), on_iface);
+        assert_eq!(m.page(), on_last);
     }
     #[test]
     fn interface_via_digit_six_screenshot() {

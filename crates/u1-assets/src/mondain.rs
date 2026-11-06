@@ -691,6 +691,7 @@ impl Lair<'_> {
             }
         }
         if hit && self.rnd(1, 100) <= chance {
+            let dmg = if self.g.god_mode { self.hp } else { dmg };
             self.hp = self.hp.wrapping_sub(dmg);
             self.puts(d::HIT_MONDAIN);
             self.num(dmg);
@@ -1079,8 +1080,19 @@ impl Lair<'_> {
 
     /// `138d`/`12ec`: the player has fallen; OUT takes over.
     fn death(&mut self) -> R<()> {
-        self.g.set(off::HITS, 0);
-        self.g.set(off::FOOD, 0);
+        if self.g.god_mode {
+            if self.g.hits() <= 0 {
+                self.g.force_set(off::HITS, 150);
+            }
+            if self.g.food() <= 0 {
+                self.g.force_set(off::FOOD, 99);
+            }
+            self.show_hits();
+            self.show_food();
+            return Ok(());
+        }
+        self.g.force_set(off::HITS, 0);
+        self.g.force_set(off::FOOD, 0);
         self.show_hits();
         self.show_food();
         self.println(d::DEAD);

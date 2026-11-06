@@ -1871,6 +1871,18 @@ impl Game {
     }
 }
 
+/// Whether a world tile's enhanced picture is mirrored for a vehicle
+/// facing `left`. The horse, cart, raft and frigate (both frames) are
+/// drawn facing right; the aircar facing left; the shuttle and the
+/// time machine, and everything that is not a vehicle, never turn.
+pub fn vehicle_flip(tile: usize, left: bool) -> bool {
+    match tile {
+        0x0B..=0x0F => left,
+        0x10 => !left,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod god_mode_hits {
     use super::*;
@@ -1965,17 +1977,5 @@ mod god_mode_hits {
         g.outdoor_attack(&mut io, crate::rules::Dir::East, 1, 3, 50, 0, crate::game::SHOT_TILE).unwrap();
         assert_eq!(g.ow.entities.len(), 1);
         assert_eq!(g.ow.entities[0].hp, 99);
-    }
-}
-
-/// Whether a world tile's enhanced picture is mirrored for a vehicle
-/// facing `left`. The horse, cart, raft and frigate (both frames) are
-/// drawn facing right; the aircar facing left; the shuttle and the
-/// time machine, and everything that is not a vehicle, never turn.
-pub fn vehicle_flip(tile: usize, left: bool) -> bool {
-    match tile {
-        0x0B..=0x0F => left,
-        0x10 => !left,
-        _ => false,
     }
 }

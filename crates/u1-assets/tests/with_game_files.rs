@@ -1733,8 +1733,6 @@ fn jester_song_is_rare_not_guaranteed() {
     let Some(g) = play(40, 38, "e{w1}") else { return };
     assert_eq!(g.mode, CASTLE);
     assert!(g.npcs.iter().any(|n| n.tile == NPC_BARD));
-    // Documented threshold from SPEC / u1-re notes.
-    assert!(15 < 255);
 }
 
 #[test]

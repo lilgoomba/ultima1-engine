@@ -1888,17 +1888,16 @@ Closing the window after keys reached the game since its last save asks
 screens, and a game just saved, close at once. This only guards the
 window's close button; the game's own Q works exactly as the original.
 
-**Wait on signs.** Config `wait_on_signs` (default on, an exception
-like save slots, confirm quit and vehicle turn, asked for by players),
-F1 Gameplay row "Sign wait". The original shows a landmark's (sign post
-or pillar) words in a box, then waits only for a key or about 10000
-keyboard polls (a second or two on the machines of its day; the engine
-keeps about 1.5 s, shorter with a smaller message delay). With the
-option on, after that pause the box shows "Press any key" below the
-words and stays until a fresh key press, mouse click or pad button;
-keys typed ahead and held-key repeats do not end it, and turbo and the
-message delay do not shorten it. Nothing else changes: the stat gain,
-quest and record are the original's. Off gives the original's flow.
+**Message pauses.** Config `wait_on_signs` (default on; alias
+`message_pauses` / `message_pause`), F1 Gameplay row "Message pauses"
+(replaces the old "Sign wait" label). Covers landmark sign posts/pillars
+and the princess rescue reward box only — not pubs, shops, or the time
+machine. The original shows the text in a box, then waits only for a key
+or a short timed pause. With the option on, after that pause the box
+shows "Press any key" and stays until a fresh key, click or pad button;
+typed-ahead and held-key repeats do not end it. Rewards and record
+writes are unchanged. Off is the original's flow. Existing
+`wait_on_signs = false` configs keep their preference.
 
 **Docking fees.** Config `docking_fee` (default on: the original's
 rule), F1 Gameplay row "Docking fees". Docking at a space station in

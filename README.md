@@ -525,7 +525,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | AppImage desktop entry | | | The AppImage carries a desktop entry and our own 16-bit style icon (CC-BY-SA 4.0). |
 | Vehicle facing | **on** | | Enhanced video: vehicles face the way they last moved sideways; kept in the `.map` sidecar. |
 | `--save FILE` fix | | | Saves back to FILE (or to the roster when FILE is in the game folder), no longer over roster character 1. `--player N` plays character N. |
-| Sign wait | **on** | | A sign's words stay up behind "Press any key". Off: the original's short pause. |
+| Message pauses | **on** | | Signs and princess rescue stay up behind "Press any key" (`wait_on_signs`; alias `message_pauses`). Off: original short pause. Not pubs/shops. |
 | Docking fees | **on** | | The original's 500-coin refuel fee at a space station. Off: refuelling is free (the suit rule is unchanged). |
 | Ship choice by arrow | always | Left/Right, Enter/Space, pad A | At "Choose thy ship", the arrows pick the port on that side (shown in yellow); digits still work. |
 | Steady aim | off | arrows / pad (front view in space) | F1 → Space. Front-view uses the original drift, but an opposite press stops free (no fuel); after release, press again to go that way (2 fuel). OS/engine arrow-repeat is ignored so a hold cannot re-bill. Off: original drift unchanged. |
@@ -541,7 +541,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 master_volume = 100
 sfx_volume = 100
 confirm_quit = true
-wait_on_signs = true
+wait_on_signs = true   # Message pauses (signs + princess); alias message_pauses
 docking_fee = true
 steady_aim = false     # original drift + free counter-steer stop
 enemy_speed = "original"  # original | half

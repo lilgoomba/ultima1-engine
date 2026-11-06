@@ -510,10 +510,14 @@ fn leading_the_princess_out_pays_500_of_each() {
     let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
     g.npcs[i].x = 1;
     g.npcs[i].y = 9;
-    // Stop at the reward's pause, while the box is still shown.
-    let _ = g.town_move(&mut ScriptIo::from_text("{p}"), Dir::West);
+    // Message pauses on: freeze on "Press any key" with the reward box up.
+    let mut io = ScriptIo::from_text("{p}");
+    io.qol.sign_wait = true;
+    io.skip_pauses.set(1); // past message_pause to Press any key
+    let _ = g.town_move(&mut io, Dir::West);
     assert!(g.term.row_text(7).contains("Thou hast saved the princess"));
     assert!(g.term.row_text(9).contains("500 hit points, pence and"));
+    assert!(screen_text(&g).contains("Press any key"));
     assert_eq!(g.hits(), hits + 500);
     assert_eq!(g.rec.coin(), coin + 500);
     assert_eq!(g.exp(), exp + 500);
@@ -1567,9 +1571,9 @@ fn vehicle_faces_last_sideways_move() {
     assert!(!flipped(&g), "the option off never mirrors");
 }
 
-/// Playtest report: a sign's words flashed by. With "Wait on signs" (on by
-/// default) the sign's box keeps them up behind "Press any key" until a
-/// key; off, the flow is the original's short pause (SPEC §25).
+/// Playtest report: a sign's words flashed by. With "Message pauses" (on by
+/// default; config `wait_on_signs`) the sign's box keeps them up behind
+/// "Press any key" until a key; off, the original's short pause (SPEC §25).
 #[test]
 fn signs_wait_for_a_key_when_the_option_is_on() {
     let waiting = |keys: &str, on: bool| {
@@ -1587,4 +1591,62 @@ fn signs_wait_for_a_key_when_the_option_is_on() {
     let g = waiting("e", false).unwrap();
     assert!(!screen_text(&g).contains("Press any key"));
     assert_eq!(g.rec.as_bytes(), waiting("e~x", true).unwrap().rec.as_bytes(), "nothing else changes");
+}
+
+#[test]
+fn princess_rescue_waits_for_a_key_when_message_pauses_on() {
+    use u1_assets::rules::Dir;
+    let Some(mut g) = play(40, 39, "{up}E{w1}") else { return };
+    let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
+    g.npcs[i].x = 1;
+    g.npcs[i].y = 9;
+    // Freeze on the shared "Press any key" after the original pauses.
+    let mut io = ScriptIo::from_text("{p}");
+    io.qol.sign_wait = true;
+    io.skip_pauses.set(1); // past message_pause to Press any key
+    let _ = g.town_move(&mut io, Dir::West);
+    let s = screen_text(&g);
+    assert!(s.contains("Thou hast saved the princess"), "{s}");
+    assert!(s.contains("Press any key"), "rescue must pause to read: {s}");
+    // Stale wait tokens must not dismiss; a real key does.
+    let Some(mut g) = play(40, 39, "{up}E{w1}") else { return };
+    let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
+    g.npcs[i].x = 1;
+    g.npcs[i].y = 9;
+    let mut io = ScriptIo::from_text("~~x");
+    io.qol.sign_wait = true;
+    assert!(g.town_move(&mut io, Dir::West).is_ok());
+    assert!(!screen_text(&g).contains("Press any key"), "key ends the prompt");
+    // Off: original timing only — town_move finishes; no "Press any key".
+    let Some(mut g) = play(40, 39, "{up}E{w1}") else { return };
+    let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
+    g.npcs[i].x = 1;
+    g.npcs[i].y = 9;
+    let mut io = ScriptIo::from_text("");
+    io.qol.sign_wait = false;
+    assert!(g.town_move(&mut io, Dir::West).is_ok());
+    assert!(!screen_text(&g).contains("Press any key"), "off keeps original flow");
+}
+
+#[test]
+fn princess_rescue_press_any_key_screenshot() {
+    use u1_assets::rules::Dir;
+    let Some(mut g) = play(40, 39, "{up}E{w1}") else { return };
+    let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
+    g.npcs[i].x = 1;
+    g.npcs[i].y = 9;
+    let mut io = ScriptIo::from_text("{p}");
+    io.qol.sign_wait = true;
+    io.skip_pauses.set(1); // past message_pause to Press any key
+    let _ = g.town_move(&mut io, Dir::West);
+    assert!(screen_text(&g).contains("Press any key"));
+    let rgb = g.term.to_rgb(&u1_assets::palette::EGA_PALETTE, 2);
+    let path = std::path::Path::new("/workspace/u1-shots/space-aim/princess-rescue-pause.png");
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    let f = std::fs::File::create(path).unwrap();
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+    enc.set_color(png::ColorType::Rgb);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header().unwrap().write_image_data(&rgb).unwrap();
+    assert!(path.is_file());
 }

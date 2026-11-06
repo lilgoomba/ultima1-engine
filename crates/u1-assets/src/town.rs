@@ -127,6 +127,10 @@ impl Game {
         }
         io.message_pause(&self.term, 5)?;
         self.wait(io)?;
+        // Same "Message pauses" path as landmarks (signposts/pillars).
+        if io.features().message_pauses() {
+            self.press_any_key(io)?;
+        }
         self.term.cursor(1, 24);
         Ok(())
     }

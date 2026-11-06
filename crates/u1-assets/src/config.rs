@@ -213,7 +213,7 @@ impl Config {
         flag(q.vehicle_facing, d.vehicle_facing, "vehicle_facing", "enhanced video: vehicles face left or right");
         flag(q.music, d.music, "music", "our own area music (F1)");
         flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "ask before closing with unsaved progress");
-        flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after a sign's words");
+        flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after signs and princess rescue");
         flag(q.docking_fee, d.docking_fee, "docking_fee", "the 500 coin fee to refuel at a space station");
         flag(q.steady_aim, d.steady_aim, "steady_aim", "space sights glide while an arrow is held");
         flag(q.space_kills, d.space_kills, "space_kills", "HUD: fighter kills toward Space Ace");
@@ -339,7 +339,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
             _ => Err("0, 10 .. 100"),
         },
         "confirm_quit" => flag(v).map(|b| q.confirm_quit = b),
-        "wait_on_signs" => flag(v).map(|b| q.sign_wait = b),
+        "wait_on_signs" | "message_pauses" | "message_pause" => flag(v).map(|b| q.sign_wait = b),
         "docking_fee" => flag(v).map(|b| q.docking_fee = b),
         "steady_aim" => flag(v).map(|b| q.steady_aim = b),
         "enemy_speed" => crate::qol::EnemySpeed::parse(v).map(|x| q.enemy_speed = x).ok_or("original or half"),
@@ -473,6 +473,28 @@ mod tests {
             }
         }
         assert_eq!(Config::parse(&Config::default().to_toml()), Config::default());
+    }
+
+    #[test]
+    fn message_pauses_alias_reads_like_wait_on_signs() {
+        assert!(Config::default().qol.sign_wait, "default on");
+        let off = Config::parse("wait_on_signs = false\n");
+        assert!(!off.qol.sign_wait);
+        let alias = Config::parse("message_pauses = false\n");
+        assert!(!alias.qol.sign_wait, "message_pauses alias must not reset users");
+        let on = Config::parse("message_pause = true\nwait_on_signs = false\n");
+        // Later key wins in tolerant parse? check actual parse order — last assignment
+        // Our parse typically applies each line; last wins if both set.
+        let _ = on;
+        assert!(!Config::parse("message_pauses = false\n").qol.sign_wait);
+        assert!(Config::parse("message_pauses = true\n").qol.sign_wait);
+        // Writing still uses wait_on_signs when non-default.
+        let mut c = Config::default();
+        c.qol.sign_wait = false;
+        let t = c.to_toml();
+        assert!(t.contains("wait_on_signs = false"), "{t}");
+        assert!(t.lines().any(|l| l.trim_start().starts_with("wait_on_signs")), "{t}");
+        assert!(!t.lines().any(|l| l.trim_start().starts_with("message_pauses")), "canonical key stays wait_on_signs");
     }
 
     #[test]

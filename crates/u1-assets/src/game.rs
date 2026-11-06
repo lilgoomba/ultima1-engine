@@ -1372,7 +1372,7 @@ impl Game {
             self.snd(io, 6);
         }
         self.wait(io)?;
-        if io.features().sign_wait {
+        if io.features().message_pauses() {
             self.press_any_key(io)?;
         }
         if l != 6 {
@@ -1382,9 +1382,11 @@ impl Game {
         Ok(())
     }
 
-    /// The engine's "Wait on signs": "Press any key" on the sign's box
-    /// (row 14, below its text) until a fresh key, click or pad button.
-    fn press_any_key(&mut self, io: &mut dyn Io) -> IoResult<()> {
+    /// Shared "Message pauses": "Press any key" on the box (row 14, below
+    /// its text) until a fresh key, click or pad button. Used for signs
+    /// and the princess rescue reward; ignores typed-ahead / held repeats
+    /// via [`Io::any_key`].
+    pub(crate) fn press_any_key(&mut self, io: &mut dyn Io) -> IoResult<()> {
         let (col, row) = (self.term.col, self.term.row);
         self.term.print_at(13, 14, "Press any key");
         io.any_key(&self.term)?;

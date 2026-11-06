@@ -80,8 +80,10 @@ never reads:
 | F12 | Screenshot, saved to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`); change the key in F1 → Controls → Keys (last row) |
 | Alt+Enter | Fullscreen on/off |
 
-A sign post's or pillar's words stay up until you press a key (F1,
-Gameplay: Sign wait; on by default, off for the original's short pause).
+A sign post's or pillar's words, and the princess rescue reward text,
+stay up until you press a key (F1, Gameplay: Message pauses; on by
+default, off for the original's short pause). Pubs, shops and the time
+machine are unchanged.
 
 Docking at a space station costs 500 coin to refuel, as in the original;
 F1, Gameplay: Docking fees Off refuels free. Either way, ready a vacuum

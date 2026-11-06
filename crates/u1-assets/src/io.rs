@@ -32,7 +32,8 @@ pub mod keys {
     pub const WAIT: u8 = 0xFF;
     /// Script-only: one poll that finds no key (lets time pass).
     pub const IDLE: u8 = 0xFE;
-    /// Script-only: `{p}` stops the script at the next timed pause, so a
+    /// Script-only: `{p}` stops at the next timed pause (or at `any_key` when
+    /// `skip_pauses` skipped those), so a
     /// screenshot can catch a picture that the pause would show.
     pub const STOP_AT_PAUSE: u8 = 0xFD;
     /// Scripts: `{saveN}` / `{loadN}` (N 1..5, or q) ask for a save-slot
@@ -210,6 +211,9 @@ pub struct ScriptIo {
     pub music: Vec<crate::music::Track>,
     /// Each `retrace(n)` call's n (for cadence tests).
     pub retrace_slices: std::cell::RefCell<Vec<u32>>,
+    /// Let this many timed `pause`/`message_pause` calls ignore a leading
+    /// `{p}` so a later [`any_key`] can freeze on "Press any key".
+    pub skip_pauses: std::cell::Cell<u32>,
 }
 
 impl ScriptIo {
@@ -315,6 +319,11 @@ impl Io for ScriptIo {
 
     fn pause(&mut self, _t: &Term, _ticks: u32) -> IoResult<()> {
         if self.keys.front() == Some(&keys::STOP_AT_PAUSE) {
+            let n = self.skip_pauses.get();
+            if n > 0 {
+                self.skip_pauses.set(n - 1);
+                return Ok(());
+            }
             return Err(Halt);
         }
         Ok(())
@@ -325,6 +334,22 @@ impl Io for ScriptIo {
             self.keys.pop_front();
         }
         Ok(())
+    }
+
+    fn any_key(&mut self, _t: &Term) -> IoResult<()> {
+        // `{p}` freezes on the "Press any key" prompt for fixtures/tests.
+        if self.keys.front() == Some(&keys::STOP_AT_PAUSE) {
+            return Err(Halt);
+        }
+        // Skip queued wait/idle tokens so typed-ahead pacing keys cannot
+        // dismiss the prompt (mirrors the SDL fresh-key path).
+        loop {
+            match self.keys.pop_front() {
+                Some(keys::WAIT) | Some(keys::IDLE) => continue,
+                Some(_) => return Ok(()),
+                None => return Err(Halt),
+            }
+        }
     }
 
     fn sound(&mut self, n: u8) {

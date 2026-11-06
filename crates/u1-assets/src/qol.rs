@@ -268,16 +268,16 @@ pub struct Qol {
     /// Ask before closing the window with progress not yet saved (an
     /// engine safety net only: nothing in the game changes).
     pub confirm_quit: bool,
-    /// After a signpost or pillar's text, wait for a key (or click or
-    /// pad button) behind a "Press any key" line instead of only the
-    /// original's short pause.
+    /// After a signpost/pillar or the princess-rescue reward text, wait
+    /// for a key (or click or pad button) behind "Press any key" instead
+    /// of only the original's short pause. Config key remains
+    /// `wait_on_signs` (alias `message_pauses`). Not pubs/shops/etc.
     pub sign_wait: bool,
     /// The original's 500-coin fee for refuelling at a space station; off
     /// refuels free (the suit is still needed).
     pub docking_fee: bool,
-    /// Space aiming: the sights move a step per arrow press (or held
-    /// repeat) and stay put, instead of the original's drift until
-    /// another direction or the edge.
+    /// Space front-view: original drift, but an opposite press stops free;
+    /// a later edge press starts that way (see SPEC).
     pub steady_aim: bool,
     /// Front-view fighters flee (and grow) at this pace. Aim, fire and
     /// the rest of the simulation are unchanged.
@@ -290,6 +290,13 @@ pub struct Qol {
     pub space_ace_need: SpaceAceNeed,
     /// Expand the front-view fighter hit box by a few pixels (damage unchanged).
     pub wide_hits: bool,
+}
+
+impl Qol {
+    /// Shared "Message pauses" (signs + princess rescue).
+    pub fn message_pauses(self) -> bool {
+        self.sign_wait
+    }
 }
 
 impl Default for Qol {

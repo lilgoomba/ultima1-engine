@@ -54,7 +54,7 @@ pub enum Row {
     MasterVolume,
     SfxVolume,
     ConfirmQuit,
-    SignWait,
+    MessagePauses,
     DockFee,
     SteadyAim,
     EnemySpeed,
@@ -94,7 +94,7 @@ impl Page {
         match self {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
-            Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::SignWait, Row::DockFee],
+            Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::MessagePauses, Row::DockFee],
             Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys],
             Page::Space => &[Row::SteadyAim, Row::EnemySpeed, Row::WideHits, Row::SpaceMap, Row::SpaceKills, Row::AceNeed],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
@@ -122,7 +122,7 @@ pub const ROWS: [Row; 39] = [
     Row::Timing,
     Row::Food,
     Row::Confirm,
-    Row::SignWait,
+    Row::MessagePauses,
     Row::DockFee,
     Row::Repeat,
     Row::RepeatDelay,
@@ -146,7 +146,7 @@ pub const ROWS: [Row; 39] = [
 ];
 
 /// Where the values start: one blank after the longest label.
-const VALUE_COL: usize = 17;
+const VALUE_COL: usize = 19;
 
 /// The most rows a page has.
 pub const SHOWN: usize = 8;
@@ -189,7 +189,7 @@ impl Row {
             Row::MasterVolume => "Master vol.",
             Row::SfxVolume => "Effects vol.",
             Row::ConfirmQuit => "Confirm quit",
-            Row::SignWait => "Sign wait",
+            Row::MessagePauses => "Message pauses",
             Row::DockFee => "Docking fees",
             Row::SteadyAim => "Steady aim",
             Row::EnemySpeed => "Enemy speed",
@@ -234,7 +234,7 @@ impl Row {
             Row::MasterVolume => "How loud everything is.",
             Row::SfxVolume => "How loud the beeps and sound effects are.",
             Row::ConfirmQuit => "Ask before closing the window with progress not saved.",
-            Row::SignWait => "Keep a sign's words up until a key.",
+            Row::MessagePauses => "Press any key after signs and princess rescue.",
             Row::DockFee => "Pay 500 coin to refuel at a station.",
             Row::SteadyAim => "Original drift; opposite press stops free. Press again to go that way.",
             Row::EnemySpeed => "How fast front-view fighters flee and grow (aim and fire unchanged).",
@@ -362,7 +362,7 @@ impl OptionsMenu {
                 Row::MasterVolume => q.master_volume = d.master_volume,
                 Row::SfxVolume => q.sfx_volume = d.sfx_volume,
                 Row::ConfirmQuit => q.confirm_quit = d.confirm_quit,
-                Row::SignWait => q.sign_wait = d.sign_wait,
+                Row::MessagePauses => q.sign_wait = d.sign_wait,
                 Row::DockFee => q.docking_fee = d.docking_fee,
                 Row::SteadyAim => q.steady_aim = d.steady_aim,
                 Row::EnemySpeed => q.enemy_speed = d.enemy_speed,
@@ -431,7 +431,7 @@ impl OptionsMenu {
             Row::MasterVolume => format!("{}%", q.master_volume),
             Row::SfxVolume => format!("{}%", q.sfx_volume),
             Row::ConfirmQuit => on(q.confirm_quit),
-            Row::SignWait => on(q.sign_wait),
+            Row::MessagePauses => on(q.sign_wait),
             Row::DockFee => on(q.docking_fee),
             Row::SteadyAim => on(q.steady_aim),
             Row::EnemySpeed => q.enemy_speed.label().into(),
@@ -509,7 +509,7 @@ impl OptionsMenu {
                     Row::MasterVolume => q.master_volume = qol::cycle(&qol::VOLUMES, q.master_volume, k == keys::LEFT),
                     Row::SfxVolume => q.sfx_volume = qol::cycle(&qol::VOLUMES, q.sfx_volume, k == keys::LEFT),
                     Row::ConfirmQuit => q.confirm_quit ^= true,
-                    Row::SignWait => q.sign_wait ^= true,
+                    Row::MessagePauses => q.sign_wait ^= true,
                     Row::DockFee => q.docking_fee ^= true,
                     Row::SteadyAim => q.steady_aim ^= true,
                     Row::EnemySpeed => {

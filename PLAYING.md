@@ -95,6 +95,8 @@ glide only while an arrow is held (and stop when it is let go). F1,
 Controls: Enemy speed Half keeps fighters in view longer; it does not
 change your aim, lasers or damage. Space map Enhanced makes I show a
 labelled galaxy grid with a legend; Original keeps the classic scan.
+Kill counter (off by default) shows fighter kills toward Space Ace as
+n/20 on the space status panel; after 20 it shows Ace!.
 
 The game also pauses when its window loses focus. Closing the window with
 progress not yet saved asks first (F1, Interface: Confirm quit). The

@@ -249,6 +249,8 @@ pub struct Qol {
     pub enemy_speed: EnemySpeed,
     /// I (Inform) in space: original sector scan, or a clearer grid.
     pub space_map: SpaceMap,
+    /// Show space fighter kills toward Space Ace (save 0xA6) on the HUD.
+    pub space_kills: bool,
 }
 
 impl Default for Qol {
@@ -287,6 +289,7 @@ impl Default for Qol {
             steady_aim: false,
             enemy_speed: EnemySpeed::Original,
             space_map: SpaceMap::Original,
+            space_kills: false,
         }
     }
 }

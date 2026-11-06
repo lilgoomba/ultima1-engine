@@ -59,6 +59,7 @@ pub enum Row {
     SteadyAim,
     EnemySpeed,
     SpaceMap,
+    SpaceKills,
 }
 
 /// The menu's pages (tabs), in order.
@@ -90,14 +91,14 @@ impl Page {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
             Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::SignWait, Row::DockFee],
-            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::SteadyAim, Row::EnemySpeed, Row::SpaceMap, Row::Keys],
+            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::SteadyAim, Row::EnemySpeed, Row::SpaceMap, Row::SpaceKills, Row::Keys],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
         }
     }
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 36] = [
+pub const ROWS: [Row; 37] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
@@ -125,6 +126,7 @@ pub const ROWS: [Row; 36] = [
     Row::SteadyAim,
     Row::EnemySpeed,
     Row::SpaceMap,
+    Row::SpaceKills,
     Row::Keys,
     Row::Slots,
     Row::Log,
@@ -140,7 +142,7 @@ pub const ROWS: [Row; 36] = [
 const VALUE_COL: usize = 17;
 
 /// The most rows a page has.
-pub const SHOWN: usize = 8;
+pub const SHOWN: usize = 9;
 
 /// Keys the menu reads besides the game's: Tab (next page) and the
 /// message log's page keys (`msglog::keys`).
@@ -185,6 +187,7 @@ impl Row {
             Row::SteadyAim => "Steady aim",
             Row::EnemySpeed => "Enemy speed",
             Row::SpaceMap => "Space map",
+            Row::SpaceKills => "Kill counter",
         }
     }
 
@@ -227,6 +230,7 @@ impl Row {
             Row::SteadyAim => "Space sights glide while an arrow is held; stop on release.",
             Row::EnemySpeed => "How fast front-view fighters flee and grow (aim and fire unchanged).",
             Row::SpaceMap => "I in space: original scan icons, or a clearer labelled grid.",
+            Row::SpaceKills => "Show fighter kills toward Space Ace (x/20) on the space HUD.",
         }
     }
 }
@@ -352,6 +356,7 @@ impl OptionsMenu {
                 Row::SteadyAim => q.steady_aim = d.steady_aim,
                 Row::EnemySpeed => q.enemy_speed = d.enemy_speed,
                 Row::SpaceMap => q.space_map = d.space_map,
+                Row::SpaceKills => q.space_kills = d.space_kills,
             }
         }
     }
@@ -418,6 +423,7 @@ impl OptionsMenu {
             Row::SteadyAim => on(q.steady_aim),
             Row::EnemySpeed => q.enemy_speed.label().into(),
             Row::SpaceMap => q.space_map.label().into(),
+            Row::SpaceKills => on(q.space_kills),
         }
     }
 
@@ -502,6 +508,7 @@ impl OptionsMenu {
                             qol::SpaceMap::Enhanced => qol::SpaceMap::Original,
                         }
                     }
+                    Row::SpaceKills => q.space_kills ^= true,
                 }
                 if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);
@@ -546,18 +553,21 @@ impl OptionsMenu {
                 col += s.len() + 2;
             }
         }
-        for (i, &r) in self.page().rows().iter().enumerate() {
+        let rows = self.page().rows();
+        for (i, &r) in rows.iter().enumerate() {
             let row = 6 + i;
             let sel = i == self.row;
             t.print_at_attr(2, row, if sel { "\u{10}" } else { " " }, WARN);
             t.print_at_attr(3, row, &format!("{}:", r.label()), TEXT);
             t.print_at_attr(VALUE_COL, row, &format!("<{}>", self.value(r)), if sel { WARN } else { TEXT });
         }
+        // Description and help sit under the last setting (8 or 9 rows).
+        let under = 6 + rows.len();
         for (i, l) in wrap(self.current().describe(), 36).iter().take(2).enumerate() {
-            t.print_at_attr(2, 14 + i, l, TEXT);
+            t.print_at_attr(2, under + i, l, TEXT);
         }
-        center(t, 16, "Tab: page  R: reset page  O: all", TEXT);
-        center(t, 17, "Arrows: change  F1/Enter: resume", TEXT);
+        center(t, under + 2, "Tab: page  R: reset page  O: all", TEXT);
+        center(t, under + 3, "Arrows: change  F1/Enter: resume", TEXT);
         t.cursor(1, 24);
     }
 }
@@ -712,7 +722,7 @@ mod tests {
         assert!(t.row_text(3).contains("1 Video") && t.row_text(4).contains("5 Interface"));
         assert!(t.row_text(6).contains("Video:") && t.row_text(6).contains("<CGA>"));
         assert!(t.row_text(7).contains("Fullscreen:") && t.row_text(7).contains("<Off>"));
-        assert!(t.row_text(14).contains("The display"), "the description");
+        assert!(t.row_text(12).contains("The display"), "the description under the last Video row");
         assert_eq!(t.row_text(24)[..30].trim(), "", "the message window is untouched");
         let mut m = m;
         m.key(b'2');

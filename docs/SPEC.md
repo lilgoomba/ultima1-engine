@@ -1919,6 +1919,12 @@ pause. They stop on release, focus loss, or a menu. 2 fuel is paid when a
 direction starts being held, not each frame. The sights keep inside the
 original's limits.
 
+**Kill counter.** Off by default (F1 Controls, `space_kills`). When on,
+the space status panel shows the save's enemy-vessel count (word 0xA6)
+as `n/20` toward Space Ace; at 20 or more it shows `Ace!` (the original
+keeps incrementing past 20 and prints "still a Space Ace" on further
+kills — the HUD does not show a misleading n/20 after the award).
+
 **Space map.** Original by default (F1 Controls, `space_map`). Enhanced
 replaces the Inform (I) sector scan with a larger 7×7 grid, axis labels
 0–6, a legend for the same icons the original draws (fighters, star,

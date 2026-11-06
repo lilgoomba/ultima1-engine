@@ -225,6 +225,15 @@ const STEADY_AIM_PX_PER_SEC: f32 = 240.0;
 /// long `retrace(n)` wait or a pause cannot become one big jump.
 const STEADY_AIM_MAX_DT_MS: u64 = 16;
 
+/// Enhanced Inform scan layout (must fit inside `Term::boxed`: frame
+/// y 26..=124, fill y 23..=127). Grid + labels + prompt all stay inside.
+const ENH_SCAN_OX: i32 = 52;
+const ENH_SCAN_OY: i32 = 42;
+const ENH_SCAN_CELL: i32 = 9;
+const ENH_SCAN_GRID: i32 = ENH_SCAN_CELL * 7; // 63; bottom at 105
+/// Text row for "Any key: back" (pixel y = row*8); below the grid bottom.
+const ENH_SCAN_PROMPT_ROW: usize = 14; // y=112..119; ~7 px clear under the grid
+
 fn sign(v: i16) -> i16 {
     v.signum()
 }
@@ -432,6 +441,23 @@ impl<'a> Space<'a> {
         let v = self.g.coin();
         self.g.term.stat(24, i32::from(v), false);
     }
+
+    /// Optional HUD: kills toward Space Ace (save word 0xA6). The original
+    /// awards Ace at exactly 20 and keeps counting; we show `n/20` before
+    /// that and "Space Ace" after so a post-20 total is not read as a goal.
+    fn show_kills(&mut self) {
+        if !self.io.features().space_kills {
+            return;
+        }
+        let k = self.g.w(off::ENEMIES);
+        self.g.term.print_at_attr(31, 20, "Kills", TEXT);
+        if k >= 20 {
+            self.g.term.print_at_attr(36, 20, "Ace!    ", C_PICK);
+        } else {
+            let t = format!("{k}/20  ");
+            self.g.term.print_at_attr(36, 20, &t, TEXT);
+        }
+    }
     fn use_shield(&mut self, n: i16) {
         let s = self.slot_mut();
         s.shield = (s.shield - n).max(0);
@@ -464,6 +490,7 @@ impl<'a> Space<'a> {
         self.draw_all();
         self.show_fuel();
         self.show_shield();
+        self.show_kills();
         loop {
             if self.slot().shield == 0 {
                 self.g.rec.set_u16(off::SHUTTLE_0, 0);
@@ -555,6 +582,7 @@ impl<'a> Space<'a> {
         }
         self.show_fuel();
         self.show_shield();
+        self.show_kills();
     }
 
     fn command(&mut self, key: u8) -> R<()> {
@@ -1672,8 +1700,10 @@ impl<'a> Space<'a> {
             self.show_exp();
             self.g.add(off::ENEMIES, 1);
             let kills = self.g.w(off::ENEMIES);
+            self.show_kills();
             if kills == 20 {
                 self.space_ace()?;
+                self.show_kills(); // Ace panel redraws the view
             } else if kills > 20 {
                 self.println(d::STILL_ACE);
             }
@@ -1889,52 +1919,53 @@ impl<'a> Space<'a> {
     }
 
     fn draw_enhanced_scan(&mut self, with_you: bool) {
-        const OX: i32 = 48;
-        const OY: i32 = 44;
-        const CELL: i32 = 12;
+        // Clear the whole screen so a Term dump (and a busy overworld
+        // behind the box) does not show through the panel margins.
+        self.g.term.fill(0, 0, 319, 199, BLACK);
         self.g.term.boxed(C_BLUE);
         self.g.term.print_at_attr(5, 3, &format!("Galaxy scan  (you: {},{})", self.gx, self.gy), TEXT);
         {
             let t = &mut self.g.term;
+            let (ox, oy, cell, grid) = (ENH_SCAN_OX, ENH_SCAN_OY, ENH_SCAN_CELL, ENH_SCAN_GRID);
+            debug_assert!(oy + grid <= 120, "grid must sit above the prompt");
             for i in 0..=7 {
-                let x = OX + i * CELL;
-                let y = OY + i * CELL;
-                t.line_u1(OX, y, OX + 7 * CELL, y, C_FRAME);
-                t.line_u1(x, OY, x, OY + 7 * CELL, C_FRAME);
+                let x = ox + i * cell;
+                let y = oy + i * cell;
+                t.line_u1(ox, y, ox + grid, y, C_FRAME);
+                t.line_u1(x, oy, x, oy + grid, C_FRAME);
             }
             for gx in 0..7 {
                 for gy in 0..7 {
-                    let x = OX + gx as i32 * CELL + 2;
-                    let y = OY + gy as i32 * CELL + 2;
+                    let x = ox + gx as i32 * cell + 1;
+                    let y = oy + gy as i32 * cell + 1;
                     Self::scan_glyph(t, x, y, Self::scan_kind(self.gal[gx][gy]));
                 }
             }
             for i in 0..7 {
-                Self::digit(t, OX + i * CELL + 4, OY - 7, i as u8, TEXT);
-                Self::digit(t, OX - 8, OY + i * CELL + 3, i as u8, TEXT);
+                Self::digit(t, ox + i * cell + 3, oy - 7, i as u8, TEXT);
+                Self::digit(t, ox - 7, oy + i * cell + 2, i as u8, TEXT);
             }
-            let lx = OX + 7 * CELL + 10;
-            let mut ly = OY;
-            // Legend title and entries in the right margin (text cells).
-            t.print_at_attr(25, 4, "Legend", TEXT);
-            Self::scan_glyph(t, lx, ly, ScanKind::Enemies);
-            t.print_at_attr(25, 5, "Fighters", TEXT);
-            ly += 12;
-            Self::scan_glyph(t, lx, ly, ScanKind::Star);
-            t.print_at_attr(25, 7, "Star", TEXT);
-            ly += 12;
-            Self::scan_glyph(t, lx, ly, ScanKind::Station);
-            t.print_at_attr(25, 8, "Station", TEXT);
-            ly += 12;
-            Self::scan_glyph(t, lx, ly, ScanKind::Empty);
-            t.print_at_attr(25, 10, "Empty", TEXT);
-            ly += 14;
-            t.line_u1(lx, ly, lx + 8, ly, C_PICK);
-            t.line_u1(lx + 8, ly, lx + 8, ly + 8, C_PICK);
-            t.line_u1(lx + 8, ly + 8, lx, ly + 8, C_PICK);
-            t.line_u1(lx, ly + 8, lx, ly, C_PICK);
-            t.print_at_attr(25, 12, "You", TEXT);
-            t.print_at_attr(5, 14, "Any key: back", TEXT);
+            // Legend: each icon's top matches the text row's pixel y (row*8).
+            let lx = ox + grid + 8;
+            t.print_at_attr(24, 4, "Legend", TEXT);
+            let entries: [(ScanKind, &str, usize); 4] = [(ScanKind::Enemies, "Fighters", 5), (ScanKind::Star, "Star", 6), (ScanKind::Station, "Station", 7), (ScanKind::Empty, "Empty", 8)];
+            for (kind, name, row) in entries {
+                // +1 matches the font's ink band inside the 8px text row.
+                let ly = (row * 8) as i32 + 1;
+                Self::scan_glyph(t, lx, ly, kind);
+                t.print_at_attr(26, row, name, TEXT);
+            }
+            let you_row = 9;
+            let ly = (you_row * 8) as i32 + 1;
+            // Legend sample: single yellow frame, same band as the label.
+            let (x0, y0, side) = (lx, ly, 7);
+            t.line_u1(x0, y0, x0 + side, y0, C_PICK);
+            t.line_u1(x0 + side, y0, x0 + side, y0 + side, C_PICK);
+            t.line_u1(x0 + side, y0 + side, x0, y0 + side, C_PICK);
+            t.line_u1(x0, y0 + side, x0, y0, C_PICK);
+            t.print_at_attr(26, you_row, "You", TEXT);
+            // Prompt below the grid (grid ends at oy+grid = 110).
+            t.print_at_attr(5, ENH_SCAN_PROMPT_ROW, "Any key: back", TEXT);
         }
         if with_you {
             self.draw_you_marker(true);
@@ -1942,38 +1973,41 @@ impl<'a> Space<'a> {
     }
 
     fn draw_you_marker(&mut self, fill_pulse: bool) {
-        const OX: i32 = 48;
-        const OY: i32 = 44;
-        const CELL: i32 = 12;
-        let x0 = OX + self.gx as i32 * CELL;
-        let y0 = OY + self.gy as i32 * CELL;
+        let (ox, oy, cell) = (ENH_SCAN_OX, ENH_SCAN_OY, ENH_SCAN_CELL);
+        let x0 = ox + self.gx as i32 * cell;
+        let y0 = oy + self.gy as i32 * cell;
         let t = &mut self.g.term;
-        let c = C_PICK;
-        t.line_u1(x0, y0, x0 + CELL, y0, c);
-        t.line_u1(x0 + CELL, y0, x0 + CELL, y0 + CELL, c);
-        t.line_u1(x0 + CELL, y0 + CELL, x0, y0 + CELL, c);
-        t.line_u1(x0, y0 + CELL, x0, y0, c);
+        // Double frame: white outer, yellow inner — readable on any cell icon.
+        for (d, c) in [(0, C_WHITE), (1, C_PICK)] {
+            let x = x0 - d;
+            let y = y0 - d;
+            let s = cell + 2 * d;
+            t.line_u1(x, y, x + s, y, c);
+            t.line_u1(x + s, y, x + s, y + s, c);
+            t.line_u1(x + s, y + s, x, y + s, c);
+            t.line_u1(x, y + s, x, y, c);
+        }
         if fill_pulse {
-            for i in 1..CELL {
-                t.plot(x0 + i, y0 + 1, c);
-                t.plot(x0 + i, y0 + CELL - 1, c);
+            for i in 1..cell {
+                t.plot(x0 + i, y0 + 1, C_PICK);
+                t.plot(x0 + i, y0 + cell - 1, C_PICK);
             }
         } else {
-            // Restore the icon under the top/bottom pulse lines.
             let kind = Self::scan_kind(self.gal[self.gx][self.gy]);
-            let x = x0 + 2;
-            let y = y0 + 2;
-            // clear inner top/bottom then redraw glyph
-            for i in 1..CELL {
+            for i in 1..cell {
                 t.plot(x0 + i, y0 + 1, BLACK);
-                t.plot(x0 + i, y0 + CELL - 1, BLACK);
+                t.plot(x0 + i, y0 + cell - 1, BLACK);
             }
-            Self::scan_glyph(t, x, y, kind);
-            // re-stroke frame
-            t.line_u1(x0, y0, x0 + CELL, y0, c);
-            t.line_u1(x0 + CELL, y0, x0 + CELL, y0 + CELL, c);
-            t.line_u1(x0 + CELL, y0 + CELL, x0, y0 + CELL, c);
-            t.line_u1(x0, y0 + CELL, x0, y0, c);
+            Self::scan_glyph(t, x0 + 1, y0 + 1, kind);
+            for (d, c) in [(0, C_WHITE), (1, C_PICK)] {
+                let x = x0 - d;
+                let y = y0 - d;
+                let s = cell + 2 * d;
+                t.line_u1(x, y, x + s, y, c);
+                t.line_u1(x + s, y, x + s, y + s, c);
+                t.line_u1(x + s, y + s, x, y + s, c);
+                t.line_u1(x, y + s, x, y, c);
+            }
         }
     }
 
@@ -2242,13 +2276,53 @@ mod real_game {
         s.gal[2][2].enemies = 1;
         assert_eq!(Space::scan_kind(s.gal[2][2]), ScanKind::Enemies);
         s.draw_enhanced_scan(true);
-        const OX: i32 = 48;
-        const OY: i32 = 44;
-        const CELL: i32 = 12;
-        let x0 = OX + 3 * CELL;
-        let y0 = OY + 3 * CELL;
-        assert_eq!(s.g.term.at(x0 as usize, y0 as usize), C_PICK, "you-frame corner");
+        let x0 = ENH_SCAN_OX + 3 * ENH_SCAN_CELL;
+        let y0 = ENH_SCAN_OY + 3 * ENH_SCAN_CELL;
+        assert_eq!(s.g.term.at(x0 as usize, y0 as usize), C_WHITE, "outer you-frame");
+        assert_eq!(s.g.term.at((x0 + 1) as usize, (y0 + 1) as usize), C_PICK, "inner you-frame");
         assert!(s.cmd_inform().is_ok());
+    }
+
+    #[test]
+    fn enhanced_space_map_layout_fits_panel_without_overlap() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.gx = 3;
+        s.gy = 6; // bottom row — must still be inside the panel
+        s.draw_enhanced_scan(true);
+        let grid_bot = ENH_SCAN_OY + ENH_SCAN_GRID;
+        assert_eq!(grid_bot, 105, "expected compact grid bottom");
+        assert!(grid_bot + 5 <= (ENH_SCAN_PROMPT_ROW * 8) as i32, "clear gap above prompt");
+        // Frame of Term::boxed ends at y=124; prompt glyphs live in row*8..+7.
+        let prompt_bot = (ENH_SCAN_PROMPT_ROW * 8 + 7) as i32;
+        assert!(prompt_bot <= 124, "prompt inside blue frame");
+        // Row-6 you-marker still on-panel.
+        let y0 = ENH_SCAN_OY + 6 * ENH_SCAN_CELL;
+        assert!(y0 + ENH_SCAN_CELL <= 110, "row 6 cell inside panel above prompt");
+        assert_eq!(s.g.term.at((ENH_SCAN_OX + 3 * ENH_SCAN_CELL) as usize, y0 as usize), C_WHITE);
+        // Outside the blue fill, margins are black (clean dump, no overworld).
+        assert_eq!(s.g.term.at(10, 10), BLACK);
+        assert_eq!(s.g.term.at(300, 180), BLACK);
+        // Legend icon tops align with text rows 5..=8 (pixel y = row*8).
+        let lx = (ENH_SCAN_OX + ENH_SCAN_GRID + 8) as usize;
+        for row in 5..=8 {
+            let y = row * 8;
+            // At least one non-black pixel in the 8x8 glyph box (icons use white/colour).
+            let ink = (0..8).any(|dy| (0..8).any(|dx| s.g.term.at(lx + dx, y + dy) != BLACK));
+            assert!(ink, "legend glyph missing at row {row}");
+        }
+        // Prompt row has text ink; the row above (grid) must not be the prompt string
+        // — check a known letter column for 'A' of "Any" at col 5 = x 40.
+        let py = ENH_SCAN_PROMPT_ROW * 8;
+        let prompt_ink = (40..40 + 8 * 12).any(|x| s.g.term.at(x, py + 2) != BLACK);
+        assert!(prompt_ink, "prompt text missing below grid");
+        // No prompt ink overlapping the last grid row interior.
+        let gy = (ENH_SCAN_OY + 6 * ENH_SCAN_CELL + 4) as usize;
+        let overlap = (40..120).filter(|&x| s.g.term.at(x, gy) == TEXT).count();
+        assert!(overlap < 20, "prompt text must not sit in grid row 6");
     }
 
     #[test]
@@ -2272,6 +2346,58 @@ mod real_game {
         enc.set_depth(png::BitDepth::Eight);
         let mut wr = enc.write_header().unwrap();
         wr.write_image_data(&rgb).unwrap();
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn kill_counter_hud_shows_progress_then_ace() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 7);
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.show_kills();
+        let row = 20usize;
+        let ink = |col: usize| (0..8).any(|dy| (0..8).any(|dx| s.g.term.at(col * 8 + dx, row * 8 + dy) != BLACK));
+        assert!(ink(31), "Kills label");
+        assert!(ink(36), "count value");
+        drop(s);
+        g.rec.set_u16(off::ENEMIES, 20);
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.show_kills();
+        assert_eq!(s.g.w(off::ENEMIES), 20);
+        let pick = (36 * 8..40 * 8).any(|x| (row * 8..row * 8 + 8).any(|y| s.g.term.at(x, y) == C_PICK));
+        assert!(pick, "Space Ace shown in yellow");
+    }
+
+    #[test]
+    fn kill_counter_screenshot_for_preview() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 12);
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.draw_all();
+        s.g.term.print_at_attr(31, 21, "Shld", TEXT);
+        s.g.term.print_at_attr(31, 22, "Fuel", TEXT);
+        s.show_shield();
+        s.show_fuel();
+        s.show_kills();
+        // Black margins for a clean dump.
+        s.g.term.fill(0, 0, 7, 199, BLACK);
+        s.g.term.fill(312, 0, 319, 199, BLACK);
+        let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
+        let path = std::path::Path::new("/workspace/u1-shots/space-aim/kill-counter.png");
+        let _ = std::fs::create_dir_all(path.parent().unwrap());
+        let f = std::fs::File::create(path).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&rgb).unwrap();
         assert!(path.is_file());
     }
 

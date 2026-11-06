@@ -216,6 +216,7 @@ impl Config {
         flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after a sign's words");
         flag(q.docking_fee, d.docking_fee, "docking_fee", "the 500 coin fee to refuel at a space station");
         flag(q.steady_aim, d.steady_aim, "steady_aim", "space sights glide while an arrow is held");
+        flag(q.space_kills, d.space_kills, "space_kills", "HUD: fighter kills toward Space Ace (x/20)");
         if q.enemy_speed != d.enemy_speed {
             s += &format!(
                 "enemy_speed = \"{}\"   # original | half\n",
@@ -339,6 +340,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "steady_aim" => flag(v).map(|b| q.steady_aim = b),
         "enemy_speed" => crate::qol::EnemySpeed::parse(v).map(|x| q.enemy_speed = x).ok_or("original or half"),
         "space_map" => crate::qol::SpaceMap::parse(v).map(|x| q.space_map = x).ok_or("original or enhanced"),
+        "space_kills" => flag(v).map(|b| q.space_kills = b),
         "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {

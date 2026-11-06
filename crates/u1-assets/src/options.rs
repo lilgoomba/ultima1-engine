@@ -58,6 +58,7 @@ pub enum Row {
     DockFee,
     SteadyAim,
     EnemySpeed,
+    SpaceMap,
 }
 
 /// The menu's pages (tabs), in order.
@@ -89,14 +90,14 @@ impl Page {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
             Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::SignWait, Row::DockFee],
-            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::SteadyAim, Row::EnemySpeed, Row::Keys],
+            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::SteadyAim, Row::EnemySpeed, Row::SpaceMap, Row::Keys],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
         }
     }
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 35] = [
+pub const ROWS: [Row; 36] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
@@ -123,6 +124,7 @@ pub const ROWS: [Row; 35] = [
     Row::Gamepad,
     Row::SteadyAim,
     Row::EnemySpeed,
+    Row::SpaceMap,
     Row::Keys,
     Row::Slots,
     Row::Log,
@@ -182,6 +184,7 @@ impl Row {
             Row::DockFee => "Docking fees",
             Row::SteadyAim => "Steady aim",
             Row::EnemySpeed => "Enemy speed",
+            Row::SpaceMap => "Space map",
         }
     }
 
@@ -223,6 +226,7 @@ impl Row {
             Row::DockFee => "Pay 500 coin to refuel at a station.",
             Row::SteadyAim => "Space sights glide while an arrow is held; stop on release.",
             Row::EnemySpeed => "How fast front-view fighters flee and grow (aim and fire unchanged).",
+            Row::SpaceMap => "I in space: original scan icons, or a clearer labelled grid.",
         }
     }
 }
@@ -347,6 +351,7 @@ impl OptionsMenu {
                 Row::DockFee => q.docking_fee = d.docking_fee,
                 Row::SteadyAim => q.steady_aim = d.steady_aim,
                 Row::EnemySpeed => q.enemy_speed = d.enemy_speed,
+                Row::SpaceMap => q.space_map = d.space_map,
             }
         }
     }
@@ -412,6 +417,7 @@ impl OptionsMenu {
             Row::DockFee => on(q.docking_fee),
             Row::SteadyAim => on(q.steady_aim),
             Row::EnemySpeed => q.enemy_speed.label().into(),
+            Row::SpaceMap => q.space_map.label().into(),
         }
     }
 
@@ -488,6 +494,12 @@ impl OptionsMenu {
                         q.enemy_speed = match q.enemy_speed {
                             qol::EnemySpeed::Original => qol::EnemySpeed::Half,
                             qol::EnemySpeed::Half => qol::EnemySpeed::Original,
+                        }
+                    }
+                    Row::SpaceMap => {
+                        q.space_map = match q.space_map {
+                            qol::SpaceMap::Original => qol::SpaceMap::Enhanced,
+                            qol::SpaceMap::Enhanced => qol::SpaceMap::Original,
                         }
                     }
                 }

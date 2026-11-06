@@ -13,6 +13,9 @@ No tagged releases yet; entries are by branch.
   Half slows only front-view fighter flee/grow).
 - Steady aim advances once per vertical retrace (with a one-frame dt cap)
   so held movement no longer jumps once per speed wait.
+- Space map option (F1 → Controls, `space_map`, Original by default):
+  Enhanced draws a clearer Inform scan with grid, labels, legend and a
+  steady you-are-here mark; same sector intel as the original icons.
 
 ## polish-1 (merged into main)
 

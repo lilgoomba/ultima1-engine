@@ -1919,6 +1919,13 @@ pause. They stop on release, focus loss, or a menu. 2 fuel is paid when a
 direction starts being held, not each frame. The sights keep inside the
 original's limits.
 
+**Space map.** Original by default (F1 Controls, `space_map`). Enhanced
+replaces the Inform (I) sector scan with a larger 7×7 grid, axis labels
+0–6, a legend for the same icons the original draws (fighters, star,
+station, empty — same priority as `142b`), and a steady yellow frame on
+the current sector. The original blink-only marker is kept as a soft
+pulse on that frame. No extra intel is invented.
+
 **Enemy speed.** Original by default (F1 Controls, `enemy_speed`). Half
 makes a front-view fighter flee and grow only every other tick, so it
 stays in view about twice as long. Aim, star field, laser fire, alien

@@ -93,7 +93,8 @@ In the space front view an arrow sets the sights drifting until another
 arrow or Space, as in the original. F1, Controls: Steady aim makes them
 glide only while an arrow is held (and stop when it is let go). F1,
 Controls: Enemy speed Half keeps fighters in view longer; it does not
-change your aim, lasers or damage.
+change your aim, lasers or damage. Space map Enhanced makes I show a
+labelled galaxy grid with a legend; Original keeps the classic scan.
 
 The game also pauses when its window loses focus. Closing the window with
 progress not yet saved asks first (F1, Interface: Confirm quit). The

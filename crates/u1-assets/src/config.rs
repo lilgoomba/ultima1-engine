@@ -225,6 +225,9 @@ impl Config {
                 }
             );
         }
+        if q.space_map != d.space_map {
+            s += &format!("space_map = \"{}\"   # original | enhanced\n", q.space_map.as_str());
+        }
         if q.food_use != d.food_use {
             s += &format!("food_use = \"{}\"   # original | half | off\n", q.food_use.as_str());
         }
@@ -335,6 +338,7 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
         "docking_fee" => flag(v).map(|b| q.docking_fee = b),
         "steady_aim" => flag(v).map(|b| q.steady_aim = b),
         "enemy_speed" => crate::qol::EnemySpeed::parse(v).map(|x| q.enemy_speed = x).ok_or("original or half"),
+        "space_map" => crate::qol::SpaceMap::parse(v).map(|x| q.space_map = x).ok_or("original or enhanced"),
         "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {

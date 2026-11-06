@@ -20,6 +20,37 @@ pub enum Scaling {
 
 /// How fast food goes outdoors (an optional engine rule change).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpaceMap {
+    /// The original sector-scan icons and blinking cell.
+    #[default]
+    Original,
+    /// Larger grid, labels, legend and a steady "you are here" mark.
+    Enhanced,
+}
+
+impl SpaceMap {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "original" | "off" | "classic" => Some(Self::Original),
+            "enhanced" | "on" => Some(Self::Enhanced),
+            _ => None,
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Original => "Original",
+            Self::Enhanced => "Enhanced",
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Original => "original",
+            Self::Enhanced => "enhanced",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EnemySpeed {
     #[default]
     /// The original: the fighter flees one pixel per front-view tick.
@@ -216,6 +247,8 @@ pub struct Qol {
     /// Front-view fighters flee (and grow) at this pace. Aim, fire and
     /// the rest of the simulation are unchanged.
     pub enemy_speed: EnemySpeed,
+    /// I (Inform) in space: original sector scan, or a clearer grid.
+    pub space_map: SpaceMap,
 }
 
 impl Default for Qol {
@@ -253,6 +286,7 @@ impl Default for Qol {
             docking_fee: true,
             steady_aim: false,
             enemy_speed: EnemySpeed::Original,
+            space_map: SpaceMap::Original,
         }
     }
 }

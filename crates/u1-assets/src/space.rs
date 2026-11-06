@@ -1828,6 +1828,9 @@ impl<'a> Space<'a> {
     fn cmd_inform(&mut self) -> R<()> {
         self.puts(d::INFORM);
         self.g.term.sscene = None;
+        if self.io.features().space_map == crate::qol::SpaceMap::Enhanced {
+            return self.cmd_inform_enhanced();
+        }
         self.g.term.boxed(C_BLUE);
         let t = self.s(d::SCAN);
         self.g.term.print_at_attr(5, 4, &t, TEXT);
@@ -1862,36 +1865,199 @@ impl<'a> Space<'a> {
         Ok(())
     }
 
+    /// Clearer sector scan (F1 Space map = Enhanced): same intel as
+    /// [`scan_icon`], with a grid, coordinates, legend and a steady
+    /// "you are here" mark (not only a blink).
+    fn cmd_inform_enhanced(&mut self) -> R<()> {
+        self.draw_enhanced_scan(true);
+        loop {
+            if self.io.poll_now(&self.g.term)?.is_some() {
+                break;
+            }
+            self.delay(7)?;
+            // Soft pulse on the you-marker only; the yellow cell frame stays.
+            self.draw_you_marker(false);
+            if self.io.poll_now(&self.g.term)?.is_some() {
+                break;
+            }
+            self.delay(7)?;
+            self.draw_you_marker(true);
+        }
+        self.redraw = true;
+        self.println(d::EMPTY);
+        Ok(())
+    }
+
+    fn draw_enhanced_scan(&mut self, with_you: bool) {
+        const OX: i32 = 48;
+        const OY: i32 = 44;
+        const CELL: i32 = 12;
+        self.g.term.boxed(C_BLUE);
+        self.g.term.print_at_attr(5, 3, &format!("Galaxy scan  (you: {},{})", self.gx, self.gy), TEXT);
+        {
+            let t = &mut self.g.term;
+            for i in 0..=7 {
+                let x = OX + i * CELL;
+                let y = OY + i * CELL;
+                t.line_u1(OX, y, OX + 7 * CELL, y, C_FRAME);
+                t.line_u1(x, OY, x, OY + 7 * CELL, C_FRAME);
+            }
+            for gx in 0..7 {
+                for gy in 0..7 {
+                    let x = OX + gx as i32 * CELL + 2;
+                    let y = OY + gy as i32 * CELL + 2;
+                    Self::scan_glyph(t, x, y, Self::scan_kind(self.gal[gx][gy]));
+                }
+            }
+            for i in 0..7 {
+                Self::digit(t, OX + i * CELL + 4, OY - 7, i as u8, TEXT);
+                Self::digit(t, OX - 8, OY + i * CELL + 3, i as u8, TEXT);
+            }
+            let lx = OX + 7 * CELL + 10;
+            let mut ly = OY;
+            // Legend title and entries in the right margin (text cells).
+            t.print_at_attr(25, 4, "Legend", TEXT);
+            Self::scan_glyph(t, lx, ly, ScanKind::Enemies);
+            t.print_at_attr(25, 5, "Fighters", TEXT);
+            ly += 12;
+            Self::scan_glyph(t, lx, ly, ScanKind::Star);
+            t.print_at_attr(25, 7, "Star", TEXT);
+            ly += 12;
+            Self::scan_glyph(t, lx, ly, ScanKind::Station);
+            t.print_at_attr(25, 8, "Station", TEXT);
+            ly += 12;
+            Self::scan_glyph(t, lx, ly, ScanKind::Empty);
+            t.print_at_attr(25, 10, "Empty", TEXT);
+            ly += 14;
+            t.line_u1(lx, ly, lx + 8, ly, C_PICK);
+            t.line_u1(lx + 8, ly, lx + 8, ly + 8, C_PICK);
+            t.line_u1(lx + 8, ly + 8, lx, ly + 8, C_PICK);
+            t.line_u1(lx, ly + 8, lx, ly, C_PICK);
+            t.print_at_attr(25, 12, "You", TEXT);
+            t.print_at_attr(5, 14, "Any key: back", TEXT);
+        }
+        if with_you {
+            self.draw_you_marker(true);
+        }
+    }
+
+    fn draw_you_marker(&mut self, fill_pulse: bool) {
+        const OX: i32 = 48;
+        const OY: i32 = 44;
+        const CELL: i32 = 12;
+        let x0 = OX + self.gx as i32 * CELL;
+        let y0 = OY + self.gy as i32 * CELL;
+        let t = &mut self.g.term;
+        let c = C_PICK;
+        t.line_u1(x0, y0, x0 + CELL, y0, c);
+        t.line_u1(x0 + CELL, y0, x0 + CELL, y0 + CELL, c);
+        t.line_u1(x0 + CELL, y0 + CELL, x0, y0 + CELL, c);
+        t.line_u1(x0, y0 + CELL, x0, y0, c);
+        if fill_pulse {
+            for i in 1..CELL {
+                t.plot(x0 + i, y0 + 1, c);
+                t.plot(x0 + i, y0 + CELL - 1, c);
+            }
+        } else {
+            // Restore the icon under the top/bottom pulse lines.
+            let kind = Self::scan_kind(self.gal[self.gx][self.gy]);
+            let x = x0 + 2;
+            let y = y0 + 2;
+            // clear inner top/bottom then redraw glyph
+            for i in 1..CELL {
+                t.plot(x0 + i, y0 + 1, BLACK);
+                t.plot(x0 + i, y0 + CELL - 1, BLACK);
+            }
+            Self::scan_glyph(t, x, y, kind);
+            // re-stroke frame
+            t.line_u1(x0, y0, x0 + CELL, y0, c);
+            t.line_u1(x0 + CELL, y0, x0 + CELL, y0 + CELL, c);
+            t.line_u1(x0 + CELL, y0 + CELL, x0, y0 + CELL, c);
+            t.line_u1(x0, y0 + CELL, x0, y0, c);
+        }
+    }
+
+    /// Same priority as the original `142b` scan.
+    fn scan_kind(s: Sector) -> ScanKind {
+        if s.enemies != 0 {
+            ScanKind::Enemies
+        } else if s.stx != 0 {
+            ScanKind::Star
+        } else if s.sx != 0 {
+            ScanKind::Station
+        } else {
+            ScanKind::Empty
+        }
+    }
+
     /// `142b`: one cell of the scan.
     fn scan_icon(&mut self, gx: usize, gy: usize) {
         let x = 10 * gx as i32 + 132;
         let y = 10 * gy as i32 + 46;
-        let s = self.gal[gx][gy];
-        let t = &mut self.g.term;
-        if s.enemies != 0 {
-            for i in 0..2 {
-                t.line_u1(x + i, y, x + i, y + 7, C_WHITE);
-                t.line_u1(x + i + 5, y, x + i + 5, y + 7, C_WHITE);
-                t.line_u1(x, y + 3 + i, x + 6, y + 3 + i, C_WHITE);
+        let kind = Self::scan_kind(self.gal[gx][gy]);
+        Self::scan_glyph(&mut self.g.term, x, y, kind);
+    }
+
+    fn scan_glyph(t: &mut crate::term::Term, x: i32, y: i32, kind: ScanKind) {
+        match kind {
+            ScanKind::Enemies => {
+                for i in 0..2 {
+                    t.line_u1(x + i, y, x + i, y + 7, C_WHITE);
+                    t.line_u1(x + i + 5, y, x + i + 5, y + 7, C_WHITE);
+                    t.line_u1(x, y + 3 + i, x + 6, y + 3 + i, C_WHITE);
+                }
             }
-        } else if s.stx != 0 {
-            for i in 0..2 {
-                t.line_u1(x + 3 + i, y, x + 3 + i, y + 7, C_WHITE);
-                t.line_u1(x, y + 3 + i, x + 7, y + 3 + i, C_WHITE);
+            ScanKind::Star => {
+                for i in 0..2 {
+                    t.line_u1(x + 3 + i, y, x + 3 + i, y + 7, C_WHITE);
+                    t.line_u1(x, y + 3 + i, x + 7, y + 3 + i, C_WHITE);
+                }
             }
-        } else if s.sx != 0 {
-            for i in 0..3 {
-                t.line_u1(x + 3 - i, y + 1 + i, x + 3 + i, y + 1 + i, C_WHITE);
-                t.line_u1(x + 3 - i, y + 6 - i, x + 3 + i, y + 6 - i, C_WHITE);
+            ScanKind::Station => {
+                for i in 0..3 {
+                    t.line_u1(x + 3 - i, y + 1 + i, x + 3 + i, y + 1 + i, C_WHITE);
+                    t.line_u1(x + 3 - i, y + 6 - i, x + 3 + i, y + 6 - i, C_WHITE);
+                }
             }
-        } else {
-            t.plot(x + 1, y + 1, C_WHITE);
-            t.plot(x + 3, y + 3, C_RED);
-            t.plot(x + 6, y + 2, C_BLUE);
-            t.plot(x + 4, y + 5, C_WHITE);
-            t.plot(x + 2, y + 6, C_BLUE);
+            ScanKind::Empty => {
+                t.plot(x + 1, y + 1, C_WHITE);
+                t.plot(x + 3, y + 3, C_RED);
+                t.plot(x + 6, y + 2, C_BLUE);
+                t.plot(x + 4, y + 5, C_WHITE);
+                t.plot(x + 2, y + 6, C_BLUE);
+            }
         }
     }
+
+    /// Tiny 3x5 digit for grid coordinates (0-6).
+    fn digit(t: &mut crate::term::Term, x: i32, y: i32, d: u8, c: u8) {
+        // rows of 3 bits, MSB left; digits 0-6 only.
+        const G: [[u8; 5]; 7] = [
+            [0b111, 0b101, 0b101, 0b101, 0b111], // 0
+            [0b010, 0b110, 0b010, 0b010, 0b111], // 1
+            [0b111, 0b001, 0b111, 0b100, 0b111], // 2
+            [0b111, 0b001, 0b111, 0b001, 0b111], // 3
+            [0b101, 0b101, 0b111, 0b001, 0b001], // 4
+            [0b111, 0b100, 0b111, 0b001, 0b111], // 5
+            [0b111, 0b100, 0b111, 0b101, 0b111], // 6
+        ];
+        let g = G[d as usize % 7];
+        for (row, bits) in g.iter().enumerate() {
+            for col in 0..3 {
+                if bits & (0b100 >> col) != 0 {
+                    t.plot(x + col, y + row as i32, c);
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScanKind {
+    Enemies,
+    Star,
+    Station,
+    Empty,
 }
 
 /// Checks against the user's own files (`U1_GAME_DIR`); skipped without.
@@ -2046,6 +2212,67 @@ mod real_game {
         assert_eq!(acx, bcx, "sights untouched");
         assert_eq!(a0 - a1, 10, "original flees 1 px/tick");
         assert_eq!(b0 - b1, 5, "half flees every other tick");
+    }
+
+    #[test]
+    fn enhanced_space_map_matches_scan_icon_priority_and_marks_you() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("x");
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.gx = 3;
+        s.gy = 3;
+        s.gal[1][1].enemies = 2;
+        s.gal[1][1].stx = 0;
+        s.gal[1][1].sx = 0;
+        s.gal[2][2].enemies = 0;
+        s.gal[2][2].stx = 50;
+        s.gal[2][2].sx = 0;
+        s.gal[4][4].enemies = 0;
+        s.gal[4][4].stx = 0;
+        s.gal[4][4].sx = 50;
+        s.gal[5][5].enemies = 0;
+        s.gal[5][5].stx = 0;
+        s.gal[5][5].sx = 0;
+        assert_eq!(Space::scan_kind(s.gal[1][1]), ScanKind::Enemies);
+        assert_eq!(Space::scan_kind(s.gal[2][2]), ScanKind::Star);
+        assert_eq!(Space::scan_kind(s.gal[4][4]), ScanKind::Station);
+        assert_eq!(Space::scan_kind(s.gal[5][5]), ScanKind::Empty);
+        s.gal[2][2].enemies = 1;
+        assert_eq!(Space::scan_kind(s.gal[2][2]), ScanKind::Enemies);
+        s.draw_enhanced_scan(true);
+        const OX: i32 = 48;
+        const OY: i32 = 44;
+        const CELL: i32 = 12;
+        let x0 = OX + 3 * CELL;
+        let y0 = OY + 3 * CELL;
+        assert_eq!(s.g.term.at(x0 as usize, y0 as usize), C_PICK, "you-frame corner");
+        assert!(s.cmd_inform().is_ok());
+    }
+
+    #[test]
+    fn enhanced_space_map_screenshot_for_preview() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.gx = 3;
+        s.gy = 3;
+        s.draw_enhanced_scan(true);
+        let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
+        let path = std::path::Path::new("/workspace/u1-shots/space-aim/enhanced-space-map.png");
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let f = std::fs::File::create(path).expect("png");
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut wr = enc.write_header().unwrap();
+        wr.write_image_data(&rgb).unwrap();
+        assert!(path.is_file());
     }
 
     #[test]

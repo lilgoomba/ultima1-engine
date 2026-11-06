@@ -529,6 +529,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | Ship choice by arrow | always | Left/Right, Enter/Space, pad A | At "Choose thy ship", the arrows pick the port on that side (shown in yellow); digits still work. |
 | Steady aim | off | arrows / pad (front view in space) | F1 → Controls. While an arrow is held the sights glide at a fixed speed (not OS key-repeat) and stop on release, focus loss or the options menu; 2 fuel per newly held direction. Off: the original's drift. |
 | Enemy speed | Original | | F1 → Controls. Half: front-view fighters flee and grow every other tick (about twice as long on screen). Aim, lasers, alien fire chance, stars and damage are unchanged. |
+| Space map | Original | I in space | F1 → Controls. Enhanced: a labelled 7×7 grid, legend (fighters / star / station / empty) and a steady yellow “you” frame; same intel as the original scan. |
 | F3 in space | with Help screen | F3 | Lists the space commands; F3 or any key closes it. |
 | Hyperspace pacing | always | H | The "Lightspeed!" star streaks are paced (about 1.7 s per phase) so they are seen, as on the original's PC. |
 
@@ -540,6 +541,7 @@ wait_on_signs = true
 docking_fee = true
 steady_aim = false     # space sights glide while an arrow is held
 enemy_speed = "original"  # original | half
+space_map = "original"    # original | enhanced
 vehicle_facing = true
 key_screenshot = "f12"
 window = "100,80,1280,800"

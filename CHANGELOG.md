@@ -17,7 +17,7 @@ No tagged releases yet; entries are by branch.
   Enhanced draws a clearer Inform scan with grid, labels, legend and a
   steady you-are-here mark; same sector intel as the original icons.
 - Kill counter option (F1 → Controls, `space_kills`, off by default):
-  space HUD shows fighter kills toward Space Ace (`n/20`, then `Ace!`).
+  space HUD shows fighter kills toward Space Ace (`K:n/20`, then `Ace!`).
   Enhanced map layout tightened so the grid and prompt no longer overlap.
 
 ## polish-1 (merged into main)

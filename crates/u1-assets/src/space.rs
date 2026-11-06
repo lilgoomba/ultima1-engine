@@ -443,20 +443,25 @@ impl<'a> Space<'a> {
     }
 
     /// Optional HUD: kills toward Space Ace (save word 0xA6). The original
-    /// awards Ace at exactly 20 and keeps counting; we show `n/20` before
-    /// that and "Space Ace" after so a post-20 total is not read as a goal.
+    /// awards Ace at exactly 20 and keeps counting; we show `K:n/20` before
+    /// that and `Ace!` after so a post-20 total is not read as a goal.
+    ///
+    /// One compact field at columns 31..38 (the status panel is cols 31..39;
+    /// a separate "Kills" + value at 36 wrapped at column 40 and clipped).
     fn show_kills(&mut self) {
         if !self.io.features().space_kills {
             return;
         }
         let k = self.g.w(off::ENEMIES);
-        self.g.term.print_at_attr(31, 20, "Kills", TEXT);
-        if k >= 20 {
-            self.g.term.print_at_attr(36, 20, "Ace!    ", C_PICK);
-        } else {
-            let t = format!("{k}/20  ");
-            self.g.term.print_at_attr(36, 20, &t, TEXT);
+        // Longest pre-Ace string is "K:19/20" (7); Ace is "Ace!" (4). Pad to
+        // 8 chars so a shorter string clears a longer one, staying in 31..38.
+        let (line, attr) = if k >= 20 { ("Ace!    ".to_string(), C_PICK) } else { (format!("K:{k}/20 "), TEXT) };
+        debug_assert!(line.chars().count() <= 8, "{line}");
+        let mut out: String = line.chars().take(8).collect();
+        while out.chars().count() < 8 {
+            out.push(' ');
         }
+        self.g.term.print_at_attr(31, 20, &out, attr);
     }
     fn use_shield(&mut self, n: i16) {
         let s = self.slot_mut();
@@ -2350,46 +2355,81 @@ mod real_game {
     }
 
     #[test]
-    fn kill_counter_hud_shows_progress_then_ace() {
+    fn kill_counter_hud_fits_status_panel_and_keeps_other_stats() {
         let Some((mut g, files)) = setup() else { return };
-        g.rec.set_u16(off::ENEMIES, 7);
+        // Longest pre-Ace count; high but in-range status values.
+        g.rec.set_u16(off::ENEMIES, 19);
+        g.rec.set_u16(off::EXPERIENCE, 9999);
+        g.rec.set_u16(off::COIN, 9999);
         let mut io = ScriptIo::from_text("");
         io.qol.space_kills = true;
         let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.slot_mut().shield = 9999;
+        s.slot_mut().fuel = 9999;
+        // Space status labels (as main() installs) plus outdoor Exp/Coin.
+        s.g.term.print_at_attr(31, 21, &s.s(d::SHLD), TEXT);
+        s.g.term.print_at_attr(31, 22, &s.s(d::FUEL), TEXT);
+        s.show_shield();
+        s.show_fuel();
+        s.show_exp();
+        s.show_coin();
         s.show_kills();
-        let row = 20usize;
-        let ink = |col: usize| (0..8).any(|dy| (0..8).any(|dx| s.g.term.at(col * 8 + dx, row * 8 + dy) != BLACK));
-        assert!(ink(31), "Kills label");
-        assert!(ink(36), "count value");
+        let kills = s.g.term.row_text(20);
+        let field: String = kills.chars().skip(31).take(8).collect();
+        assert!(field.contains("K:19/20"), "got {field:?} from {kills:?}");
+        assert_eq!(field.chars().count(), 8, "field must be an 8-col slot");
+        // Nothing written at column 39 or wrapped onto row 21.
+        assert_eq!(kills.chars().nth(39).unwrap_or(' '), ' ', "col 39 stays clear");
+        let shld = s.g.term.row_text(21);
+        let fuel = s.g.term.row_text(22);
+        let exp = s.g.term.row_text(23);
+        let coin = s.g.term.row_text(24);
+        assert!(shld.contains("9999"), "shield value visible: {shld:?}");
+        assert!(fuel.contains("9999"), "fuel value visible: {fuel:?}");
+        assert!(exp.contains("9999"), "exp value visible: {exp:?}");
+        assert!(coin.contains("9999"), "coin value visible: {coin:?}");
+        // Ace! fits and stays yellow in-panel.
         drop(s);
         g.rec.set_u16(off::ENEMIES, 20);
         let mut io = ScriptIo::from_text("");
         io.qol.space_kills = true;
         let mut s = Space::new(&mut g, &mut io, files);
         s.show_kills();
-        assert_eq!(s.g.w(off::ENEMIES), 20);
-        let pick = (36 * 8..40 * 8).any(|x| (row * 8..row * 8 + 8).any(|y| s.g.term.at(x, y) == C_PICK));
-        assert!(pick, "Space Ace shown in yellow");
+        let ace: String = s.g.term.row_text(20).chars().skip(31).take(8).collect();
+        assert!(ace.starts_with("Ace!"), "got {ace:?}");
+        let pick = (31 * 8..35 * 8).any(|x| (20 * 8..20 * 8 + 8).any(|y| s.g.term.at(x, y) == C_PICK));
+        assert!(pick, "Ace! in yellow");
     }
 
     #[test]
     fn kill_counter_screenshot_for_preview() {
         let Some((mut g, files)) = setup() else { return };
-        g.rec.set_u16(off::ENEMIES, 12);
+        g.rec.set_u16(off::ENEMIES, 19);
+        g.rec.set_u16(off::EXPERIENCE, 4321);
+        g.rec.set_u16(off::COIN, 8765);
         let mut io = ScriptIo::from_text("");
         io.qol.space_kills = true;
         let mut s = Space::new(&mut g, &mut io, files);
         s.make_galaxy();
         s.fp = true;
+        s.slot_mut().shield = 2500;
+        s.slot_mut().fuel = 1800;
         s.draw_all();
-        s.g.term.print_at_attr(31, 21, "Shld", TEXT);
-        s.g.term.print_at_attr(31, 22, "Fuel", TEXT);
+        s.g.term.print_at_attr(31, 21, &s.s(d::SHLD), TEXT);
+        s.g.term.print_at_attr(31, 22, &s.s(d::FUEL), TEXT);
+        // Exp./Coin labels remain from Term::new / restore_labels.
         s.show_shield();
         s.show_fuel();
+        s.show_exp();
+        s.show_coin();
         s.show_kills();
-        // Black margins for a clean dump.
-        s.g.term.fill(0, 0, 7, 199, BLACK);
-        s.g.term.fill(312, 0, 319, 199, BLACK);
+        let field: String = s.g.term.row_text(20).chars().skip(31).take(8).collect();
+        assert!(field.contains("K:19/20"), "{field}");
+        assert!(s.g.term.row_text(21).contains("2500"), "{}", s.g.term.row_text(21));
+        assert!(s.g.term.row_text(22).contains("1800"), "{}", s.g.term.row_text(22));
+        assert!(s.g.term.row_text(23).contains("4321"), "{}", s.g.term.row_text(23));
+        assert!(s.g.term.row_text(24).contains("8765"), "{}", s.g.term.row_text(24));
         let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
         let path = std::path::Path::new("/workspace/u1-shots/space-aim/kill-counter.png");
         let _ = std::fs::create_dir_all(path.parent().unwrap());

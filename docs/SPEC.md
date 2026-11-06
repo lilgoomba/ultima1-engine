@@ -1921,7 +1921,7 @@ original's limits.
 
 **Kill counter.** Off by default (F1 Controls, `space_kills`). When on,
 the space status panel shows the save's enemy-vessel count (word 0xA6)
-as `n/20` toward Space Ace; at 20 or more it shows `Ace!` (the original
+as `K:n/20` toward Space Ace; at 20 or more it shows `Ace!` (the original
 keeps incrementing past 20 and prints "still a Space Ace" on further
 kills — the HUD does not show a misleading n/20 after the award).
 

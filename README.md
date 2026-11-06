@@ -530,7 +530,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | Steady aim | off | arrows / pad (front view in space) | F1 → Controls. While an arrow is held the sights glide at a fixed speed (not OS key-repeat) and stop on release, focus loss or the options menu; 2 fuel per newly held direction. Off: the original's drift. |
 | Enemy speed | Original | | F1 → Controls. Half: front-view fighters flee and grow every other tick (about twice as long on screen). Aim, lasers, alien fire chance, stars and damage are unchanged. |
 | Space map | Original | I in space | F1 → Controls. Enhanced: a labelled 7×7 grid, legend (fighters / star / station / empty) and a steady yellow “you” frame; same intel as the original scan. |
-| Kill counter | off | | F1 → Controls. Shows fighter kills toward Space Ace on the space HUD as `n/20`, or `Ace!` once you have 20+ (save word 0xA6; keeps counting after Ace). |
+| Kill counter | off | | F1 → Controls. Shows fighter kills toward Space Ace on the space HUD as `K:n/20`, or `Ace!` once you have 20+ (save word 0xA6; keeps counting after Ace). |
 | F3 in space | with Help screen | F3 | Lists the space commands; F3 or any key closes it. |
 | Hyperspace pacing | always | H | The "Lightspeed!" star streaks are paced (about 1.7 s per phase) so they are seen, as on the original's PC. |
 

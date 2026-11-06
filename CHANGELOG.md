@@ -21,6 +21,7 @@ No tagged releases yet; entries are by branch.
   Enhanced map layout tightened so the grid and prompt no longer overlap.
 - Enhanced Inform no longer clears the status panel (Shld/Fuel/Exp/Coin/Kills).
 - F1 page digits derive from page count (1–6 after Space); key 6 opens Interface again.
+- Fix held-arrow repeat with Steady aim enabled: edge-only filtering is confined to front-view space, not walking or top-down flight. Engine repeat also runs on nonblocking space polls; fresh-key messages remain fresh-key-only.
 - Correct startup dwell target: first title now 2.8 s with Message pauses on; restore loading-screen 9 ticks.
 - God mode kills keep death side-effects (castle jester key, etc.).
 - God mode (F1 Controls, off): Hits never fall; hits kill instantly; `--god`.

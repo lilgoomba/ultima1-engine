@@ -1108,6 +1108,7 @@ impl<'a> Space<'a> {
 
     /// `386b`: one tick of flight (top-down), or `3330` in front view.
     fn tick(&mut self) -> R<()> {
+        self.io.space_front_view(self.fp);
         if self.fp {
             return self.fp_tick();
         }
@@ -1582,6 +1583,7 @@ impl<'a> Space<'a> {
                 return;
             }
             self.fp = true;
+            self.io.space_front_view(true);
             self.redraw = true;
             let (vx, vy) = (i32::from(self.vx), i32::from(self.vy));
             self.speed = Self::isqrt_up(vx * vx + vy * vy).min(8);
@@ -1598,6 +1600,7 @@ impl<'a> Space<'a> {
                 return;
             }
             self.fp = false;
+            self.io.space_front_view(false);
             self.println(d::EMPTY);
             self.redraw = true;
             let k = (self.speed.wrapping_mul(1000)).wrapping_div(self.entry_speed.max(1));

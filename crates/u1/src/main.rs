@@ -790,6 +790,7 @@ struct SdlIo {
     qol: Qol,
     /// In space flight (for the fast space setting).
     in_space: bool,
+    space_front_view: bool,
     /// The area the game is in (its music, when music is on).
     area: Option<Track>,
     /// The tracks rendered so far (by a background thread).
@@ -1145,26 +1146,11 @@ impl SdlIo {
                         self.menu_keys.push_back((c.unwrap_or(0), name));
                         continue;
                     }
-                    if let Some(a) = c.filter(|&c| is_arrow(c)) {
-                        // Steady aim: edge presses only (counter-stop). Drop OS
-                        // repeats and do not start the engine arrow-repeat.
-                        if self.qol.steady_aim {
-                            if repeat {
-                                continue;
-                            }
-                        } else if self.qol.repeat {
-                            if repeat {
-                                continue;
-                            }
-                            self.hold_arrow(a, k.into_i32());
-                        }
-                    }
                     let extra = self.keymap.code_for(&name).filter(|&x| self.wanted_code(x));
-                    if repeat && self.fresh_wait {
-                        continue;
-                    }
-                    if drop_steady_aim_arrow_repeat(self.qol.steady_aim, repeat, c) {
-                        continue;
+                    match arrow_dispatch(self.steady_front(), self.qol.repeat, self.fresh_wait, repeat, c) {
+                        ArrowDispatch::Drop => continue,
+                        ArrowDispatch::Arm(a) => self.hold_arrow(a, k.into_i32()),
+                        ArrowDispatch::Forward => {}
                     }
                     if c.is_some() || extra.is_some() {
                         self.dirty |= !self.front;
@@ -1195,6 +1181,10 @@ impl SdlIo {
             keys::HELP => self.qol.help,
             _ => true,
         }
+    }
+
+    fn steady_front(&self) -> bool {
+        steady_aim_context(self.in_space, self.space_front_view, self.qol.steady_aim)
     }
 
     /// Start the engine's repeat for arrow `a`, held by `by`.
@@ -1247,7 +1237,7 @@ impl SdlIo {
                 PadAction::Hold(a, by) => {
                     // Steady aim wants a single edge press from the pad Key;
                     // do not arm engine repeat while it is on.
-                    if self.qol.repeat && !self.qol.steady_aim {
+                    if self.qol.repeat && !self.steady_front() && !self.fresh_wait {
                         self.hold_arrow(a, by);
                     }
                 }
@@ -1273,7 +1263,7 @@ impl SdlIo {
     /// A held arrow due to repeat: only at the command prompt, with no
     /// key waiting and no window open, and at most one per step.
     fn repeat_due(&mut self) {
-        let ready = self.at_prompt && self.pending.is_empty() && !self.in_menu;
+        let ready = self.at_prompt && self.pending.is_empty() && !self.in_menu && !self.fresh_wait && self.qol.repeat && !self.steady_front();
         let (_, step) = self.qol.repeat_timing(self.scaled(POLL, Wait::Poll));
         if let Some(a) = self.held.due(Instant::now(), ready, step) {
             self.pending.push_back((Some(a), None));
@@ -1361,6 +1351,7 @@ impl Io for SdlIo {
         self.pump()?;
         self.menu(t)?;
         self.restarting()?;
+        self.repeat_due();
         Ok(self.next_key())
     }
 
@@ -1477,6 +1468,17 @@ impl Io for SdlIo {
 
     fn in_space(&mut self, on: bool) {
         self.in_space = on;
+        if !on {
+            self.space_front_view(false);
+        }
+    }
+
+    fn space_front_view(&mut self, on: bool) {
+        if self.space_front_view != on {
+            self.held.clear();
+            self.pending.retain(|(plain, _)| !plain.is_some_and(is_arrow));
+        }
+        self.space_front_view = on;
     }
 
     fn save_request(&mut self) -> Option<SaveReq> {
@@ -2041,6 +2043,7 @@ fn play(a: &Args) -> Result<(), String> {
         restart: false,
         qol: Qol::default(),
         in_space: false,
+        space_front_view: false,
         fresh_wait: false,
         clicked: false,
         area: None,
@@ -2265,10 +2268,34 @@ fn local_time() -> [u8; 4] {
     [h, m, s, (now.subsec_millis() / 10) as u8]
 }
 
-/// When Steady aim is on, OS key-repeat for arrows must not reach the game
-/// (a counter-stop is one edge; a held key must not re-start or re-bill).
-fn drop_steady_aim_arrow_repeat(steady_aim: bool, repeat: bool, c: Option<u8>) -> bool {
-    steady_aim && repeat && c.is_some_and(is_arrow)
+/// Both flags are needed: space can be top-down, and the front-end title
+/// sequence's `front` flag is unrelated to the space sights.
+fn steady_aim_context(in_space: bool, front_view: bool, enabled: bool) -> bool {
+    in_space && front_view && enabled
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ArrowDispatch {
+    Drop,
+    Arm(u8),
+    Forward,
+}
+
+/// Shared keyboard dispatch policy. Steady aim is an input context, not a
+/// global ban on repeat. Menus have their own earlier dispatch branch.
+fn arrow_dispatch(steady_front: bool, engine_repeat: bool, fresh_wait: bool, repeat: bool, c: Option<u8>) -> ArrowDispatch {
+    if fresh_wait {
+        return if repeat { ArrowDispatch::Drop } else { ArrowDispatch::Forward };
+    }
+    if let Some(a) = c.filter(|&a| is_arrow(a)) {
+        if repeat && (steady_front || engine_repeat) {
+            return ArrowDispatch::Drop;
+        }
+        if engine_repeat && !steady_front {
+            return ArrowDispatch::Arm(a);
+        }
+    }
+    ArrowDispatch::Forward
 }
 
 /// SDL key → engine byte for ordinary keys (not F1/F2/… modal shortcuts).
@@ -2382,14 +2409,58 @@ mod tests {
     }
 
     #[test]
-    fn steady_aim_drops_os_arrow_repeat_but_allows_second_press() {
-        assert!(drop_steady_aim_arrow_repeat(true, true, Some(keys::RIGHT)));
-        assert!(!drop_steady_aim_arrow_repeat(true, false, Some(keys::RIGHT)), "first edge kept");
-        assert!(!drop_steady_aim_arrow_repeat(false, true, Some(keys::RIGHT)), "original keeps OS path");
-        assert!(!drop_steady_aim_arrow_repeat(true, true, Some(b'6')), "digits unaffected");
-        // Dispatch path: Num6 still Interface; arrow repeat helper independent.
+    fn repeat_context_requires_front_view_space_and_steady_aim() {
+        for in_space in [false, true] {
+            for front_view in [false, true] {
+                for enabled in [false, true] {
+                    let edge_only = steady_aim_context(in_space, front_view, enabled);
+                    assert_eq!(edge_only, in_space && front_view && enabled);
+                    let action = arrow_dispatch(edge_only, true, false, false, Some(keys::LEFT));
+                    assert_eq!(action, if edge_only { ArrowDispatch::Forward } else { ArrowDispatch::Arm(keys::LEFT) });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn held_arrow_dispatch_is_contextual() {
         use sdl2::keyboard::Keycode;
-        assert_eq!(keycode_to_byte(Keycode::Right, false), Some(keys::RIGHT));
+        let key = keycode_to_byte(Keycode::Right, false);
+        // Actual keyboard dispatcher policy for overworld/town/dungeon,
+        // menus (handled before this policy), and top-down space: normal.
+        for _context in ["overworld", "town", "dungeon", "topdown"] {
+            assert_eq!(arrow_dispatch(false, true, false, false, key), ArrowDispatch::Arm(keys::RIGHT));
+            assert_eq!(arrow_dispatch(false, true, false, true, key), ArrowDispatch::Drop);
+            // Engine repeat OFF retains OS-repeat behavior.
+            assert_eq!(arrow_dispatch(false, false, false, true, key), ArrowDispatch::Forward);
+        }
+        // Front-view steady aim: edge only, regardless of engine-repeat setting.
+        for engine in [false, true] {
+            assert_eq!(arrow_dispatch(true, engine, false, false, key), ArrowDispatch::Forward);
+            assert_eq!(arrow_dispatch(true, engine, false, true, key), ArrowDispatch::Drop);
+        }
+        // Fresh message waits neither arm a held movement nor accept OS repeats.
+        assert_eq!(arrow_dispatch(false, true, true, false, key), ArrowDispatch::Forward);
+        assert_eq!(arrow_dispatch(false, true, true, true, key), ArrowDispatch::Drop);
+        assert_eq!(arrow_dispatch(true, false, false, true, Some(b'6')), ArrowDispatch::Forward);
+    }
+
+    #[test]
+    fn dispatched_hold_repeats_then_clears_on_release_focus_or_wait() {
+        let mut held = Repeater::default();
+        let now = Instant::now();
+        let key = keycode_to_byte(sdl2::keyboard::Keycode::Right, false);
+        if let ArrowDispatch::Arm(a) = arrow_dispatch(false, true, false, false, key) {
+            held.hold(a, 1, now, Duration::from_millis(250));
+        }
+        assert_eq!(held.due(now + Duration::from_millis(300), true, POLL), Some(keys::RIGHT));
+        held.release(1);
+        assert_eq!(held.due(now + Duration::from_secs(1), true, POLL), None);
+        held.hold(keys::RIGHT, 1, now, Duration::ZERO);
+        held.clear(); // same clear used by focus/menu/fresh wait paths
+        assert_eq!(held.due(now + Duration::from_secs(1), true, POLL), None);
+        // A new edge after returning from a wait arms normally again.
+        assert_eq!(arrow_dispatch(false, true, false, false, key), ArrowDispatch::Arm(keys::RIGHT));
     }
 
     /// Top-row 1..6 must reach F1 pages after SDL key translation (alt8

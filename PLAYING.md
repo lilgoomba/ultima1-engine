@@ -145,3 +145,9 @@ terminal output (start the AppImage from a terminal) and a screenshot
 help. Please do not attach game files or saves made from them.
 
 First title (Ultima I / The First Age of Darkness / 1987 copyright): Message pauses on keeps it visible for 2.8 seconds after presentation, unaffected by turbo/message speed or held keys; no key required. Off retains the previous engine 12-tick pause. Character-menu loading retains its 9-tick pause.
+
+Steady aim only suppresses held-arrow repeat in front-view space. Walking
+(overworld, towns and dungeons) and top-down space retain normal arrow
+repeat. F1 Controls Repeat selects the engine timing; when off, keyboard
+OS repeat remains as before. After focus changes, menus or a fresh-key
+message, release and press again to resume held movement.

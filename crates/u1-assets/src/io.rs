@@ -164,6 +164,9 @@ pub trait Io {
     /// Space flight starts (`true`) or ends (the fast space setting).
     fn in_space(&mut self, _on: bool) {}
 
+    /// True only while space is using its front-view sights (not the map).
+    fn space_front_view(&mut self, _on: bool) {}
+
     /// A save-slot action asked for since the last poll (F2, F5, F9 with
     /// save slots on). Taken by the main loop's key poll.
     fn save_request(&mut self) -> Option<crate::slots::SaveReq> {

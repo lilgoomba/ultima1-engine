@@ -32,7 +32,7 @@ use u1_assets::explore::Explore;
 use u1_assets::game::{Assets, Game, VideoSet};
 use u1_assets::gamedir::{self, GameDir, VideoMode};
 use u1_assets::gen::GenEnd;
-use u1_assets::input::{HeldArrows, PadAction, PadEvent, PadInput, Repeater};
+use u1_assets::input::{PadAction, PadEvent, PadInput, Repeater};
 use u1_assets::io::{keys, Halt, Io, IoResult, ScriptIo};
 use u1_assets::keymap::{KeyMap, RebindKey, RebindScreen};
 use u1_assets::locations::LocationTable;
@@ -747,8 +747,6 @@ struct SdlIo {
     pad: PadInput,
     /// The engine's arrow repeat (SPEC §23.3).
     held: Repeater,
-    /// Directions currently down (steady aim); cleared on focus/menu.
-    arrows: HeldArrows,
     /// The gamepad subsystem and the pads open.
     gc: Option<sdl2::GameControllerSubsystem>,
     pads: Vec<sdl2::controller::GameController>,
@@ -1056,7 +1054,6 @@ impl SdlIo {
                         We::FocusLost => {
                             self.focus_lost = true;
                             self.held.clear();
-                            self.arrows.clear();
                             if !self.in_menu {
                                 self.in_menu = true;
                                 self.modal_wanted = Some(Modal::Paused);
@@ -1087,22 +1084,15 @@ impl SdlIo {
                 Event::KeyDown { keycode: Some(k), keymod, repeat, .. } => {
                     let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::CAPSMOD);
                     let alt = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
-                    let c = match k {
-                        // Fullscreen: never passed to the game.
-                        Keycode::Return | Keycode::KpEnter if alt => {
-                            let q = Qol { fullscreen: !self.qol.fullscreen, ..self.qol };
-                            self.apply_qol(q);
-                            self.save_config(false);
-                            continue;
-                        }
-                        Keycode::Left | Keycode::Kp4 => Some(keys::LEFT),
-                        Keycode::Right | Keycode::Kp6 => Some(keys::RIGHT),
-                        Keycode::Up | Keycode::Kp8 => Some(keys::UP),
-                        Keycode::Down | Keycode::Kp2 => Some(keys::DOWN),
-                        Keycode::Return | Keycode::KpEnter => Some(keys::ENTER),
-                        Keycode::Escape => Some(keys::ESC),
-                        Keycode::Backspace => Some(keys::BACKSPACE),
-                        // The engine's own keys: none of them the original's.
+                    // Fullscreen: never passed to the game.
+                    if matches!(k, Keycode::Return | Keycode::KpEnter) && alt {
+                        let q = Qol { fullscreen: !self.qol.fullscreen, ..self.qol };
+                        self.apply_qol(q);
+                        self.save_config(false);
+                        continue;
+                    }
+                    // The engine's own keys: none of them the original's.
+                    match k {
                         Keycode::F1 => {
                             self.open(Modal::Options);
                             continue;
@@ -1126,23 +1116,18 @@ impl SdlIo {
                             self.save_config(false);
                             continue;
                         }
+                        Keycode::PageUp if self.qol.log && !self.front && !self.in_menu => {
+                            self.open(Modal::Log);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    let c = match k {
                         Keycode::PageUp if self.in_menu => Some(msglog::keys::PGUP),
                         Keycode::PageDown if self.in_menu => Some(msglog::keys::PGDN),
                         Keycode::Home if self.in_menu => Some(msglog::keys::HOME),
                         Keycode::End if self.in_menu => Some(msglog::keys::END),
-                        Keycode::PageUp if self.qol.log && !self.front => {
-                            self.open(Modal::Log);
-                            continue;
-                        }
-                        _ => {
-                            let n = k.into_i32();
-                            if (0x20..0x7F).contains(&n) {
-                                let c = n as u8;
-                                Some(if shift { c.to_ascii_uppercase() } else { c })
-                            } else {
-                                None
-                            }
-                        }
+                        _ => keycode_to_byte(k, shift),
                     };
                     let name = k.name().to_lowercase();
                     // The screenshot key (except while the Keys window waits
@@ -1158,11 +1143,13 @@ impl SdlIo {
                         continue;
                     }
                     if let Some(a) = c.filter(|&c| is_arrow(c)) {
-                        if !repeat {
-                            self.arrows.press(a, k.into_i32());
-                        }
-                        if self.qol.repeat {
-                            // The engine's repeat replaces the system's.
+                        // Steady aim: edge presses only (counter-stop). Drop OS
+                        // repeats and do not start the engine arrow-repeat.
+                        if self.qol.steady_aim {
+                            if repeat {
+                                continue;
+                            }
+                        } else if self.qol.repeat {
                             if repeat {
                                 continue;
                             }
@@ -1173,6 +1160,9 @@ impl SdlIo {
                     if repeat && self.fresh_wait {
                         continue;
                     }
+                    if drop_steady_aim_arrow_repeat(self.qol.steady_aim, repeat, c) {
+                        continue;
+                    }
                     if c.is_some() || extra.is_some() {
                         self.dirty |= !self.front;
                         self.pending.push_back((c, extra));
@@ -1181,7 +1171,6 @@ impl SdlIo {
                 Event::MouseButtonDown { .. } if self.fresh_wait && !self.in_menu => self.clicked = true,
                 Event::KeyUp { keycode: Some(k), .. } => {
                     self.held.release(k.into_i32());
-                    self.arrows.release(k.into_i32());
                 }
                 Event::ControllerDeviceAdded { which, .. } if self.qol.gamepad => self.open_pad(which),
                 Event::ControllerButtonDown { .. } | Event::ControllerButtonUp { .. } | Event::ControllerAxisMotion { .. } if self.qol.gamepad => {
@@ -1253,14 +1242,14 @@ impl SdlIo {
                 PadAction::Command(_) => {}
                 PadAction::Options => self.open(Modal::Options),
                 PadAction::Hold(a, by) => {
-                    self.arrows.press(a, by);
-                    if self.qol.repeat {
+                    // Steady aim wants a single edge press from the pad Key;
+                    // do not arm engine repeat while it is on.
+                    if self.qol.repeat && !self.qol.steady_aim {
                         self.hold_arrow(a, by);
                     }
                 }
                 PadAction::Release(by) => {
                     self.held.release(by);
-                    self.arrows.release(by);
                 }
             }
         }
@@ -1356,21 +1345,6 @@ impl Io for SdlIo {
         Ok(self.next_key())
     }
 
-    fn held_aim(&self) -> (i8, i8) {
-        if self.in_menu {
-            (0, 0)
-        } else {
-            self.arrows.dir()
-        }
-    }
-
-    fn aim_clock_ms(&self) -> u64 {
-        // Steady clock from process start; only deltas matter.
-        static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-        let start = START.get_or_init(std::time::Instant::now);
-        start.elapsed().as_millis() as u64
-    }
-
     fn retrace(&mut self, t: &Term, n: u32) -> IoResult<()> {
         self.wait(t, self.scaled(Duration::from_micros(14_286) * n, Wait::Poll))
     }
@@ -1382,7 +1356,6 @@ impl Io for SdlIo {
     fn any_key(&mut self, t: &Term) -> IoResult<()> {
         self.pending.clear();
         self.held.clear();
-        self.arrows.clear();
         self.clicked = false;
         self.fresh_wait = true;
         let r = loop {
@@ -1604,7 +1577,6 @@ impl SdlIo {
         let paused = opened.elapsed();
         self.next = Instant::now() + POLL;
         self.held.clear();
-        self.arrows.clear();
         self.present(t)?;
         Ok(paused)
     }
@@ -1782,9 +1754,6 @@ impl SdlIo {
         }
         if !q.repeat {
             self.held.clear();
-        }
-        if !q.steady_aim {
-            self.arrows.clear();
         }
         if q.gamepad && !old.gamepad {
             self.open_pads();
@@ -2027,7 +1996,6 @@ fn play(a: &Args) -> Result<(), String> {
         keymap: cfg.keys.clone(),
         pad: PadInput::new(cfg.pad.clone()),
         held: Repeater::default(),
-        arrows: HeldArrows::default(),
         // Opened even with the setting off (it reads nothing until a pad
         // is opened), so the menu can turn the gamepad on.
         gc: sdl.game_controller().map_err(|e| eprintln!("no gamepad support: {e}")).ok(),
@@ -2265,6 +2233,38 @@ fn local_time() -> [u8; 4] {
     [h, m, s, (now.subsec_millis() / 10) as u8]
 }
 
+/// When Steady aim is on, OS key-repeat for arrows must not reach the game
+/// (a counter-stop is one edge; a held key must not re-start or re-bill).
+fn drop_steady_aim_arrow_repeat(steady_aim: bool, repeat: bool, c: Option<u8>) -> bool {
+    steady_aim && repeat && c.is_some_and(is_arrow)
+}
+
+/// SDL key → engine byte for ordinary keys (not F1/F2/… modal shortcuts).
+/// Top-row digits are SDL ASCII keycodes (`Num6` → `b'6'`). Numpad 4/6/8/2
+/// stay arrows (`Kp6` → RIGHT) so they never jump F1 pages; space speed
+/// digits outside the menu are unchanged.
+fn keycode_to_byte(k: sdl2::keyboard::Keycode, shift: bool) -> Option<u8> {
+    use sdl2::keyboard::Keycode;
+    match k {
+        Keycode::Left | Keycode::Kp4 => Some(keys::LEFT),
+        Keycode::Right | Keycode::Kp6 => Some(keys::RIGHT),
+        Keycode::Up | Keycode::Kp8 => Some(keys::UP),
+        Keycode::Down | Keycode::Kp2 => Some(keys::DOWN),
+        Keycode::Return | Keycode::KpEnter => Some(keys::ENTER),
+        Keycode::Escape => Some(keys::ESC),
+        Keycode::Backspace => Some(keys::BACKSPACE),
+        _ => {
+            let n = k.into_i32();
+            if (0x20..0x7F).contains(&n) {
+                let c = n as u8;
+                Some(if shift { c.to_ascii_uppercase() } else { c })
+            } else {
+                None
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -2316,6 +2316,56 @@ mod tests {
         assert!(matches!(run(axis(Axis::LeftX, 0))[..], [PadAction::Release(_)]));
         assert!(run(axis(Axis::TriggerLeft, 30000)).is_empty(), "triggers do nothing");
         assert!(pad_event(&Event::Quit { timestamp: 0 }).is_none());
+    }
+
+    #[test]
+    fn steady_aim_drops_os_arrow_repeat_but_allows_second_press() {
+        assert!(drop_steady_aim_arrow_repeat(true, true, Some(keys::RIGHT)));
+        assert!(!drop_steady_aim_arrow_repeat(true, false, Some(keys::RIGHT)), "first edge kept");
+        assert!(!drop_steady_aim_arrow_repeat(false, true, Some(keys::RIGHT)), "original keeps OS path");
+        assert!(!drop_steady_aim_arrow_repeat(true, true, Some(b'6')), "digits unaffected");
+        // Dispatch path: Num6 still Interface; arrow repeat helper independent.
+        use sdl2::keyboard::Keycode;
+        assert_eq!(keycode_to_byte(Keycode::Right, false), Some(keys::RIGHT));
+    }
+
+    /// Top-row 1..6 must reach F1 pages after SDL key translation (alt8
+    /// regression: digit jump was hardcoded to 1..5 after Space became a page).
+    /// Numpad 6 stays RIGHT so space/gameplay never confuse it with Interface.
+    #[test]
+    fn f1_digit_six_reaches_interface_via_keycode_dispatch() {
+        use sdl2::keyboard::Keycode;
+        use u1_assets::config::VideoChoice;
+        use u1_assets::options::{OptionsMenu, Page};
+        use u1_assets::soundpack::SoundMode;
+
+        assert_eq!(keycode_to_byte(Keycode::Num1, false), Some(b'1'));
+        assert_eq!(keycode_to_byte(Keycode::Num5, false), Some(b'5'));
+        assert_eq!(keycode_to_byte(Keycode::Num6, false), Some(b'6'), "SDL Num6 is ASCII 6");
+        assert_eq!(keycode_to_byte(Keycode::Kp6, false), Some(keys::RIGHT), "Kp6 is arrow, not page 6");
+        assert_eq!(keycode_to_byte(Keycode::Num0, false), Some(b'0'));
+
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        let pages = [
+            (Keycode::Num1, Page::Video),
+            (Keycode::Num2, Page::Sound),
+            (Keycode::Num3, Page::Gameplay),
+            (Keycode::Num4, Page::Controls),
+            (Keycode::Num5, Page::Space),
+            (Keycode::Num6, Page::Interface),
+        ];
+        for (kc, page) in pages {
+            let b = keycode_to_byte(kc, false).expect("digit");
+            m.key(b);
+            assert_eq!(m.page(), page, "{kc:?} → {page:?}");
+            assert_eq!(m.row, 0);
+        }
+        assert_eq!(m.page(), Page::Interface);
+        assert_eq!(m.current(), Page::Interface.rows()[0]);
+        // Numpad 6 must not jump pages when fed through the same dispatch.
+        let before = m.page();
+        m.key(keycode_to_byte(Keycode::Kp6, false).unwrap());
+        assert_eq!(m.page(), before, "Kp6 is value-change RIGHT, not Interface");
     }
 
     /// Our button names are SDL's own (the config's `pad_<name>` keys).

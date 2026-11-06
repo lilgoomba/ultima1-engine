@@ -1822,14 +1822,15 @@ applied to its result.
 None of these changes what the game does; the original has no menus,
 windows or extra files, so each is engine-side only.
 
-**Options pages.** F1 groups its rows in five pages: Video (display,
+**Options pages.** F1 groups its rows in six pages: Video (display,
 fullscreen, scaling, smoothing, CRT, vehicle turn), Sound (sound mode, master volume,
 effects volume, music, music volume, footsteps), Gameplay (turbo, delays,
 fast space, timing, food warning, confirm before selling), Controls (arrow
-repeat and its delay and rate, gamepad, keys) and Interface (save slots,
+repeat and its delay and rate, gamepad, keys), Space (steady aim, enemy
+speed, hit box, space map, kill counter, Ace need) and Interface (save slots,
 message log, maps, character screen, help, hints, confirm quit). Tab, PgDn
-or `]` turn to the next page, PgUp or `[` to the one before, 1-5 jump to a
-page. Under the rows, two lines say what the selected setting does. R puts
+or `]` turn to the next page, PgUp or `[` to the one before; digits `1`–`N`
+jump to a page (`N` = page count, currently 6). Under the rows, two lines say what the selected setting does. R puts
 the page's settings back to their defaults, O puts back every setting
 (display: the original's picture in the same EGA/CGA/Tandy mode; sound:
 original beeps); remapped keys are kept. Every change applies at once,
@@ -1907,17 +1908,8 @@ fee." and no refill). Off, the station refills free with no message;
 the ship choice is as before, and the suit rule is unchanged (without a
 vacuum or reflect suit readied, the space doors still kill).
 
-**Steady aim.** Off by default (F1 Controls, `steady_aim`). In the
-original's front view an arrow sets a drift of 4 pixels a frame for the
-sights, which keeps going until another arrow, Space (centre) or the edge
-of the view, and costs 2 fuel each press. With steady aim the sights move
-only while a direction is held (keyboard or pad), at a fixed pixels-per-
-second rate from a clock, not from OS key-repeat. Each front-view vertical
-retrace updates and redraws them (so a multi-retrace speed wait cannot
-become one jump); each update applies at most one frame of motion after a
-pause. They stop on release, focus loss, or a menu. 2 fuel is paid when a
-direction starts being held, not each frame. The sights keep inside the
-original's limits.
+**Steady aim.** Off by default (F1 Space, `steady_aim`). Front-view sight motion still uses the original `dvx`/`dvy` drift. An arrow opposite the current drift on that axis clears both components and costs no fuel (works at 0/1 fuel). A later edge press (OS/engine repeats ignored while Steady aim is on) starts that direction at the usual 2 fuel. Perpendicular and same-direction presses keep the original replace-and-pay rule. Off is unchanged.
+
 
 **Hit box.** Off by default (F1 Space, `wide_hits`). When on, the front-view
 fighter hit test grows by 2 pixels on each side of the original rectangle;
@@ -1935,6 +1927,8 @@ the space status panel shows the save's enemy-vessel count (word 0xA6)
 as `K:n/20` toward Space Ace; at 20 or more it shows `Ace!` (the original
 keeps incrementing past 20 and prints "still a Space Ace" on further
 kills — the HUD does not show a misleading n/20 after the award).
+
+**Enhanced home mark.** Sector (3,3) — where `make_galaxy` places you and where Earth landing returns — shows cyan corner brackets outside the cell (legend: Home). The yellow/white you-frame is unchanged; both show when you are home. Cell intel glyphs are not overwritten.
 
 **Space map.** Original by default (F1 Controls, `space_map`). Enhanced
 replaces the Inform (I) sector scan with a larger 7×7 grid, axis labels

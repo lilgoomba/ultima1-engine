@@ -20,13 +20,16 @@ No tagged releases yet; entries are by branch.
   space HUD shows fighter kills toward Space Ace (`K:n/20`, then `Ace!`).
   Enhanced map layout tightened so the grid and prompt no longer overlap.
 - Enhanced Inform no longer clears the status panel (Shld/Fuel/Exp/Coin/Kills).
+- F1 page digits derive from page count (1–6 after Space); key 6 opens Interface again.
+- Enhanced map: cyan Home corners at sector (3,3); distinct from yellow You.
+- Steady aim: original drift + free counter-steer stop; second press after release starts that way; no hold-to-move.
 - Space options page: Hit box (forgiving +2 px, off by default) and Ace need
   (20/10/5, default 20) for Space Ace HUD and award; no save-format change.
 
 ## polish-1 (merged into main)
 
 ### Added
-- F1 options menu in five pages (Video, Sound, Gameplay, Controls,
+- F1 options menu in six pages (Video, Sound, Gameplay, Controls, Space,
   Interface) with a description line and per-page / all resets.
 - Pause while the F1 menu is open or the window loses focus.
 - Live settings: every option applies at once, no restart.

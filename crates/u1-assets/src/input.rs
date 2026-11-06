@@ -112,7 +112,7 @@ impl PadInput {
     /// The actions for one event. `in_menu`: a window is open (it gets
     /// keys but no screens or repeat); `repeat`: the auto-repeat is on.
     pub fn event(&mut self, e: PadEvent, in_menu: bool, _repeat: bool) -> Vec<PadAction> {
-        // Hold/Release are always emitted out of menus so steady aim (and
+        // Hold/Release are always emitted out of menus so arrow state (and
         // the optional arrow-repeat) can see what is down.
         let hold = !in_menu;
         match e {
@@ -270,78 +270,5 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), n);
-    }
-}
-
-// ------------------------------------------------------------ held arrows
-
-/// Which arrow keys (or pad directions) are down right now, for steady
-/// aim. Separate from [`Repeater`]: it tracks every direction that is
-/// held, does not depend on the arrow-repeat setting, and is cleared on
-/// focus loss and when a menu opens so a key can not stick.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct HeldArrows {
-    /// For each of left, right, up, down: who holds it (`None` if up).
-    by: [Option<i32>; 4],
-}
-
-impl HeldArrows {
-    fn slot(a: u8) -> Option<usize> {
-        match a {
-            keys::LEFT => Some(0),
-            keys::RIGHT => Some(1),
-            keys::UP => Some(2),
-            keys::DOWN => Some(3),
-            _ => None,
-        }
-    }
-
-    /// Arrow `a` went down, held by `by`.
-    pub fn press(&mut self, a: u8, by: i32) {
-        if let Some(i) = Self::slot(a) {
-            self.by[i] = Some(by);
-        }
-    }
-
-    /// Whatever held `by` was let go.
-    pub fn release(&mut self, by: i32) {
-        for s in &mut self.by {
-            if *s == Some(by) {
-                *s = None;
-            }
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.by = [None; 4];
-    }
-
-    pub fn any(&self) -> bool {
-        self.by.iter().any(|s| s.is_some())
-    }
-
-    /// Horizontal and vertical aim, each in -1, 0 or 1. Opposite keys cancel.
-    pub fn dir(&self) -> (i8, i8) {
-        let x = (self.by[1].is_some() as i8) - (self.by[0].is_some() as i8);
-        let y = (self.by[3].is_some() as i8) - (self.by[2].is_some() as i8);
-        (x, y)
-    }
-}
-
-#[cfg(test)]
-mod held_tests {
-    use super::*;
-
-    #[test]
-    fn held_arrows_dir_and_clear() {
-        let mut h = HeldArrows::default();
-        h.press(keys::RIGHT, 1);
-        h.press(keys::UP, 2);
-        assert_eq!(h.dir(), (1, -1));
-        h.release(1);
-        assert_eq!(h.dir(), (0, -1));
-        h.clear();
-        assert_eq!(h.dir(), (0, 0));
-        assert!(!h.any());
     }
 }

@@ -90,8 +90,9 @@ At "Choose thy ship:" type the port number, or press the arrow toward
 the ship you want (it shows in yellow) and Enter, Space or pad A.
 
 In the space front view an arrow sets the sights drifting until another
-arrow or Space, as in the original. F1, Space: Steady aim makes them
-glide only while an arrow is held (and stop when it is let go). Enemy
+arrow or Space, as in the original. F1, Space: Steady aim keeps that
+drift, but pressing the opposite direction stops free (no fuel); after
+you release, press again to go that way (usual 2 fuel). Enemy
 speed Half keeps fighters in view longer; it does not change your aim,
 lasers or damage. Space map Enhanced makes I show a labelled galaxy
 grid with a legend; Original keeps the classic scan. Hit box (off by

@@ -218,13 +218,6 @@ const FLAMES: [[&[Flame]; 4]; 3] = [
     ],
 ];
 
-/// Steady aim: pixels per second while a direction is held (~4 px per
-/// 16 ms frame, close to the original's per-tick drift rate).
-const STEADY_AIM_PX_PER_SEC: f32 = 240.0;
-/// Never apply more than one display frame of motion in one update, so a
-/// long `retrace(n)` wait or a pause cannot become one big jump.
-const STEADY_AIM_MAX_DT_MS: u64 = 16;
-
 /// Enhanced Inform scan layout (must fit inside `Term::boxed`: frame
 /// y 26..=124, fill y 23..=127). Grid + labels + prompt all stay inside.
 const ENH_SCAN_OX: i32 = 52;
@@ -233,6 +226,11 @@ const ENH_SCAN_CELL: i32 = 9;
 const ENH_SCAN_GRID: i32 = ENH_SCAN_CELL * 7; // 63; bottom at 105
 /// Text row for "Any key: back" (pixel y = row*8); below the grid bottom.
 const ENH_SCAN_PROMPT_ROW: usize = 14; // y=112..119; ~7 px clear under the grid
+/// Earth / shuttle home sector (`make_galaxy` starts here; land-back target).
+const HOME_GX: usize = 3;
+const HOME_GY: usize = 3;
+/// Cyan corner brackets for the home cell (distinct from the yellow you-frame).
+const C_HOME: u8 = TEXT;
 
 fn sign(v: i16) -> i16 {
     v.signum()
@@ -264,13 +262,6 @@ struct Space<'a> {
     cy: i16,
     dvx: i16,
     dvy: i16,
-    /// Steady aim: bit0 left, bit1 right, bit2 up, bit3 down already paid.
-    aim_paid: u8,
-    /// Sub-pixel leftovers for time-based steady aim.
-    aim_fx: f32,
-    aim_fy: f32,
-    /// Last `aim_clock_ms` sample.
-    aim_last_ms: Option<u64>,
     /// Front-view enemy phase so Half speed can skip every other tick.
     enemy_phase: u8,
     /// Space Ace ceremony already shown this flight (or earned before entry).
@@ -335,10 +326,6 @@ impl<'a> Space<'a> {
             cy: 79,
             dvx: 0,
             dvy: 0,
-            aim_paid: 0,
-            aim_fx: 0.0,
-            aim_fy: 0.0,
-            aim_last_ms: None,
             enemy_phase: 0,
             ace_done: false,
             star_mode: 2,
@@ -397,16 +384,6 @@ impl<'a> Space<'a> {
         Ok(())
     }
     fn retrace(&mut self, n: u32) -> R<()> {
-        // Steady aim must advance and redraw once per vertical retrace.
-        // A single wait for n retraces left dt = n×14 ms and the sights
-        // jumped (e.g. speed 1: 8×14 ≈ 112 ms → ~27 px at 240 px/s).
-        if self.fp && self.io.features().steady_aim && n > 0 {
-            for _ in 0..n {
-                self.steady_aim_tick();
-                self.io.retrace(&self.g.term, 1)?;
-            }
-            return Ok(());
-        }
         self.io.retrace(&self.g.term, n)?;
         Ok(())
     }
@@ -556,12 +533,6 @@ impl<'a> Space<'a> {
                 }
                 if let Some(k) = k {
                     let k = k.to_ascii_uppercase();
-                    // Steady aim in the front view: arrows are held-state
-                    // only (movement is in the tick). OS key-repeat must
-                    // not become commands or re-charge fuel.
-                    if self.fp && self.io.features().steady_aim && matches!(k, keys::LEFT | keys::RIGHT | keys::UP | keys::DOWN) {
-                        continue;
-                    }
                     break k;
                 }
                 if n >= 1500 {
@@ -820,8 +791,8 @@ impl<'a> Space<'a> {
         let shield = self.g.rec.u16_at(off::SHUTTLE_1) as i16;
         h.slots[2] = Slot { x: 260, y: 90, ty: 0, fuel, shield, hd: 0 };
         self.gal[3][3] = h;
-        self.gx = 3;
-        self.gy = 3;
+        self.gx = HOME_GX;
+        self.gy = HOME_GY;
     }
 
     /// `3741`: the port a slot's ship sits docked at, if any.
@@ -1193,9 +1164,6 @@ impl<'a> Space<'a> {
 
     /// `3330`: one tick of front view: stars and the fighter.
     fn fp_tick(&mut self) -> R<()> {
-        // Aim updates run inside `retrace` at one-retrace cadence when
-        // steady aim is on; do not also step once here (that doubled the
-        // first slice and still left a long blind wait before).
         if self.flame != 0 {
             self.flame -= 1;
         }
@@ -1310,106 +1278,44 @@ impl<'a> Space<'a> {
     }
 
     /// `1919`: arrows steer (front view) or turn and thrust (top-down).
+    ///
+    /// With Steady aim on, front-view steering still uses the original
+    /// drift (`dvx`/`dvy`), but a press opposite the current drift on that
+    /// axis stops the sights (both components cleared) and costs no fuel.
+    /// A later press — after the key is released so OS/engine repeats do
+    /// not count — starts that direction at the usual 2 fuel. Perpendicular
+    /// and same-direction presses keep the original replace-and-pay rule.
+    /// Steady aim off is unchanged.
     fn cmd_arrow(&mut self, dir: i16) -> R<()> {
         if !self.fp {
             return self.td_move(dir);
         }
         let name = self.ptr(d::FP_NAMES, dir as usize);
         self.g.term.println(&name);
+        let (nx, ny) = match dir {
+            1 => (-4i16, 0),
+            2 => (4, 0),
+            3 => (0, -4),
+            _ => (0, 4),
+        };
+        if self.io.features().steady_aim {
+            let counter = (nx != 0 && self.dvx == -nx) || (ny != 0 && self.dvy == -ny);
+            if counter {
+                // Free stop: do not check or spend fuel (works at 0/1 fuel).
+                self.dvx = 0;
+                self.dvy = 0;
+                return Ok(());
+            }
+        }
         if self.slot().fuel < 2 {
             self.println(d::NOT_ENOUGH_FUEL);
             return Ok(());
         }
         self.use_fuel(2);
-        match dir {
-            1 => (self.dvx, self.dvy) = (-4, 0),
-            2 => (self.dvx, self.dvy) = (4, 0),
-            3 => (self.dvx, self.dvy) = (0, -4),
-            _ => (self.dvx, self.dvy) = (0, 4),
-        }
+        (self.dvx, self.dvy) = (nx, ny);
         Ok(())
     }
 
-    /// Steady aim (option): move the sights while arrows are held, at a
-    /// fixed pixels-per-second rate from the aim clock (not OS key
-    /// repeat). Stops on release. 2 fuel is paid when a direction starts,
-    /// not each frame.
-    fn steady_aim_tick(&mut self) {
-        self.dvx = 0;
-        self.dvy = 0;
-        let (hx, hy) = self.io.held_aim();
-        let now = self.io.aim_clock_ms();
-        if hx == 0 && hy == 0 {
-            self.aim_paid = 0;
-            self.aim_fx = 0.0;
-            self.aim_fy = 0.0;
-            self.aim_last_ms = Some(now);
-            return;
-        }
-        // bit0 left, bit1 right, bit2 up, bit3 down
-        let mut bits = 0u8;
-        if hx < 0 {
-            bits |= 1;
-        }
-        if hx > 0 {
-            bits |= 2;
-        }
-        if hy < 0 {
-            bits |= 4;
-        }
-        if hy > 0 {
-            bits |= 8;
-        }
-        let fresh = bits & !self.aim_paid;
-        if fresh != 0 {
-            // One name / 2 fuel per newly held axis (not per frame).
-            let dir = if fresh & 1 != 0 {
-                1
-            } else if fresh & 2 != 0 {
-                2
-            } else if fresh & 4 != 0 {
-                3
-            } else {
-                4
-            };
-            let name = self.ptr(d::FP_NAMES, dir as usize);
-            self.g.term.println(&name);
-            if self.slot().fuel < 2 {
-                self.println(d::NOT_ENOUGH_FUEL);
-                self.aim_last_ms = Some(now);
-                return;
-            }
-            self.use_fuel(2);
-            self.aim_paid |= fresh;
-        }
-        let raw = match self.aim_last_ms {
-            Some(t) => now.saturating_sub(t),
-            None => 0,
-        };
-        self.aim_last_ms = Some(now);
-        // Drop catch-up after a menu/focus pause or a missed pump: one
-        // frame of motion max, never a rubber-band jump.
-        let dt = raw.min(STEADY_AIM_MAX_DT_MS);
-        if dt == 0 {
-            return;
-        }
-        let step = STEADY_AIM_PX_PER_SEC * (dt as f32) / 1000.0;
-        self.aim_fx += hx as f32 * step;
-        self.aim_fy += hy as f32 * step;
-        let sx = self.aim_fx.trunc() as i16;
-        let sy = self.aim_fy.trunc() as i16;
-        if sx == 0 && sy == 0 {
-            return;
-        }
-        self.aim_fx -= sx as f32;
-        self.aim_fy -= sy as f32;
-        self.crosshair(BLACK);
-        self.cx = (self.cx + sx).clamp(24, 296);
-        self.cy = (self.cy + sy).clamp(24, 136);
-        self.crosshair(C_WHITE);
-    }
-
-    /// `16d3`: top-down turning, thrust and retro.
     fn td_move(&mut self, dir: i16) -> R<()> {
         let name = self.ptr(d::TD_NAMES, dir as usize);
         self.g.term.println(&name);
@@ -2009,12 +1915,48 @@ impl<'a> Space<'a> {
             t.line_u1(x0 + side, y0 + side, x0, y0 + side, C_PICK);
             t.line_u1(x0, y0 + side, x0, y0, C_PICK);
             t.print_at_attr(26, you_row, "You", TEXT);
+            // Home: cyan corner brackets (sample matches draw_home_marker).
+            let home_row = 10;
+            let hy = (home_row * 8) as i32 + 1;
+            Self::home_corners(t, lx, hy, 7, C_HOME);
+            t.print_at_attr(26, home_row, "Home", TEXT);
             // Prompt below the grid (grid ends at oy+grid = 110).
             t.print_at_attr(5, ENH_SCAN_PROMPT_ROW, "Any key: back", TEXT);
         }
+        self.draw_home_marker();
         if with_you {
             self.draw_you_marker(true);
         }
+    }
+
+    /// Cyan corner brackets on the Earth home sector (always `(HOME_GX, HOME_GY)`).
+    /// Drawn outside the cell by 2 px so the yellow you-frame can sit inside
+    /// when you are home; the center glyph (fighters/star/station) is untouched.
+    fn draw_home_marker(&mut self) {
+        let (ox, oy, cell) = (ENH_SCAN_OX, ENH_SCAN_OY, ENH_SCAN_CELL);
+        let x0 = ox + HOME_GX as i32 * cell;
+        let y0 = oy + HOME_GY as i32 * cell;
+        // Outside you-frame (white at cell edge, yellow at -1): home at -2.
+        let pad = 2;
+        Self::home_corners(&mut self.g.term, x0 - pad, y0 - pad, cell + 2 * pad, C_HOME);
+    }
+
+    fn home_corners(t: &mut crate::term::Term, x0: i32, y0: i32, side: i32, c: u8) {
+        let arm = 3i32;
+        let x1 = x0 + side;
+        let y1 = y0 + side;
+        // Top-left
+        t.line_u1(x0, y0, x0 + arm, y0, c);
+        t.line_u1(x0, y0, x0, y0 + arm, c);
+        // Top-right
+        t.line_u1(x1 - arm, y0, x1, y0, c);
+        t.line_u1(x1, y0, x1, y0 + arm, c);
+        // Bottom-left
+        t.line_u1(x0, y1 - arm, x0, y1, c);
+        t.line_u1(x0, y1, x0 + arm, y1, c);
+        // Bottom-right
+        t.line_u1(x1, y1 - arm, x1, y1, c);
+        t.line_u1(x1 - arm, y1, x1, y1, c);
     }
 
     fn draw_you_marker(&mut self, fill_pulse: bool) {
@@ -2176,81 +2118,111 @@ mod real_game {
     }
 
     #[test]
-
-    fn steady_aim_is_time_based_and_stops_on_release() {
+    fn original_aim_unchanged_when_steady_off() {
         let Some((mut g, files)) = setup() else { return };
-        // Original: one press sets a drift that goes on frame after frame.
         let mut io = ScriptIo::from_text("");
-        let mut s = Space::new(&mut g, &mut io, files.clone());
+        assert!(!io.qol.steady_aim);
+        let mut s = Space::new(&mut g, &mut io, files);
         s.make_galaxy();
         s.fp = true;
         s.slot_mut().fuel = 500;
-        assert!(s.cmd_arrow(2).is_ok());
+        assert!(s.cmd_arrow(2).is_ok()); // right
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (4, 0, 498));
         for _ in 0..5 {
             s.stars();
         }
-        assert_eq!((s.cx, s.dvx, s.slot().fuel), (159 + 20, 4, 498));
-
-        // Steady aim: 16 ms at 240 px/s -> 3 px (truncated); release stops;
-        // a long pause is capped so it cannot jump.
-        let mut io = ScriptIo::from_text("");
-        io.qol.steady_aim = true;
-        let mut s = Space::new(&mut g, &mut io, files.clone());
-        s.make_galaxy();
-        s.fp = true;
-        s.slot_mut().fuel = 500;
-        s.io.set_held_aim((1, 0));
-        s.io.set_aim_clock_ms(0);
-        s.steady_aim_tick(); // pay fuel, dt=0
-        assert_eq!(s.slot().fuel, 498);
-        assert_eq!(s.cx, 159);
-        s.io.set_aim_clock_ms(16);
-        s.steady_aim_tick();
-        assert_eq!((s.cx, s.dvx, s.slot().fuel), (159 + 3, 0, 498), "3 px in 16 ms, fuel once");
-        // Fake a 500 ms hitch: only one frame of motion applies.
-        s.io.set_aim_clock_ms(516);
-        let before = s.cx;
-        s.steady_aim_tick();
-        let hitch = s.cx - before;
-        assert!((3..=4).contains(&hitch), "catch-up capped to one frame, got {hitch}");
-        // Release: no further motion even if the clock runs.
-        s.io.set_held_aim((0, 0));
-        s.io.set_aim_clock_ms(800);
-        s.steady_aim_tick();
-        assert_eq!(s.cx, before + hitch);
-        // Re-hold charges again.
-        s.io.set_held_aim((1, 0));
-        s.io.set_aim_clock_ms(800);
-        s.steady_aim_tick();
-        assert_eq!(s.slot().fuel, 496);
+        assert_eq!((s.cx, s.dvx), (159 + 20, 4));
+        // Same direction again still pays (original).
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (4, 496));
+        // Opposite while drifting starts the new direction and pays (no stop).
+        assert!(s.cmd_arrow(1).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (-4, 0, 494));
     }
 
     #[test]
-    fn steady_aim_follows_retrace_cadence_with_small_steps() {
+    fn steady_aim_stationary_start_and_left_right_counter_stop() {
         let Some((mut g, files)) = setup() else { return };
         let mut io = ScriptIo::from_text("");
         io.qol.steady_aim = true;
         let mut s = Space::new(&mut g, &mut io, files);
         s.make_galaxy();
         s.fp = true;
-        s.speed = 1; // 8 retraces ≈ 112 ms total — the jumpy case before the fix
         s.slot_mut().fuel = 500;
-        s.io.set_held_aim((1, 0));
-        s.io.set_aim_clock_ms(0);
-        let n = s.wd(d::RETRACE + 2 * s.speed as usize);
-        assert_eq!(n, 8, "speed 1 waits eight retraces");
-        let start = s.cx;
-        // Same path fp_tick uses: N single-retrace slices with aim each.
-        assert!(s.retrace(n as u32).is_ok());
-        let moved = s.cx - start;
-        assert_eq!(s.dvx, 0, "no original drift");
-        assert_eq!(s.slot().fuel, 498, "fuel once for the hold");
-        drop(s);
-        let slices = io.retrace_slices.borrow().clone();
-        assert_eq!(slices, vec![1; 8], "retrace(n) split into n×1, not one wait of n");
-        // 7 or 8 frame steps of ~3 px (first slice often dt=0): about 21–24 px.
-        assert!((18..=32).contains(&moved), "moved {moved} over 8 frames at 240 px/s");
-        assert!(moved / 8 <= 4, "average step too large: {moved}/8");
+        // Stationary start: first press pays and drifts (original).
+        assert!(s.cmd_arrow(1).is_ok()); // left
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (-4, 0, 498));
+        // Counter right: free stop.
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 0, 498), "counter-stop costs no fuel");
+        // Second press right (after a "release" in the real front end): pays and goes right.
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (4, 0, 496));
+        // Counter left: stop again free.
+        assert!(s.cmd_arrow(1).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 0, 496));
+    }
+
+    #[test]
+    fn steady_aim_up_down_counter_stop() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.steady_aim = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 100;
+        assert!(s.cmd_arrow(3).is_ok()); // up
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, -4, 98));
+        assert!(s.cmd_arrow(4).is_ok()); // down counter
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 0, 98));
+        assert!(s.cmd_arrow(4).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 4, 96));
+    }
+
+    #[test]
+    fn steady_aim_counter_stop_works_at_low_fuel() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.steady_aim = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 2;
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (4, 0));
+        // 0 fuel: counter-stop must still work (no fuel check first).
+        assert!(s.cmd_arrow(1).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 0, 0));
+        // Starting again with 0 fuel still refuses (original).
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (0, 0));
+        s.slot_mut().fuel = 1;
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (0, 1), "1 fuel cannot start");
+        // But can stop if somehow drifting with 1 fuel.
+        s.dvx = -4;
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (0, 1));
+    }
+
+    #[test]
+    fn steady_aim_perpendicular_and_same_follow_original() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.steady_aim = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 50;
+        assert!(s.cmd_arrow(2).is_ok()); // right
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (4, 0, 48));
+        // Perpendicular up replaces drift and pays (not a free stop).
+        assert!(s.cmd_arrow(3).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, -4, 46));
+        // Same direction again pays and keeps that drift.
+        assert!(s.cmd_arrow(3).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, -4, 44));
     }
 
     #[test]
@@ -2368,6 +2340,50 @@ mod real_game {
         let gy = (ENH_SCAN_OY + 6 * ENH_SCAN_CELL + 4) as usize;
         let overlap = (40..120).filter(|&x| s.g.term.at(x, gy) == TEXT).count();
         assert!(overlap < 20, "prompt text must not sit in grid row 6");
+    }
+
+    #[test]
+    fn enhanced_home_marker_distinct_from_you_elsewhere_and_at_home() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        assert_eq!((s.gx, s.gy), (HOME_GX, HOME_GY), "make_galaxy homes at 3,3");
+        // Elsewhere: home corners cyan, you-frame on another cell.
+        s.gx = 1;
+        s.gy = 1;
+        // Put a station in home so we can prove the glyph survives.
+        s.gal[HOME_GX][HOME_GY].enemies = 0;
+        s.gal[HOME_GX][HOME_GY].stx = 0;
+        s.gal[HOME_GX][HOME_GY].sx = 50;
+        s.draw_enhanced_scan(true);
+        let hx0 = ENH_SCAN_OX + HOME_GX as i32 * ENH_SCAN_CELL;
+        let hy0 = ENH_SCAN_OY + HOME_GY as i32 * ENH_SCAN_CELL;
+        let pad = 2;
+        assert_eq!(s.g.term.at((hx0 - pad) as usize, (hy0 - pad) as usize), C_HOME, "home TL corner");
+        assert_eq!(s.g.term.at(hx0 as usize, hy0 as usize), C_FRAME, "cell grid line kept under home pad");
+        // Station glyph ink still in cell interior (scan_glyph at +1,+1).
+        let ink = (1..ENH_SCAN_CELL).any(|dy| {
+            (1..ENH_SCAN_CELL).any(|dx| {
+                let p = s.g.term.at((hx0 + dx) as usize, (hy0 + dy) as usize);
+                p != BLACK && p != C_HOME && p != C_FRAME
+            })
+        });
+        assert!(ink, "home cell content preserved");
+        let yx0 = ENH_SCAN_OX + 1 * ENH_SCAN_CELL;
+        let yy0 = ENH_SCAN_OY + 1 * ENH_SCAN_CELL;
+        assert_eq!(s.g.term.at(yx0 as usize, yy0 as usize), C_WHITE, "you elsewhere");
+        assert_ne!(s.g.term.at(yx0 as usize, yy0 as usize), C_HOME);
+        // Legend lists Home.
+        assert!(s.g.term.row_text(10).contains("Home"), "{}", s.g.term.row_text(10));
+        // At home: both markers present — cyan outer corners + yellow you-frame.
+        s.gx = HOME_GX;
+        s.gy = HOME_GY;
+        s.draw_enhanced_scan(true);
+        assert_eq!(s.g.term.at((hx0 - pad) as usize, (hy0 - pad) as usize), C_HOME, "home corners when you=home");
+        assert_eq!(s.g.term.at(hx0 as usize, hy0 as usize), C_WHITE, "you outer at home");
+        assert_eq!(s.g.term.at((hx0 + 1) as usize, (hy0 + 1) as usize), C_PICK, "you inner at home");
     }
 
     #[test]

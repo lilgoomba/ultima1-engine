@@ -362,7 +362,7 @@ original game audio) and is licensed CC-BY-SA 4.0 like the art.
 
 F1 pauses the game (sound and music too) and opens the options menu,
 drawn like the original's own shop and king windows. Settings are grouped
-on five pages (Tab moves to the next page), roughly:
+on six pages (Tab or digits 1–6 jump; Tab wraps), roughly:
 
 * **Video**: display (Enhanced, EGA, CGA or Tandy; only the displays your
   game files include), fullscreen, scaling, CRT filter, smoothing,
@@ -373,6 +373,7 @@ on five pages (Tab moves to the next page), roughly:
   confirm selling, sign wait, docking fees.
 * **Controls**: arrow repeat, gamepad, the Keys (rebind) screen, including
   the screenshot key.
+* **Space**: steady aim, enemy speed, hit box, space map, kill counter, Ace need.
 * **Interface**: save slots, message log, maps, character screen, help
   screen, hints, confirm quit.
 
@@ -513,7 +514,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 
 | Setting / feature | Default | Keys | What it does |
 |---|---|---|---|
-| Grouped F1 menu | | F1 | Five pages with descriptions and resets (above). |
+| Grouped F1 menu | | F1 | Six pages (Video…Space…Interface); digits 1–6 jump. |
 | Pause on menu / focus loss | always | | The game, music and effects stop while F1 is open or the window is in the background. |
 | Live settings | always | | Every F1 change takes effect at once. |
 | Rich save slots | **on** | F2, F5, F9 | Each save gets a `<save>.info` sidecar (time, name, level, place, thumbnail) shown in the slot screen; the 820-byte record itself is unchanged, and a save with no sidecar shows the file's own time. |
@@ -527,7 +528,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | Sign wait | **on** | | A sign's words stay up behind "Press any key". Off: the original's short pause. |
 | Docking fees | **on** | | The original's 500-coin refuel fee at a space station. Off: refuelling is free (the suit rule is unchanged). |
 | Ship choice by arrow | always | Left/Right, Enter/Space, pad A | At "Choose thy ship", the arrows pick the port on that side (shown in yellow); digits still work. |
-| Steady aim | off | arrows / pad (front view in space) | F1 → Space. While an arrow is held the sights glide at a fixed speed (not OS key-repeat) and stop on release, focus loss or the options menu; 2 fuel per newly held direction. Off: the original's drift. |
+| Steady aim | off | arrows / pad (front view in space) | F1 → Space. Front-view uses the original drift, but an opposite press stops free (no fuel); after release, press again to go that way (2 fuel). OS/engine arrow-repeat is ignored so a hold cannot re-bill. Off: original drift unchanged. |
 | Enemy speed | Original | | F1 → Space. Half: front-view fighters flee and grow every other tick (about twice as long on screen). Aim, lasers, alien fire chance, stars and damage are unchanged. |
 | Space map | Original | I in space | F1 → Space. Enhanced: a labelled 7×7 grid, legend (fighters / star / station / empty) and a steady yellow “you” frame; same intel as the original scan. |
 | Hit box | off | | F1 → Space. Slightly larger fighter hit box (+2 px); damage unchanged. |
@@ -542,7 +543,7 @@ sfx_volume = 100
 confirm_quit = true
 wait_on_signs = true
 docking_fee = true
-steady_aim = false     # space sights glide while an arrow is held
+steady_aim = false     # original drift + free counter-steer stop
 enemy_speed = "original"  # original | half
 space_map = "original"    # original | enhanced
 space_kills = false

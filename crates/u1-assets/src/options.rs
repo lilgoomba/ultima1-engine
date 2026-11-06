@@ -236,7 +236,7 @@ impl Row {
             Row::ConfirmQuit => "Ask before closing the window with progress not saved.",
             Row::SignWait => "Keep a sign's words up until a key.",
             Row::DockFee => "Pay 500 coin to refuel at a station.",
-            Row::SteadyAim => "Space sights glide while an arrow is held; stop on release.",
+            Row::SteadyAim => "Original drift; opposite press stops free. Press again to go that way.",
             Row::EnemySpeed => "How fast front-view fighters flee and grow (aim and fire unchanged).",
             Row::SpaceMap => "I in space: original scan icons, or a clearer labelled grid.",
             Row::SpaceKills => "Show fighter kills toward Space Ace on the space HUD.",
@@ -461,7 +461,8 @@ impl OptionsMenu {
                 self.turn_page(true);
                 MenuKey::Stay
             }
-            b'1'..=b'5' => {
+            // Digits jump to a page; count comes from Page::ALL (not a fixed 1..5).
+            k if (b'1'..).contains(&k) && usize::from(k - b'1') < Page::ALL.len() => {
                 (self.page, self.row) = (usize::from(k - b'1'), 0);
                 MenuKey::Stay
             }
@@ -583,7 +584,7 @@ impl OptionsMenu {
         for (i, l) in wrap(self.current().describe(), 36).iter().take(2).enumerate() {
             t.print_at_attr(2, under + i, l, TEXT);
         }
-        center(t, under + 2, "Tab: page  R: reset page  O: all", TEXT);
+        center(t, under + 2, &format!("Tab/1-{}: page  R: reset  O: all", Page::ALL.len()), TEXT);
         center(t, under + 3, "Arrows: change  F1/Enter: resume", TEXT);
         t.cursor(1, 24);
     }
@@ -665,11 +666,55 @@ mod tests {
         assert_eq!((m.page(), m.row), (Page::Interface, 0), "back from the first page");
         m.key(b']');
         assert_eq!(m.page(), Page::Video);
+        m.key(TAB);
+        assert_eq!(m.page(), Page::Sound, "Tab forward");
+        m.key(crate::msglog::keys::PGUP);
+        assert_eq!(m.page(), Page::Video, "PgUp back");
+        // Wrap forward: Interface → Video
+        m.key(b'6');
+        assert_eq!(m.page(), Page::Interface);
+        m.key(TAB);
+        assert_eq!(m.page(), Page::Video, "Tab wraps past last page");
         m.key(b'4');
         assert_eq!(m.page(), Page::Controls);
         m.select(Row::Keys);
         assert_eq!(m.key(keys::ENTER), MenuKey::Rebind);
         assert_eq!(m.key(keys::RIGHT), MenuKey::Rebind);
+    }
+
+    #[test]
+    fn digit_keys_select_every_page_including_sixth() {
+        assert_eq!(Page::ALL.len(), 6, "Space page added a sixth tab");
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        let expect = [(b'1', Page::Video), (b'2', Page::Sound), (b'3', Page::Gameplay), (b'4', Page::Controls), (b'5', Page::Space), (b'6', Page::Interface)];
+        for (digit, page) in expect {
+            assert_eq!(m.key(digit), MenuKey::Stay, "digit {}", digit as char);
+            assert_eq!((m.page(), m.row), (page, 0), "key {} → {:?}", digit as char, page);
+        }
+        let on_iface = m.page();
+        assert_eq!(m.key(b'7'), MenuKey::Stay, "past last page is a no-op");
+        assert_eq!(m.page(), on_iface, "7 must not change page");
+        assert_eq!(m.key(b'0'), MenuKey::Stay);
+        assert_eq!(m.page(), on_iface);
+    }
+    #[test]
+    fn interface_via_digit_six_screenshot() {
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        m.key(b'6');
+        assert_eq!(m.page(), Page::Interface);
+        let mut t = Term::new();
+        m.draw(&mut t);
+        // Header tabs mark Interface selected; first Interface row is Slots.
+        assert_eq!(m.current(), Row::Slots);
+        let rgb = t.to_rgb(&crate::palette::EGA_PALETTE, 2);
+        let path = std::path::Path::new("/workspace/u1-shots/space-aim/f1-interface-via-6.png");
+        let _ = std::fs::create_dir_all(path.parent().unwrap());
+        let f = std::fs::File::create(path).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&rgb).unwrap();
+        assert!(path.is_file());
     }
 
     #[test]

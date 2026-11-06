@@ -6,7 +6,6 @@
 //! `Io` whenever it waits; the SDL front end implements it with a window,
 //! tests and the screenshot mode with a list of keys.
 
-use std::cell::Cell;
 use std::collections::VecDeque;
 
 use crate::term::Term;
@@ -131,24 +130,6 @@ pub trait Io {
         self.poll(t)
     }
 
-    /// Directions held for space steady aim: each axis in -1, 0 or 1.
-    /// Cleared on focus loss and when a menu opens. Default: none.
-    fn held_aim(&self) -> (i8, i8) {
-        (0, 0)
-    }
-
-    /// Monotonic milliseconds for time-based steady aim. Scripted tests
-    /// drive this; the SDL front end uses a real clock.
-    fn aim_clock_ms(&self) -> u64 {
-        0
-    }
-
-    /// Tests: set held aim directions.
-    fn set_held_aim(&mut self, _d: (i8, i8)) {}
-
-    /// Tests: set the aim clock.
-    fn set_aim_clock_ms(&mut self, _ms: u64) {}
-
     /// Wait for a fresh key press (a mouse click or pad button counts
     /// too in front ends that have them); keys typed ahead and held-key
     /// repeats do not end it.
@@ -227,10 +208,6 @@ pub struct ScriptIo {
     pub qol: crate::qol::Qol,
     /// The music asked for, a repeat of the last one left out.
     pub music: Vec<crate::music::Track>,
-    /// Held aim directions for tests (`held_aim`).
-    pub held_aim: Cell<(i8, i8)>,
-    /// Scripted clock for time-based steady aim.
-    pub clock_ms: Cell<u64>,
     /// Each `retrace(n)` call's n (for cadence tests).
     pub retrace_slices: std::cell::RefCell<Vec<u32>>,
 }
@@ -298,27 +275,8 @@ impl ScriptIo {
 }
 
 impl Io for ScriptIo {
-    fn held_aim(&self) -> (i8, i8) {
-        self.held_aim.get()
-    }
-
-    fn aim_clock_ms(&self) -> u64 {
-        self.clock_ms.get()
-    }
-
-    fn set_held_aim(&mut self, d: (i8, i8)) {
-        self.held_aim.set(d);
-    }
-
-    fn set_aim_clock_ms(&mut self, ms: u64) {
-        self.clock_ms.set(ms);
-    }
-
     fn retrace(&mut self, _t: &Term, n: u32) -> IoResult<()> {
-        // One vertical retrace ≈ 1/70 s; advance the aim clock so space
-        // steady-aim tests see the same cadence as the SDL front end.
         self.retrace_slices.borrow_mut().push(n);
-        self.clock_ms.set(self.clock_ms.get().saturating_add(14 * u64::from(n)));
         Ok(())
     }
 

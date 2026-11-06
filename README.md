@@ -362,7 +362,7 @@ original game audio) and is licensed CC-BY-SA 4.0 like the art.
 
 F1 pauses the game (sound and music too) and opens the options menu,
 drawn like the original's own shop and king windows. Settings are grouped
-on five pages (Tab moves to the next page), roughly:
+on six pages (Tab or digits 1–6 jump; Tab wraps), roughly:
 
 * **Video**: display (Enhanced, EGA, CGA or Tandy; only the displays your
   game files include), fullscreen, scaling, CRT filter, smoothing,
@@ -373,6 +373,7 @@ on five pages (Tab moves to the next page), roughly:
   confirm selling, sign wait, docking fees.
 * **Controls**: arrow repeat, gamepad, the Keys (rebind) screen, including
   the screenshot key.
+* **Space**: steady aim, enemy speed, hit box, space map, kill counter, Ace need.
 * **Interface**: save slots, message log, maps, character screen, help
   screen, hints, confirm quit.
 
@@ -452,7 +453,7 @@ scaler for one run. Screenshots take `--crt`, `--slots`, `--log` and
 | Confirm | | Ask "Sure? (Y/N)" before selling or dropping anything worth 10/50/100/250/500 or more. |
 | Arrow repeat | | Our own repeat for a held arrow: Repeat delay (250-800 ms, default 250) and Repeat rate (default "Game pace", one step each pass of the main loop as the original moves; or 4-16 a second, never faster than the game pace). Repeats come only at the command prompt, so they never answer a question. "System" is the old behaviour. |
 | Gamepad | | SDL game controllers: d-pad or left stick move; buttons as below. |
-| Music | | Original chiptune music per area (title, overworld, town, castle, dungeon, space, Mondain's lair; victory and death stings), crossfaded on area changes and paused in the F1 menu. Music volume (10-100%, default 50%) is separate from the effects. Independent of the effects mode: it plays with Original beeps or Enhanced sound, following only its own switch and volume; Mute silences everything, music included. See CREDITS. |
+| Music | | Original chiptune music per area (title, overworld, town, castle, dungeon, space, Mondain's lair; ending narrative; victory and death stings), crossfaded on area changes and paused in the F1 menu. Music volume (10-100%, default 50%) is separate from the effects. Independent of the effects mode: it plays with Original beeps or Enhanced sound, following only its own switch and volume; Mute silences everything, music included. See CREDITS. |
 | Smoothing | | How the picture is enlarged: Off (square pixels, as the original), Linear (bilinear filtering) or Pixel art (our own Scale2x/EPX edge-rounding scaler to at least 1280 wide, then a short linear stretch). Works in both EGA and enhanced video, and with whole-pixel scaling (the fit is still whole multiples of the original size). With CRT on, the pixel-art scaler runs first and the scanlines are drawn on its output; any smoothing also filters the CRT texture. Note: Pixel art also rounds the square corners of the screen frames and text-window borders (an effect of the edge-rounding scaler); use Linear or Off for sharp corners. |
 | Keys | Enter | The rebind screen: give any command or screen one extra key. |
 
@@ -513,7 +514,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 
 | Setting / feature | Default | Keys | What it does |
 |---|---|---|---|
-| Grouped F1 menu | | F1 | Five pages with descriptions and resets (above). |
+| Grouped F1 menu | | F1 | Six pages (Video…Space…Interface); digits 1–6 jump. |
 | Pause on menu / focus loss | always | | The game, music and effects stop while F1 is open or the window is in the background. |
 | Live settings | always | | Every F1 change takes effect at once. |
 | Rich save slots | **on** | F2, F5, F9 | Each save gets a `<save>.info` sidecar (time, name, level, place, thumbnail) shown in the slot screen; the 820-byte record itself is unchanged, and a save with no sidecar shows the file's own time. |
@@ -524,9 +525,17 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | AppImage desktop entry | | | The AppImage carries a desktop entry and our own 16-bit style icon (CC-BY-SA 4.0). |
 | Vehicle facing | **on** | | Enhanced video: vehicles face the way they last moved sideways; kept in the `.map` sidecar. |
 | `--save FILE` fix | | | Saves back to FILE (or to the roster when FILE is in the game folder), no longer over roster character 1. `--player N` plays character N. |
-| Sign wait | **on** | | A sign's words stay up behind "Press any key". Off: the original's short pause. |
+| Attack gem | **off** | F1 → Controls | In Mondain's lair, successful in-range attacks can destroy the gem like G, including its original explosion cost. Config `attack_gem`. |
+| God mode | **off** | | F1 → Controls (testing). Hits never fall; a successful hit kills instantly. Not in the save. CLI `--god` / `--features god`. |
+| Message pauses | **on** | | First title: 2.8-second timed dwell (off: previous timing).  Signs and princess rescue stay up behind "Press any key" (`wait_on_signs`; alias `message_pauses`). Off: original short pause. Not pubs/shops. |
 | Docking fees | **on** | | The original's 500-coin refuel fee at a space station. Off: refuelling is free (the suit rule is unchanged). |
 | Ship choice by arrow | always | Left/Right, Enter/Space, pad A | At "Choose thy ship", the arrows pick the port on that side (shown in yellow); digits still work. |
+| Steady aim | off | arrows / pad (front view in space) | F1 → Space. Front-view uses the original drift, but an opposite press stops free (no fuel); after release, press again to go that way (2 fuel). OS/engine arrow-repeat is ignored so a hold cannot re-bill. Off: original drift unchanged. |
+| Enemy speed | Original | | F1 → Space. Half: front-view fighters flee and grow every other tick (about twice as long on screen). Aim, lasers, alien fire chance, stars and damage are unchanged. |
+| Space map | Original | I in space | F1 → Space. Enhanced: a labelled 7×7 grid, legend (fighters / star / station / empty) and a steady yellow “you” frame; same intel as the original scan. |
+| Hit box | off | | F1 → Space. Slightly larger fighter hit box (+2 px); damage unchanged. |
+| Ace need | 20 | | F1 → Space. Kills for Space Ace: 20, 10 or 5 (HUD, award and princess time-machine eligibility; still needs 7000 XP before rescue). |
+| Kill counter | off | | F1 → Space. HUD `K:n/N` or `Ace!` (N from Ace need). |
 | F3 in space | with Help screen | F3 | Lists the space commands; F3 or any key closes it. |
 | Hyperspace pacing | always | H | The "Lightspeed!" star streaks are paced (about 1.7 s per phase) so they are seen, as on the original's PC. |
 
@@ -534,8 +543,15 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 master_volume = 100
 sfx_volume = 100
 confirm_quit = true
-wait_on_signs = true
+god_mode = false          # testing cheat
+wait_on_signs = true   # Message pauses (signs + princess); alias message_pauses
 docking_fee = true
+steady_aim = false     # original drift + free counter-steer stop
+enemy_speed = "original"  # original | half
+space_map = "original"    # original | enhanced
+space_kills = false
+space_ace_need = 20       # 20 | 10 | 5
+wide_hits = false       # slightly larger fighter hit box (+2 px)
 vehicle_facing = true
 key_screenshot = "f12"
 window = "100,80,1280,800"
@@ -602,3 +618,7 @@ artifact.
 GPL-3.0-or-later. See [LICENSE](LICENSE).
 *Ultima* is a trademark of Electronic Arts. This project is not affiliated
 with or endorsed by Electronic Arts or GOG. It ships no game content.
+
+Victory ends with a fresh-key return to the title/roster in the same window, not a reboot prompt. No automatic character-save overwrite.
+
+The ending narrative has its own original 48-second instrumental loop, "Sosaria Restored" (D major, 80 bpm), under the existing Music switch/volume. The short victory fanfare remains unchanged; returning to title crossfades to title music.

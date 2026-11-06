@@ -54,8 +54,16 @@ pub enum Row {
     MasterVolume,
     SfxVolume,
     ConfirmQuit,
-    SignWait,
+    MessagePauses,
     DockFee,
+    SteadyAim,
+    EnemySpeed,
+    SpaceMap,
+    SpaceKills,
+    WideHits,
+    AceNeed,
+    GodMode,
+    AttackGem,
 }
 
 /// The menu's pages (tabs), in order.
@@ -65,11 +73,12 @@ pub enum Page {
     Sound,
     Gameplay,
     Controls,
+    Space,
     Interface,
 }
 
 impl Page {
-    pub const ALL: [Page; 5] = [Page::Video, Page::Sound, Page::Gameplay, Page::Controls, Page::Interface];
+    pub const ALL: [Page; 6] = [Page::Video, Page::Sound, Page::Gameplay, Page::Controls, Page::Space, Page::Interface];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -77,6 +86,7 @@ impl Page {
             Page::Sound => "Sound",
             Page::Gameplay => "Gameplay",
             Page::Controls => "Controls",
+            Page::Space => "Space",
             Page::Interface => "Interface",
         }
     }
@@ -86,15 +96,16 @@ impl Page {
         match self {
             Page::Video => &[Row::Video, Row::Fullscreen, Row::Scaling, Row::Smoothing, Row::Crt, Row::Facing],
             Page::Sound => &[Row::Sound, Row::MasterVolume, Row::SfxVolume, Row::Music, Row::MusicVolume, Row::Footsteps],
-            Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::SignWait, Row::DockFee],
-            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys],
+            Page::Gameplay => &[Row::Turbo, Row::Delay, Row::Space, Row::Timing, Row::Food, Row::Confirm, Row::MessagePauses, Row::DockFee],
+            Page::Controls => &[Row::Repeat, Row::RepeatDelay, Row::RepeatRate, Row::Gamepad, Row::Keys, Row::GodMode, Row::AttackGem],
+            Page::Space => &[Row::SteadyAim, Row::EnemySpeed, Row::WideHits, Row::SpaceMap, Row::SpaceKills, Row::AceNeed],
             Page::Interface => &[Row::Slots, Row::Log, Row::Automap, Row::Minimap, Row::Character, Row::Help, Row::Hints, Row::ConfirmQuit],
         }
     }
 }
 
 /// Every row, page by page (the order `--menu-row` counts in).
-pub const ROWS: [Row; 33] = [
+pub const ROWS: [Row; 41] = [
     Row::Video,
     Row::Fullscreen,
     Row::Scaling,
@@ -113,13 +124,21 @@ pub const ROWS: [Row; 33] = [
     Row::Timing,
     Row::Food,
     Row::Confirm,
-    Row::SignWait,
+    Row::MessagePauses,
     Row::DockFee,
     Row::Repeat,
     Row::RepeatDelay,
     Row::RepeatRate,
     Row::Gamepad,
     Row::Keys,
+    Row::GodMode,
+    Row::AttackGem,
+    Row::SteadyAim,
+    Row::EnemySpeed,
+    Row::WideHits,
+    Row::SpaceMap,
+    Row::SpaceKills,
+    Row::AceNeed,
     Row::Slots,
     Row::Log,
     Row::Automap,
@@ -131,7 +150,7 @@ pub const ROWS: [Row; 33] = [
 ];
 
 /// Where the values start: one blank after the longest label.
-const VALUE_COL: usize = 17;
+const VALUE_COL: usize = 19;
 
 /// The most rows a page has.
 pub const SHOWN: usize = 8;
@@ -174,8 +193,16 @@ impl Row {
             Row::MasterVolume => "Master vol.",
             Row::SfxVolume => "Effects vol.",
             Row::ConfirmQuit => "Confirm quit",
-            Row::SignWait => "Sign wait",
+            Row::MessagePauses => "Message pauses",
             Row::DockFee => "Docking fees",
+            Row::SteadyAim => "Steady aim",
+            Row::EnemySpeed => "Enemy speed",
+            Row::SpaceMap => "Space map",
+            Row::SpaceKills => "Kill counter",
+            Row::WideHits => "Hit box",
+            Row::AceNeed => "Ace need",
+            Row::GodMode => "God mode",
+            Row::AttackGem => "Attack gem",
         }
     }
 
@@ -213,8 +240,16 @@ impl Row {
             Row::MasterVolume => "How loud everything is.",
             Row::SfxVolume => "How loud the beeps and sound effects are.",
             Row::ConfirmQuit => "Ask before closing the window with progress not saved.",
-            Row::SignWait => "Keep a sign's words up until a key.",
+            Row::MessagePauses => "Signs/princess: key; first title: longer timed dwell.",
             Row::DockFee => "Pay 500 coin to refuel at a station.",
+            Row::SteadyAim => "Original drift; opposite press stops free. Press again to go that way.",
+            Row::EnemySpeed => "How fast front-view fighters flee and grow (aim and fire unchanged).",
+            Row::SpaceMap => "I in space: original scan icons, or a clearer labelled grid.",
+            Row::SpaceKills => "Show fighter kills toward Space Ace on the space HUD.",
+            Row::WideHits => "Slightly larger fighter hit box (aim only; damage unchanged).",
+            Row::AceNeed => "Kills for Ace and princess time-machine eligibility.",
+            Row::AttackGem => "Lair: a successful attack destroys the gem, like G.",
+            Row::GodMode => "Testing cheat: Hits stay up; your hits kill at once.",
         }
     }
 }
@@ -335,8 +370,16 @@ impl OptionsMenu {
                 Row::MasterVolume => q.master_volume = d.master_volume,
                 Row::SfxVolume => q.sfx_volume = d.sfx_volume,
                 Row::ConfirmQuit => q.confirm_quit = d.confirm_quit,
-                Row::SignWait => q.sign_wait = d.sign_wait,
+                Row::MessagePauses => q.sign_wait = d.sign_wait,
                 Row::DockFee => q.docking_fee = d.docking_fee,
+                Row::SteadyAim => q.steady_aim = d.steady_aim,
+                Row::EnemySpeed => q.enemy_speed = d.enemy_speed,
+                Row::SpaceMap => q.space_map = d.space_map,
+                Row::SpaceKills => q.space_kills = d.space_kills,
+                Row::WideHits => q.wide_hits = d.wide_hits,
+                Row::AceNeed => q.space_ace_need = d.space_ace_need,
+                Row::GodMode => q.god_mode = d.god_mode,
+                Row::AttackGem => q.attack_gem = d.attack_gem,
             }
         }
     }
@@ -398,8 +441,16 @@ impl OptionsMenu {
             Row::MasterVolume => format!("{}%", q.master_volume),
             Row::SfxVolume => format!("{}%", q.sfx_volume),
             Row::ConfirmQuit => on(q.confirm_quit),
-            Row::SignWait => on(q.sign_wait),
+            Row::MessagePauses => on(q.sign_wait),
             Row::DockFee => on(q.docking_fee),
+            Row::SteadyAim => on(q.steady_aim),
+            Row::EnemySpeed => q.enemy_speed.label().into(),
+            Row::SpaceMap => q.space_map.label().into(),
+            Row::SpaceKills => on(q.space_kills),
+            Row::WideHits => on(q.wide_hits),
+            Row::AceNeed => q.space_ace_need.label().into(),
+            Row::GodMode => on(q.god_mode),
+            Row::AttackGem => on(q.attack_gem),
         }
     }
 
@@ -422,7 +473,8 @@ impl OptionsMenu {
                 self.turn_page(true);
                 MenuKey::Stay
             }
-            b'1'..=b'5' => {
+            // Digits jump to a page; count comes from Page::ALL (not a fixed 1..5).
+            k if (b'1'..).contains(&k) && usize::from(k - b'1') < Page::ALL.len() => {
                 (self.page, self.row) = (usize::from(k - b'1'), 0);
                 MenuKey::Stay
             }
@@ -469,8 +521,26 @@ impl OptionsMenu {
                     Row::MasterVolume => q.master_volume = qol::cycle(&qol::VOLUMES, q.master_volume, k == keys::LEFT),
                     Row::SfxVolume => q.sfx_volume = qol::cycle(&qol::VOLUMES, q.sfx_volume, k == keys::LEFT),
                     Row::ConfirmQuit => q.confirm_quit ^= true,
-                    Row::SignWait => q.sign_wait ^= true,
+                    Row::MessagePauses => q.sign_wait ^= true,
                     Row::DockFee => q.docking_fee ^= true,
+                    Row::SteadyAim => q.steady_aim ^= true,
+                    Row::EnemySpeed => {
+                        q.enemy_speed = match q.enemy_speed {
+                            qol::EnemySpeed::Original => qol::EnemySpeed::Half,
+                            qol::EnemySpeed::Half => qol::EnemySpeed::Original,
+                        }
+                    }
+                    Row::SpaceMap => {
+                        q.space_map = match q.space_map {
+                            qol::SpaceMap::Original => qol::SpaceMap::Enhanced,
+                            qol::SpaceMap::Enhanced => qol::SpaceMap::Original,
+                        }
+                    }
+                    Row::SpaceKills => q.space_kills ^= true,
+                    Row::WideHits => q.wide_hits ^= true,
+                    Row::AceNeed => q.space_ace_need = qol::cycle(&qol::SpaceAceNeed::ALL, q.space_ace_need, k == keys::LEFT),
+                    Row::GodMode => q.god_mode ^= true,
+                    Row::AttackGem => q.attack_gem ^= true,
                 }
                 if self.current() == Row::Video {
                     let mut i = VideoChoice::ALL.iter().position(|&v| v == self.video).unwrap_or(0);
@@ -506,7 +576,7 @@ impl OptionsMenu {
         panel(t);
         center(t, 2, "Options  (the game is paused)", TEXT);
         // The tabs, on two lines; the page shown in the warning colour.
-        for (line, pages) in [(3, 0..3), (4, 3..5)] {
+        for (line, pages) in [(3, 0..3), (4, 3..6)] {
             let text: Vec<String> = pages.clone().map(|i| format!("{} {}", i + 1, Page::ALL[i].label())).collect();
             let width = text.iter().map(|s| s.len()).sum::<usize>() + 2 * (text.len() - 1);
             let mut col = 2 + (36 - width) / 2;
@@ -515,18 +585,21 @@ impl OptionsMenu {
                 col += s.len() + 2;
             }
         }
-        for (i, &r) in self.page().rows().iter().enumerate() {
+        let rows = self.page().rows();
+        for (i, &r) in rows.iter().enumerate() {
             let row = 6 + i;
             let sel = i == self.row;
             t.print_at_attr(2, row, if sel { "\u{10}" } else { " " }, WARN);
             t.print_at_attr(3, row, &format!("{}:", r.label()), TEXT);
             t.print_at_attr(VALUE_COL, row, &format!("<{}>", self.value(r)), if sel { WARN } else { TEXT });
         }
+        // Description and help sit under the last setting (8 or 9 rows).
+        let under = 6 + rows.len();
         for (i, l) in wrap(self.current().describe(), 36).iter().take(2).enumerate() {
-            t.print_at_attr(2, 14 + i, l, TEXT);
+            t.print_at_attr(2, under + i, l, TEXT);
         }
-        center(t, 16, "Tab: page  R: reset page  O: all", TEXT);
-        center(t, 17, "Arrows: change  F1/Enter: resume", TEXT);
+        center(t, under + 2, &format!("Tab/1-{}: page  R: reset  O: all", Page::ALL.len()), TEXT);
+        center(t, under + 3, "Arrows: change  F1/Enter: resume", TEXT);
         t.cursor(1, 24);
     }
 }
@@ -607,11 +680,55 @@ mod tests {
         assert_eq!((m.page(), m.row), (Page::Interface, 0), "back from the first page");
         m.key(b']');
         assert_eq!(m.page(), Page::Video);
+        m.key(TAB);
+        assert_eq!(m.page(), Page::Sound, "Tab forward");
+        m.key(crate::msglog::keys::PGUP);
+        assert_eq!(m.page(), Page::Video, "PgUp back");
+        // Wrap forward: Interface → Video
+        m.key(b'6');
+        assert_eq!(m.page(), Page::Interface);
+        m.key(TAB);
+        assert_eq!(m.page(), Page::Video, "Tab wraps past last page");
         m.key(b'4');
         assert_eq!(m.page(), Page::Controls);
         m.select(Row::Keys);
         assert_eq!(m.key(keys::ENTER), MenuKey::Rebind);
         assert_eq!(m.key(keys::RIGHT), MenuKey::Rebind);
+    }
+
+    #[test]
+    fn digit_keys_select_every_page() {
+        assert_eq!(Page::ALL.len(), 6, "six option pages");
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        let expect = [(b'1', Page::Video), (b'2', Page::Sound), (b'3', Page::Gameplay), (b'4', Page::Controls), (b'5', Page::Space), (b'6', Page::Interface)];
+        for (digit, page) in expect {
+            assert_eq!(m.key(digit), MenuKey::Stay, "digit {}", digit as char);
+            assert_eq!((m.page(), m.row), (page, 0), "key {} → {:?}", digit as char, page);
+        }
+        let on_last = m.page();
+        assert_eq!(m.key(b'7'), MenuKey::Stay, "past last page is a no-op");
+        assert_eq!(m.page(), on_last, "7 must not change page");
+        assert_eq!(m.key(b'0'), MenuKey::Stay);
+        assert_eq!(m.page(), on_last);
+    }
+    #[test]
+    fn interface_via_digit_six_screenshot() {
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        m.key(b'6');
+        assert_eq!(m.page(), Page::Interface);
+        let mut t = Term::new();
+        m.draw(&mut t);
+        // Header tabs mark Interface selected; first Interface row is Slots.
+        assert_eq!(m.current(), Row::Slots);
+        let rgb = t.to_rgb(&crate::palette::EGA_PALETTE, 2);
+        let path = std::path::Path::new("/workspace/u1-shots/space-aim/f1-interface-via-6.png");
+        let _ = std::fs::create_dir_all(path.parent().unwrap());
+        let f = std::fs::File::create(path).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&rgb).unwrap();
+        assert!(path.is_file());
     }
 
     #[test]
@@ -678,10 +795,10 @@ mod tests {
             assert_eq!(t.at(x, y), f.at(x, y), "nothing outside the box");
         }
         assert!(t.row_text(2).contains("Options"));
-        assert!(t.row_text(3).contains("1 Video") && t.row_text(4).contains("5 Interface"));
+        assert!(t.row_text(3).contains("1 Video") && t.row_text(4).contains("6 Interface"));
         assert!(t.row_text(6).contains("Video:") && t.row_text(6).contains("<CGA>"));
         assert!(t.row_text(7).contains("Fullscreen:") && t.row_text(7).contains("<Off>"));
-        assert!(t.row_text(14).contains("The display"), "the description");
+        assert!(t.row_text(12).contains("The display"), "the description under the last Video row");
         assert_eq!(t.row_text(24)[..30].trim(), "", "the message window is untouched");
         let mut m = m;
         m.key(b'2');

@@ -373,9 +373,10 @@ pub fn title_screen(f: &TitleFiles, t: &mut Term) {
 /// after the credits page.
 pub fn run_intro(f: &TitleFiles, t: &mut Term, io: &mut dyn Io) -> IoResult<IntroEnd> {
     title_screen(f, t);
-    // The original shows this while it reads the castle file (about 0.7 s
-    // on the reference machine).
-    io.pause(t, 12)?;
+    // First actual title presentation, before intro animations/key checks.
+    // Off preserves this engine's previous 12-tick pause; do not infer DOS
+    // disk-load duration from it. On: readable unscaled dwell in SDL.
+    io.title_dwell(t)?;
     let mut it = Intro { f, seed: f.exe.w(o::SEED) };
     loop {
         if it.presents(t, io)? {

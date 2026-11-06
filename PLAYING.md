@@ -69,7 +69,7 @@ never reads:
 
 | Key | What it does |
 |---|---|
-| F1 | Options, in five pages (Video, Sound, Gameplay, Controls, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default, except save slots, the quit confirmation and (enhanced video only) vehicle turning. The game is paused while it is open. |
+| F1 | Options, in six pages (Video, Sound, Gameplay, Controls, Space, Interface): Tab or PgUp/PgDn turn pages, arrows change, R resets the page, O resets everything. Each setting is explained under the list and applies at once. Everything optional is **off** by default, except save slots, the quit confirmation and (enhanced video only) vehicle turning. The game is paused while it is open. |
 | F2 | Save slots (on by default; slot 1 is your character's own file, the one Q writes) |
 | F3 | Command help screen (turn on "Help screen" in F1); in space it lists the space commands |
 | F4 | Turbo: every wait 4x shorter (always available) |
@@ -80,14 +80,32 @@ never reads:
 | F12 | Screenshot, saved to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`); change the key in F1 → Controls → Keys (last row) |
 | Alt+Enter | Fullscreen on/off |
 
-A sign post's or pillar's words stay up until you press a key (F1,
-Gameplay: Sign wait; on by default, off for the original's short pause).
+A sign post's or pillar's words, and the princess rescue reward text,
+stay up until you press a key (F1, Gameplay: Message pauses; on by
+default, off for the original's short pause). Pubs, shops and the time
+machine are unchanged.
 
 Docking at a space station costs 500 coin to refuel, as in the original;
 F1, Gameplay: Docking fees Off refuels free. Either way, ready a vacuum
-or reflect suit before docking, or the open space doors kill you.
+or reflect suit before docking, or the open space doors kill you
+(that story death still ends the flight even with God mode on).
+F1, Controls: God mode (off by default; also `--god`) is a testing cheat:
+Hits never fall, and any successful hit of yours kills at once. It is not
+stored in the save.
 At "Choose thy ship:" type the port number, or press the arrow toward
 the ship you want (it shows in yellow) and Enter, Space or pad A.
+
+In the space front view an arrow sets the sights drifting until another
+arrow or Space, as in the original. F1, Space: Steady aim keeps that
+drift, but pressing the opposite direction stops free (no fuel); after
+you release, press again to go that way (usual 2 fuel). Enemy
+speed Half keeps fighters in view longer; it does not change your aim,
+lasers or damage. Space map Enhanced makes I show a labelled galaxy
+grid with a legend; Original keeps the classic scan. Hit box (off by
+default) slightly enlarges the fighter hit rectangle (+2 px; damage
+unchanged). Ace need is 20, 10 or 5 (default 20) for the Space Ace
+award, kill HUD and princess time-machine reward. Kill counter (off by default) shows `K:n/N` on
+the space status panel, or `Ace!` once you have reached the need.
 
 The game also pauses when its window loses focus. Closing the window with
 progress not yet saved asks first (F1, Interface: Confirm quit). The
@@ -125,3 +143,43 @@ Please report problems as [GitHub issues](https://github.com/lilgoomba/ultima1-e
 which release, your distribution, what you did and what happened; the
 terminal output (start the AppImage from a terminal) and a screenshot
 help. Please do not attach game files or saves made from them.
+
+First title (Ultima I / The First Age of Darkness / 1987 copyright): Message pauses on keeps it visible for 2.8 seconds after presentation, unaffected by turbo/message speed or held keys; no key required. Off retains the previous engine 12-tick pause. Character-menu loading retains its 9-tick pause.
+
+Steady aim only suppresses held-arrow repeat in front-view space. Walking
+(overworld, towns and dungeons) and top-down space retain normal arrow
+repeat. F1 Controls Repeat selects the engine timing; when off, keyboard
+OS repeat remains as before. After focus changes, menus or a fresh-key
+message, release and press again to resume held movement.
+
+For the time machine, lead a freed princess out of a castle with her
+adjacent to you (any of the eight neighboring cells). Before her +500 XP
+reward, you need at least 7000 XP and the selected Ace need in actual
+fighter kills. She then says a time machine is far to the northwest and
+places one in the northwest forest region of your current land. Gems
+are not checked at rescue; all four are needed to use the machine later.
+If an earlier rescue only gave 500 of each, enter a castle and rescue a
+princess again after meeting the requirements. Changing Ace need uses
+your existing raw kill count; raising it may make a future rescue
+ineligible but does not remove an already placed machine.
+
+In Mondain's lair, **G (Get)** next to the gem already destroys it, with
+the original explosion costing three quarters of your current Hits
+(God mode prevents that damage). Optional **F1 → Controls → Attack gem**
+(`attack_gem = true`, off by default) also lets a successful in-range
+weapon/projectile attack destroy it immediately, using the same effect
+and cost. Misses and out-of-range attacks do not destroy it; God mode
+is not required. Defeating Mondain is still necessary to win.
+
+After the victory picture: **Press any key to return to title screen**.
+Use a fresh press (held/queued keys do not dismiss it). The same window
+returns to the actual title sequence and character roster; you can
+create a new character or select an existing one. This does not save
+over your character or change your options. No reboot keys are needed.
+
+With Music enabled, the closing narrative plays "Sosaria Restored", a
+new original 48-second instrumental loop (warm lead, plucked arpeggios,
+strings and bass). The victory fanfare remains separate. Music stays
+off by default and follows its own volume/master volume; effects may be
+Original or Enhanced independently (global Mute still silences all).
+Returning to title changes to the title theme through the usual crossfade.

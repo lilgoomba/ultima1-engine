@@ -32,7 +32,8 @@ pub mod keys {
     pub const WAIT: u8 = 0xFF;
     /// Script-only: one poll that finds no key (lets time pass).
     pub const IDLE: u8 = 0xFE;
-    /// Script-only: `{p}` stops the script at the next timed pause, so a
+    /// Script-only: `{p}` stops at the next timed pause (or at `any_key` when
+    /// `skip_pauses` skipped those), so a
     /// screenshot can catch a picture that the pause would show.
     pub const STOP_AT_PAUSE: u8 = 0xFD;
     /// Scripts: `{saveN}` / `{loadN}` (N 1..5, or q) ask for a save-slot
@@ -154,8 +155,17 @@ pub trait Io {
         self.pause(t, ticks)
     }
 
+    /// Present the first title, then dwell without a key-to-skip requirement.
+    /// SDL uses a real-time, unscaled minimum when Message pauses is on.
+    fn title_dwell(&mut self, t: &Term) -> IoResult<()> {
+        self.pause(t, if self.features().message_pauses() { 51 } else { 12 })
+    }
+
     /// Space flight starts (`true`) or ends (the fast space setting).
     fn in_space(&mut self, _on: bool) {}
+
+    /// True only while space is using its front-view sights (not the map).
+    fn space_front_view(&mut self, _on: bool) {}
 
     /// A save-slot action asked for since the last poll (F2, F5, F9 with
     /// save slots on). Taken by the main loop's key poll.
@@ -208,6 +218,11 @@ pub struct ScriptIo {
     pub qol: crate::qol::Qol,
     /// The music asked for, a repeat of the last one left out.
     pub music: Vec<crate::music::Track>,
+    /// Each `retrace(n)` call's n (for cadence tests).
+    pub retrace_slices: std::cell::RefCell<Vec<u32>>,
+    /// Let this many timed `pause`/`message_pause` calls ignore a leading
+    /// `{p}` so a later [`any_key`] can freeze on "Press any key".
+    pub skip_pauses: std::cell::Cell<u32>,
 }
 
 impl ScriptIo {
@@ -273,6 +288,11 @@ impl ScriptIo {
 }
 
 impl Io for ScriptIo {
+    fn retrace(&mut self, _t: &Term, n: u32) -> IoResult<()> {
+        self.retrace_slices.borrow_mut().push(n);
+        Ok(())
+    }
+
     fn music(&mut self, t: crate::music::Track) {
         if self.music.last() != Some(&t) {
             self.music.push(t);
@@ -308,6 +328,11 @@ impl Io for ScriptIo {
 
     fn pause(&mut self, _t: &Term, _ticks: u32) -> IoResult<()> {
         if self.keys.front() == Some(&keys::STOP_AT_PAUSE) {
+            let n = self.skip_pauses.get();
+            if n > 0 {
+                self.skip_pauses.set(n - 1);
+                return Ok(());
+            }
             return Err(Halt);
         }
         Ok(())
@@ -318,6 +343,22 @@ impl Io for ScriptIo {
             self.keys.pop_front();
         }
         Ok(())
+    }
+
+    fn any_key(&mut self, _t: &Term) -> IoResult<()> {
+        // `{p}` freezes on the "Press any key" prompt for fixtures/tests.
+        if self.keys.front() == Some(&keys::STOP_AT_PAUSE) {
+            return Err(Halt);
+        }
+        // Skip queued wait/idle tokens so typed-ahead pacing keys cannot
+        // dismiss the prompt (mirrors the SDL fresh-key path).
+        loop {
+            match self.keys.pop_front() {
+                Some(keys::WAIT) | Some(keys::IDLE) => continue,
+                Some(_) => return Ok(()),
+                None => return Err(Halt),
+            }
+        }
     }
 
     fn sound(&mut self, n: u8) {

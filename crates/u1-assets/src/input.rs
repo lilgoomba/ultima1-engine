@@ -111,8 +111,10 @@ impl PadInput {
 
     /// The actions for one event. `in_menu`: a window is open (it gets
     /// keys but no screens or repeat); `repeat`: the auto-repeat is on.
-    pub fn event(&mut self, e: PadEvent, in_menu: bool, repeat: bool) -> Vec<PadAction> {
-        let hold = repeat && !in_menu;
+    pub fn event(&mut self, e: PadEvent, in_menu: bool, _repeat: bool) -> Vec<PadAction> {
+        // Hold/Release are always emitted out of menus so arrow state (and
+        // the optional arrow-repeat) can see what is down.
+        let hold = !in_menu;
         match e {
             PadEvent::Button(name, down) => {
                 let by = button_id(name);
@@ -240,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn dpad_and_stick_are_the_arrows_and_hold_for_repeat() {
+    fn dpad_and_stick_are_the_arrows_and_hold_when_not_in_a_menu() {
         let mut p = PadInput::default();
         for (b, a) in DPAD {
             assert_eq!(keys_of(&p.event(PadEvent::Button(b, true), false, false)), vec![a]);
@@ -250,7 +252,7 @@ mod tests {
         assert_eq!(v, vec![PadAction::Key(keys::LEFT, String::new()), PadAction::Hold(keys::LEFT, by)]);
         assert_eq!(p.event(PadEvent::Button("dpleft", false), false, true), vec![PadAction::Release(by)]);
         assert_eq!(keys_of(&p.event(PadEvent::Button("dpleft", true), true, true)), vec![keys::LEFT], "windows get arrows");
-        assert!(!p.event(PadEvent::Button("dpleft", true), true, true).iter().any(|a| matches!(a, PadAction::Hold(..))), "but no repeat");
+        assert!(!p.event(PadEvent::Button("dpleft", true), true, true).iter().any(|a| matches!(a, PadAction::Hold(..))), "no hold over a window");
         // The stick: inside the dead zone nothing; past it one arrow until
         // it comes back.
         assert_eq!(p.event(PadEvent::Stick(true, 11_000), false, true), vec![]);

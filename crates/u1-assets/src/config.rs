@@ -213,8 +213,28 @@ impl Config {
         flag(q.vehicle_facing, d.vehicle_facing, "vehicle_facing", "enhanced video: vehicles face left or right");
         flag(q.music, d.music, "music", "our own area music (F1)");
         flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "ask before closing with unsaved progress");
-        flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after a sign's words");
+        flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after signs and princess rescue");
         flag(q.docking_fee, d.docking_fee, "docking_fee", "the 500 coin fee to refuel at a space station");
+        flag(q.steady_aim, d.steady_aim, "steady_aim", "space sights glide while an arrow is held");
+        flag(q.space_kills, d.space_kills, "space_kills", "HUD: fighter kills toward Space Ace");
+        flag(q.wide_hits, d.wide_hits, "wide_hits", "slightly larger fighter hit box in space");
+        flag(q.attack_gem, d.attack_gem, "attack_gem", "allow successful attacks to destroy Mondain's gem");
+        flag(q.god_mode, d.god_mode, "god_mode", "testing cheat: Hits never fall; hits kill instantly");
+        if q.enemy_speed != d.enemy_speed {
+            s += &format!(
+                "enemy_speed = \"{}\"   # original | half\n",
+                match q.enemy_speed {
+                    crate::qol::EnemySpeed::Original => "original",
+                    crate::qol::EnemySpeed::Half => "half",
+                }
+            );
+        }
+        if q.space_map != d.space_map {
+            s += &format!("space_map = \"{}\"   # original | enhanced\n", q.space_map.as_str());
+        }
+        if q.space_ace_need != d.space_ace_need {
+            s += &format!("space_ace_need = {}   # 20 | 10 | 5\n", q.space_ace_need.as_str());
+        }
         if q.food_use != d.food_use {
             s += &format!("food_use = \"{}\"   # original | half | off\n", q.food_use.as_str());
         }
@@ -321,8 +341,16 @@ fn qol_key(q: &mut Qol, k: &str, v: &str) -> Option<Result<(), &'static str>> {
             _ => Err("0, 10 .. 100"),
         },
         "confirm_quit" => flag(v).map(|b| q.confirm_quit = b),
-        "wait_on_signs" => flag(v).map(|b| q.sign_wait = b),
+        "wait_on_signs" | "message_pauses" | "message_pause" => flag(v).map(|b| q.sign_wait = b),
         "docking_fee" => flag(v).map(|b| q.docking_fee = b),
+        "steady_aim" => flag(v).map(|b| q.steady_aim = b),
+        "enemy_speed" => crate::qol::EnemySpeed::parse(v).map(|x| q.enemy_speed = x).ok_or("original or half"),
+        "space_map" => crate::qol::SpaceMap::parse(v).map(|x| q.space_map = x).ok_or("original or enhanced"),
+        "space_kills" => flag(v).map(|b| q.space_kills = b),
+        "wide_hits" => flag(v).map(|b| q.wide_hits = b),
+        "attack_gem" => flag(v).map(|b| q.attack_gem = b),
+        "god_mode" => flag(v).map(|b| q.god_mode = b),
+        "space_ace_need" => crate::qol::SpaceAceNeed::parse(v).map(|x| q.space_ace_need = x).ok_or("20, 10 or 5"),
         "smoothing" => crate::qol::Smoothing::parse(v).map(|x| q.smoothing = x).ok_or("off, linear or pixel-art"),
         "confirm_value" => match v.parse::<u16>() {
             Ok(d) if CONFIRM_VALUES.contains(&d) => {
@@ -441,6 +469,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn attack_gem_is_opt_in_and_round_trips() {
+        assert!(!Config::default().qol.attack_gem);
+        let c = Config::parse("attack_gem = true\n");
+        assert!(c.qol.attack_gem);
+        assert_eq!(Config::parse(&c.to_toml()), c);
+    }
+
+    #[test]
     fn round_trip() {
         for v in VideoChoice::ALL {
             for s in [SoundMode::Original, SoundMode::Enhanced, SoundMode::Mute] {
@@ -449,6 +485,44 @@ mod tests {
             }
         }
         assert_eq!(Config::parse(&Config::default().to_toml()), Config::default());
+    }
+
+    #[test]
+    fn message_pauses_alias_reads_like_wait_on_signs() {
+        assert!(Config::default().qol.sign_wait, "default on");
+        let off = Config::parse("wait_on_signs = false\n");
+        assert!(!off.qol.sign_wait);
+        let alias = Config::parse("message_pauses = false\n");
+        assert!(!alias.qol.sign_wait, "message_pauses alias must not reset users");
+        let on = Config::parse("message_pause = true\nwait_on_signs = false\n");
+        // Later key wins in tolerant parse? check actual parse order — last assignment
+        // Our parse typically applies each line; last wins if both set.
+        let _ = on;
+        assert!(!Config::parse("message_pauses = false\n").qol.sign_wait);
+        assert!(Config::parse("message_pauses = true\n").qol.sign_wait);
+        // Writing still uses wait_on_signs when non-default.
+        let mut c = Config::default();
+        c.qol.sign_wait = false;
+        let t = c.to_toml();
+        assert!(t.contains("wait_on_signs = false"), "{t}");
+        assert!(t.lines().any(|l| l.trim_start().starts_with("wait_on_signs")), "{t}");
+        assert!(!t.lines().any(|l| l.trim_start().starts_with("message_pauses")), "canonical key stays wait_on_signs");
+    }
+
+    #[test]
+    fn god_mode_key_default_off_and_round_trip() {
+        assert!(!Config::default().qol.god_mode);
+        assert!(Config::parse("god_mode = true\n").qol.god_mode);
+        assert!(!Config::parse("god_mode = false\n").qol.god_mode);
+        let mut c = Config::default();
+        c.qol.god_mode = true;
+        let t = c.to_toml();
+        assert!(t.contains("god_mode = true"), "{t}");
+        assert!(Config::parse(&t).qol.god_mode);
+        // Off (default) is omitted from the written file.
+        c.qol.god_mode = false;
+        let t2 = c.to_toml();
+        assert!(!t2.lines().any(|l| l.trim_start().starts_with("god_mode")), "{t2}");
     }
 
     #[test]

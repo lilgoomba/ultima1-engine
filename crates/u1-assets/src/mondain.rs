@@ -114,7 +114,6 @@ mod d {
     pub const IS_DEAD: usize = 0x5fc;
     pub const OR_IS_HE: usize = 0x60d;
     pub const VICTORIOUS: usize = 0x8c3;
-    pub const RESTART: usize = 0x8e0;
     pub const GEM_LABELS: usize = 0x657;
 }
 
@@ -174,6 +173,7 @@ pub enum MondainEnd {
     Won,
 }
 
+#[derive(Debug)]
 enum Stop {
     Halt,
     Died,
@@ -221,37 +221,7 @@ struct Lair<'a> {
 pub fn run_mondain(g: &mut Game, io: &mut dyn Io) -> IoResult<MondainEnd> {
     io.music(crate::music::Track::Lair);
     let Some(files) = g.mondain.take() else { return Ok(MondainEnd::Died) };
-    let mut grid = [[0u8; ROWS]; COLS];
-    for (x, col) in grid.iter_mut().enumerate() {
-        for (y, c) in col.iter_mut().enumerate() {
-            *c = files.exe.b(d::GRID + x * ROWS + y);
-        }
-    }
-    let mut l = Lair {
-        g,
-        io,
-        f: files,
-        keep_video: false,
-        rng: U1Rng::new(0),
-        grid,
-        px: 3,
-        py: 4,
-        mx: 15,
-        my: 4,
-        hp: 1000,
-        burst: -1,
-        bx: 0,
-        by: 0,
-        glow: 0,
-        glow_step: 0,
-        tile: T_WIZARD,
-        anim: 0,
-        phase: P_WIZARD,
-        fighting: false,
-        gem_taken: false,
-        ending: false,
-        redraw: false,
-    };
+    let mut l = Lair::new(g, io, files);
     let r = l.main();
     let Lair { f: files, .. } = l;
     g.mondain = Some(files);
@@ -259,6 +229,42 @@ pub fn run_mondain(g: &mut Game, io: &mut dyn Io) -> IoResult<MondainEnd> {
         Err(Stop::Halt) => Err(Halt),
         Err(Stop::Won) => Ok(MondainEnd::Won),
         _ => Ok(MondainEnd::Died),
+    }
+}
+
+impl<'a> Lair<'a> {
+    fn new(g: &'a mut Game, io: &'a mut dyn Io, files: MondainFiles) -> Self {
+        let mut grid = [[0u8; ROWS]; COLS];
+        for (x, col) in grid.iter_mut().enumerate() {
+            for (y, c) in col.iter_mut().enumerate() {
+                *c = files.exe.b(d::GRID + x * ROWS + y);
+            }
+        }
+        Lair {
+            g,
+            io,
+            f: files,
+            keep_video: false,
+            rng: U1Rng::new(0),
+            grid,
+            px: 3,
+            py: 4,
+            mx: 15,
+            my: 4,
+            hp: 1000,
+            burst: -1,
+            bx: 0,
+            by: 0,
+            glow: 0,
+            glow_step: 0,
+            tile: T_WIZARD,
+            anim: 0,
+            phase: P_WIZARD,
+            fighting: false,
+            gem_taken: false,
+            ending: false,
+            redraw: false,
+        }
     }
 }
 
@@ -679,9 +685,14 @@ impl Lair<'_> {
         let (mut x, mut y) = (self.px, self.py);
         let mut k = 1;
         let mut hit = false;
+        let mut gem_hit = false;
         loop {
             x += dx;
             y += dy;
+            if Self::in_bounds(x, y) && self.io.features().attack_gem && !self.gem_taken && self.cell(x, y) == GEM {
+                gem_hit = true;
+                hit = true;
+            }
             if Self::in_bounds(x, y) && self.cell(x, y) == EMPTY && x == self.mx && y == self.my {
                 hit = true;
             }
@@ -691,7 +702,12 @@ impl Lair<'_> {
             }
         }
         if hit && self.rnd(1, 100) <= chance {
-            self.hp = self.hp.wrapping_sub(dmg);
+            if gem_hit {
+                self.destroy_gem();
+                return;
+            }
+            let dmg = if self.g.god_mode { self.hp } else { dmg };
+            self.hp = if self.g.god_mode { 0 } else { self.hp.wrapping_sub(dmg) };
             self.puts(d::HIT_MONDAIN);
             self.num(dmg);
             self.println(d::DAMAGE);
@@ -850,6 +866,15 @@ impl Lair<'_> {
         if self.gem_taken || !self.gem_near() {
             self.println(d::NOTHING_HERE);
             self.snd(1);
+            return;
+        }
+        self.destroy_gem();
+    }
+
+    /// Canonical destruction, shared by G and the optional attack path.
+    /// Keeps the explosion cost and Mondain/dead-state prerequisite intact.
+    fn destroy_gem(&mut self) {
+        if self.gem_taken {
             return;
         }
         self.fighting = true;
@@ -1079,8 +1104,19 @@ impl Lair<'_> {
 
     /// `138d`/`12ec`: the player has fallen; OUT takes over.
     fn death(&mut self) -> R<()> {
-        self.g.set(off::HITS, 0);
-        self.g.set(off::FOOD, 0);
+        if self.g.god_mode {
+            if self.g.hits() <= 0 {
+                self.g.force_set(off::HITS, 150);
+            }
+            if self.g.food() <= 0 {
+                self.g.force_set(off::FOOD, 99);
+            }
+            self.show_hits();
+            self.show_food();
+            return Ok(());
+        }
+        self.g.force_set(off::HITS, 0);
+        self.g.force_set(off::FOOD, 0);
         self.show_hits();
         self.show_food();
         self.println(d::DEAD);
@@ -1117,6 +1153,7 @@ impl Lair<'_> {
                 self.delay(1)?;
             }
         }
+        self.io.music(crate::music::Track::Ending);
         self.g.term.fill(0, 0, 319, 199, BLACK);
         // The original plots the picture a pixel at a time, so it appears
         // from the top down; in DOSBox at cycles=20000 (the speed the poll
@@ -1137,13 +1174,115 @@ impl Lair<'_> {
         }
         self.g.term.mark(ArtId::Screen("nif"), None, 0, 0, 0, 320, NIF_SIZE / 40);
         self.delay(75)?;
-        let t = self.s(d::RESTART);
-        self.g.term.print_at(4, 24, &t);
-        // The original stops here for good.
-        loop {
-            match self.io.poll(&self.g.term) {
-                Ok(_) => {}
-                Err(_) => return Err(Stop::Won),
+        self.g.term.print_at(0, 24, "Press any key to return to title screen");
+        // Fresh-key wait discards queued/held repeats in SDL; close is Halt,
+        // not victory/restart. Never synthesize OS keys or end the process.
+        self.io.any_key(&self.g.term)?;
+        Err(Stop::Won)
+    }
+}
+
+#[cfg(test)]
+mod interaction_tests {
+    use super::*;
+    use crate::game::Assets;
+    use crate::io::ScriptIo;
+
+    fn setup() -> Option<(Game, MondainFiles)> {
+        let dir = crate::gamedir::GameDir::new(std::env::var_os("U1_GAME_DIR")?).ok()?;
+        let mode = dir.detect_video_mode()?;
+        let exe = dir.read("OUT.EXE").ok()?;
+        let assets = Assets {
+            t: crate::rules::ExeTables::from_out_exe(&exe).unwrap(),
+            locs: crate::locations::LocationTable::from_out_exe(&exe).unwrap(),
+            exe: crate::exe::Exe::new(exe).unwrap(),
+            map: dir.load_world_map().unwrap(),
+            world_tiles: dir.load_world_tiles(mode).unwrap(),
+            town_tiles: dir.load_town_tiles(mode).unwrap(),
+            tcd: crate::tcd::TownCastleMaps::parse(&dir.read("TCD.BIN").unwrap()).unwrap(),
+            video: mode,
+        };
+        let rec = Game::default_record("Test", 40, 40);
+        Some((Game::new(assets, rec, 1), MondainFiles::load(&dir, mode).ok()?))
+    }
+
+    #[test]
+    fn gem_get_and_successful_attack_share_destruction_god_on_or_off() {
+        for god in [false, true] {
+            for get in [false, true] {
+                let Some((mut g, files)) = setup() else { return };
+                g.force_set(off::HITS, 900);
+                g.set(off::STATS + 2, 50); // AGI+50 = guaranteed hit
+                g.rec.set_u16(off::READY_WEAPON, 1);
+                g.god_mode = god;
+                let mut io = ScriptIo::from_text("");
+                io.qol.attack_gem = !get; // G works even when option is OFF
+                let mut l = Lair::new(&mut g, &mut io, files);
+                l.px = GEM_X as i16 - 1;
+                l.py = GEM_Y as i16;
+                if get {
+                    l.command(b'G').unwrap();
+                } else {
+                    l.cmd_attack(2).unwrap();
+                }
+                assert!(l.gem_taken);
+                assert_eq!(l.grid[GEM_X][GEM_Y], EMPTY);
+                assert!(!l.ending, "gem alone must not bypass Mondain");
+                assert_eq!(l.g.hits(), if god { 900 } else { 225 });
+                assert!(l.g.term.messages().iter().any(|s| s.contains("Gem is DESTROYED")));
+                l.cmd_get();
+                assert_eq!(l.g.hits(), if god { 900 } else { 225 }, "no duplicate destruction cost");
+            }
+        }
+    }
+
+    #[test]
+    fn gem_attacks_respect_option_hit_roll_direction_range_and_dead_mondain() {
+        for god in [false, true] {
+            for (enabled, dir, range, chance, expected) in [(false, 2, 1, 100, false), (true, 2, 1, 0, false), (true, 1, 1, 100, false), (true, 2, 1, 100, true), (true, 2, 3, 100, true)] {
+                let Some((mut g, files)) = setup() else { return };
+                g.god_mode = god;
+                let mut io = ScriptIo::from_text("");
+                io.qol.attack_gem = enabled;
+                let mut l = Lair::new(&mut g, &mut io, files);
+                l.px = GEM_X as i16 - 1;
+                l.py = GEM_Y as i16;
+                l.phase = P_DEAD;
+                l.shoot(dir, 7, range, 1, chance);
+                assert_eq!(l.gem_taken, expected);
+                assert_eq!(l.ending, expected, "dead Mondain + destroyed gem triggers ending");
+            }
+            let Some((mut g, files)) = setup() else { return };
+            let mut io = ScriptIo::from_text("");
+            io.qol.attack_gem = true;
+            let mut l = Lair::new(&mut g, &mut io, files);
+            l.px = GEM_X as i16 - 3;
+            l.py = GEM_Y as i16;
+            l.shoot(2, 7, 1, 9999, 100);
+            assert!(!l.gem_taken, "out of range cannot destroy gem");
+        }
+    }
+
+    #[test]
+    fn victory_requires_fresh_acknowledgement_and_halt_is_not_win() {
+        for acknowledge in [false, true] {
+            let Some((mut g, files)) = setup() else { return };
+            let mut io = ScriptIo::from_text(if acknowledge { "x{w100}y" } else { "x{p}" });
+            io.skip_pauses.set(1000); // keep {p} for the final any_key wait
+            let mut l = Lair::new(&mut g, &mut io, files);
+            let result = l.victory();
+            assert_eq!(matches!(result, Err(Stop::Won)), acknowledge);
+            assert_eq!(matches!(result, Err(Stop::Halt)), !acknowledge);
+            assert!(l.g.term.row_text(24).contains("Press any key to return to title screen"));
+            assert!(!l.g.term.row_text(24).contains("ALT"));
+            drop(l);
+            assert_eq!(io.music, [crate::music::Track::Victory, crate::music::Track::Ending], "one context change, not every animation/poll");
+            if acknowledge {
+                let dir = crate::gamedir::GameDir::new(std::env::var_os("U1_GAME_DIR").unwrap()).unwrap();
+                let mut mode = g.a.video;
+                io.keys = ScriptIo::from_text("{p}").keys;
+                assert!(crate::front::intro(&dir, &mut mode, &mut io).unwrap().is_some());
+                assert_eq!(io.music, [crate::music::Track::Victory, crate::music::Track::Ending, crate::music::Track::Title]);
             }
         }
     }

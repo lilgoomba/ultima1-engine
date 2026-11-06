@@ -90,7 +90,9 @@ impl Game {
 
     /// `4bd6`: the reward for leading a princess out.
     fn princess_reward(&mut self, io: &mut dyn Io) -> IoResult<()> {
-        let ace = self.w(off::ENEMIES) >= 20 && self.exp() as u16 >= 7000;
+        // Same selected target as space HUD/ceremony; the save contains raw
+        // kills, not a separate permanent Ace flag. Test before +500 XP.
+        let ace = self.w(off::ENEMIES) >= io.features().space_ace_need.kills_required() && self.exp() as u16 >= 7000;
         let o = if ace { 0 } else { 2 };
         self.term.boxed(BLUE);
         self.at(5, 5 + o, m::PRINCESS_SAVED[0]);
@@ -127,6 +129,10 @@ impl Game {
         }
         io.message_pause(&self.term, 5)?;
         self.wait(io)?;
+        // Same "Message pauses" path as landmarks (signposts/pillars).
+        if io.features().message_pauses() {
+            self.press_any_key(io)?;
+        }
         self.term.cursor(1, 24);
         Ok(())
     }
@@ -372,7 +378,12 @@ impl Game {
         self.say(name);
         self.hostile = true;
         self.snd_ev(io, 2, Sfx::Alarm);
-        if dmg >= i32::from(self.npcs[i].hp) {
+        // God mode: a successful hit is always fatal so death side-effects
+        // (castle jester key, guard XP, princess flag) still run. Do not
+        // rely on fabricating a damage value that merely equals current HP.
+        let fatal = self.god_mode || dmg >= i32::from(self.npcs[i].hp);
+        let dmg = if self.god_mode { i32::from(self.npcs[i].hp).max(dmg) } else { dmg };
+        if fatal {
             self.sayln(m::KILLED);
             if tile == NPC_PRINCESS {
                 self.door_open = false;

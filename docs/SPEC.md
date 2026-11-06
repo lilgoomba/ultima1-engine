@@ -925,8 +925,13 @@ from the user's `OUT.EXE` at run time, and maps come from `TCD.BIN`.
   princess follows the player once the castle is roused. Stepping off the
   map with her in one of the eight cells around the player adds 500 coin,
   500 hits and 500 experience [DOSBox, Phase 6]. If at least
-  20 enemy ships were destroyed and experience is 7000 or more, a time
-  machine is also placed on land near the castle.
+  20 enemy ships were destroyed and experience is 7000 or more BEFORE the
+  reward, she says a time machine is far to the northwest. It is placed
+  on a free forest cell in the current land's northwest region: quadrant
+  base (0/83, 0/77) + (R(12,21), R(11,15)), subject to the existing count/
+  object capacity limits. No gem or other quest flag is tested here.
+  Optional Ace need (§23) substitutes its selected 5/10/20 kill threshold;
+  the original/default threshold remains 20.
 
 **Commands inside** (original keys): arrows move; `A` attack; `D` drop
 coin into the pond; `E`; `G` get (in a castle, from the storeroom, only
@@ -1164,7 +1169,12 @@ side. Strings, the galaxy layout tables and the ship and fighter sprites
   At 0 he falls; without the gem taken he rises again (+25 per turn).
 * **Ending.** With the gem taken and Mondain at 0, the victory panel is
   shown, then the `NIF.BIN` picture and the closing text with the
-  restart prompt. The original stops there; so does the engine.
+  restart prompt. The original stops there. Desktop engine override:
+  "Press any key to return to title screen" waits for a fresh key, then
+  signals the front end to run the real title/roster again in-process.
+  Close/halt is not victory acknowledgement. Input/modal/save-slot state
+  and old CLI start overrides are reset; config/roster files are preserved.
+  No automatic player save and no OS key synthesis/reboot occur.
 * **Death in the lair** returns to OUT with hits and food at 0 (§14).
 
 ## 14. Death and resurrection: Phase 6
@@ -1797,7 +1807,7 @@ off by default and change nothing when off.
 **Music.** Config `music` (default false) and `music_volume` (10-100,
 default 50), F1 rows Music and Music volume. One track per game mode
 (outdoors, town, castle, dungeon), plus title (intro and character
-creation), space (space flight), lair (Mondain's lair), and two one-shot
+creation), space (space flight), lair (Mondain's lair), ending narrative, and two one-shot
 stings: victory (Mondain defeated) and death. Area changes crossfade over
 one second; a sting replaces the loop and ends in silence until the next
 area. The music pauses while the F1 menu is open. It is independent of the
@@ -1822,14 +1832,15 @@ applied to its result.
 None of these changes what the game does; the original has no menus,
 windows or extra files, so each is engine-side only.
 
-**Options pages.** F1 groups its rows in five pages: Video (display,
+**Options pages.** F1 groups its rows in six pages: Video (display,
 fullscreen, scaling, smoothing, CRT, vehicle turn), Sound (sound mode, master volume,
 effects volume, music, music volume, footsteps), Gameplay (turbo, delays,
 fast space, timing, food warning, confirm before selling), Controls (arrow
-repeat and its delay and rate, gamepad, keys) and Interface (save slots,
+repeat and its delay and rate, gamepad, keys), Space (steady aim, enemy
+speed, hit box, space map, kill counter, Ace need) and Interface (save slots,
 message log, maps, character screen, help, hints, confirm quit). Tab, PgDn
-or `]` turn to the next page, PgUp or `[` to the one before, 1-5 jump to a
-page. Under the rows, two lines say what the selected setting does. R puts
+or `]` turn to the next page, PgUp or `[` to the one before; digits `1`–`N`
+jump to a page (`N` = page count, currently 6). Under the rows, two lines say what the selected setting does. R puts
 the page's settings back to their defaults, O puts back every setting
 (display: the original's picture in the same EGA/CGA/Tandy mode; sound:
 original beeps); remapped keys are kept. Every change applies at once,
@@ -1887,17 +1898,18 @@ Closing the window after keys reached the game since its last save asks
 screens, and a game just saved, close at once. This only guards the
 window's close button; the game's own Q works exactly as the original.
 
-**Wait on signs.** Config `wait_on_signs` (default on, an exception
-like save slots, confirm quit and vehicle turn, asked for by players),
-F1 Gameplay row "Sign wait". The original shows a landmark's (sign post
-or pillar) words in a box, then waits only for a key or about 10000
-keyboard polls (a second or two on the machines of its day; the engine
-keeps about 1.5 s, shorter with a smaller message delay). With the
-option on, after that pause the box shows "Press any key" below the
-words and stays until a fresh key press, mouse click or pad button;
-keys typed ahead and held-key repeats do not end it, and turbo and the
-message delay do not shorten it. Nothing else changes: the stat gain,
-quest and record are the original's. Off gives the original's flow.
+**God mode.** Off by default (F1 Controls, `god_mode`, CLI `--god` / `--features god`). Testing cheat only; not written into the player save. When on, Hits never decrease from combat, traps, or similar paths. Story deaths that force-set Hits (e.g. docking without a vacuum suit) still end the flight. A successful player hit kills instantly (death side-effects still run: castle jester key, guard XP, dungeon loot/quests); misses unchanged. The jester's "I've got the key!" line is still the original rare roll (R(1,255)<15 when he bumps you and steals nothing), not guaranteed. Space lasers already one-shot fighters; under god mode shield drain leaves at least 1 so the pilot is not drained to story-death. Off is exact original.
+
+**Message pauses.** Config `wait_on_signs` (default on; alias
+`message_pauses` / `message_pause`), F1 Gameplay row "Message pauses"
+(replaces the old "Sign wait" label). Covers landmark sign posts/pillars
+and the princess rescue reward box only — not pubs, shops, or the time
+machine. The original shows the text in a box, then waits only for a key
+or a short timed pause. With the option on, after that pause the box
+shows "Press any key" and stays until a fresh key, click or pad button;
+typed-ahead and held-key repeats do not end it. Rewards and record
+writes are unchanged. Off is the original's flow. Existing
+`wait_on_signs = false` configs keep their preference.
 
 **Docking fees.** Config `docking_fee` (default on: the original's
 rule), F1 Gameplay row "Docking fees". Docking at a space station in
@@ -1906,6 +1918,44 @@ the original charges 500 coin to refill fuel and shields (with less,
 fee." and no refill). Off, the station refills free with no message;
 the ship choice is as before, and the suit rule is unchanged (without a
 vacuum or reflect suit readied, the space doors still kill).
+
+**Steady aim.** Off by default (F1 Space, `steady_aim`). Front-view sight motion still uses the original `dvx`/`dvy` drift. An arrow opposite the current drift on that axis clears both components and costs no fuel (works at 0/1 fuel). A later edge press (OS/engine repeats ignored while Steady aim is on) starts that direction at the usual 2 fuel. Perpendicular and same-direction presses keep the original replace-and-pay rule. Off is unchanged.
+
+
+**Hit box.** Off by default (F1 Space, `wide_hits`). When on, the front-view
+fighter hit test grows by 2 pixels on each side of the original rectangle;
+experience and damage are unchanged.
+
+**Ace need.** 20 by default (F1 Space, `space_ace_need` = 20|10|5). The HUD
+denominator, Space Ace award and princess time-machine reward all use
+this count. Princess eligibility also requires 7000 XP before her +500
+reward; gems are checked only when boarding the machine. Changing the
+setting recalculates future rescue eligibility from raw kills, not a
+session ceremony flag; previously placed machines are retained. The save still
+stores the raw kill total (0xA6). Ceremony runs once when kills first reach
+the need (or when the need is lowered under an existing total); further
+kills print "still a Space Ace". Entering space already at/above the need
+skips the ceremony.
+
+**Kill counter.** Off by default (F1 Controls, `space_kills`). When on,
+the space status panel shows the save's enemy-vessel count (word 0xA6)
+as `K:n/20` toward Space Ace; at 20 or more it shows `Ace!` (the original
+keeps incrementing past 20 and prints "still a Space Ace" on further
+kills — the HUD does not show a misleading n/20 after the award).
+
+**Enhanced home mark.** Sector (3,3) — where `make_galaxy` places you and where Earth landing returns — shows cyan corner brackets outside the cell (legend: Home). The yellow/white you-frame is unchanged; both show when you are home. Cell intel glyphs are not overwritten.
+
+**Space map.** Original by default (F1 Controls, `space_map`). Enhanced
+replaces the Inform (I) sector scan with a larger 7×7 grid, axis labels
+0–6, a legend for the same icons the original draws (fighters, star,
+station, empty — same priority as `142b`), and a steady yellow frame on
+the current sector. The original blink-only marker is kept as a soft
+pulse on that frame. No extra intel is invented.
+
+**Enemy speed.** Original by default (F1 Controls, `enemy_speed`). Half
+makes a front-view fighter flee and grow only every other tick, so it
+stays in view about twice as long. Aim, star field, laser fire, alien
+fire chance and damage are unchanged. Top-down sectors are unchanged.
 
 **F3 in space.** With the help screen on (F1 "Help screen"), F3 at the
 space command prompt shows the space commands (views, turning, thrust,
@@ -1991,3 +2041,22 @@ Accessed 2026-10-29. Prose/tables were read; no third-party code was copied.
 * [S18] Gigi Labs, *Ultima 1 Reverse Engineering: Decoding Savegame Files*
   (save-diffing method, no code analysis)
   <https://gigi.nullneuron.net/gigilabs/ultima-1-reverse-engineering-decoding-savegame-files/>
+
+First title (Ultima I / The First Age of Darkness / 1987 copyright): Message pauses on keeps it visible for 2.8 seconds after presentation, unaffected by turbo/message speed or held keys; no key required. Off retains the previous engine 12-tick pause. Character-menu loading retains its 9-tick pause.
+
+**Attack gem.** Off by default, F1 Controls, config `attack_gem`. Original
+G interaction remains unchanged. The optional shot target uses normal
+direction/range and hit-chance checks; a hit destroys the gem in one step
+through the same destruction/explosion/HP-cost routine as G. God mode is
+not required. Neither gem destruction alone nor a missed attack bypasses
+Mondain's existing death/transformation/victory prerequisites.
+
+**Ending narrative music.** `Track::Ending` is a new original CC-BY-SA 4.0
+composition, "Sosaria Restored": D major, 80 bpm, 16 bars in four phrases,
+48 seconds looping. It uses the existing procedural synth (pulse lead,
+plucked figures, pad and triangle bass, no battle drums). The unchanged
+Victory sting starts at the victory panel; Ending is selected once when
+the closing NIF/narrative starts appearing. It persists through the fresh
+key wait. The front-end title program selects Title on return, replacing
+the ending with the normal crossfade. No music option/default changes;
+original/enhanced effects modes are independent, global Mute unchanged.

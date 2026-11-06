@@ -57,6 +57,7 @@ type Overlay<'a> = (&'a Term, (usize, usize, usize, usize));
 const POLL: Duration = Duration::from_micros(130_000);
 /// One tick of the PC timer.
 const TICK: Duration = Duration::from_micros(54_925);
+const FIRST_TITLE_DWELL: Duration = Duration::from_millis(2800);
 /// Start of a new character (verified from GEN.EXE).
 const DEFAULT_POS: (u16, u16) = (49, 40);
 
@@ -108,9 +109,10 @@ and a world mini-map (Tab), a character screen (Ztats, Z, shows it), a command h
 dropping things worth a set amount, extra keys for the commands (F1, Keys),
 a gamepad and the engine's own arrow repeat. --features LIST turns some on
 for one run (automap, minimap, character, help, hints, confirm=N, repeat,
-gamepad); in screenshots --keys may hold {map} {help}, and --rebind
+gamepad, god); --god is the testing cheat (Hits never fall; hits kill). In screenshots --keys may hold {map} {help}, and --rebind
 draws the key window.";
 
+#[derive(Clone)]
 struct Args {
     game_dir: PathBuf,
     player: Option<u8>,
@@ -152,39 +154,45 @@ struct Args {
     menu_row: usize,
 }
 
+impl Default for Args {
+    fn default() -> Self {
+        Args {
+            game_dir: PathBuf::new(),
+            player: None,
+            save: None,
+            pos: None,
+            mode: None,
+            scale: 3,
+            seed: None,
+            times: Vec::new(),
+            save_to: None,
+            screenshot: None,
+            keys: String::new(),
+            counter: 0,
+            font: std::env::var_os("U1_FONT").map(PathBuf::from),
+            intro: false,
+            gen: false,
+            roster: None,
+            sound: SoundMode::Original,
+            sound_demo: None,
+            music_demo: None,
+            enhanced: false,
+            pack: None,
+            cli: config::Cli::default(),
+            options_shot: false,
+            slots_shot: false,
+            log_shot: false,
+            crt: false,
+            fullscreen: false,
+            features: Qol::default(),
+            rebind_shot: false,
+            menu_row: 0,
+        }
+    }
+}
+
 fn parse_args() -> Result<Args, String> {
-    let mut a = Args {
-        game_dir: PathBuf::new(),
-        player: None,
-        save: None,
-        pos: None,
-        mode: None,
-        scale: 3,
-        seed: None,
-        times: Vec::new(),
-        save_to: None,
-        screenshot: None,
-        keys: String::new(),
-        counter: 0,
-        font: std::env::var_os("U1_FONT").map(PathBuf::from),
-        intro: false,
-        gen: false,
-        roster: None,
-        sound: SoundMode::Original,
-        sound_demo: None,
-        music_demo: None,
-        enhanced: false,
-        pack: None,
-        cli: config::Cli::default(),
-        options_shot: false,
-        slots_shot: false,
-        log_shot: false,
-        crt: false,
-        fullscreen: false,
-        features: Qol::default(),
-        rebind_shot: false,
-        menu_row: 0,
-    };
+    let mut a = Args::default();
     let mut have_dir = false;
     let mut it = std::env::args().skip(1);
     while let Some(k) = it.next() {
@@ -254,6 +262,7 @@ fn parse_args() -> Result<Args, String> {
             "--smoothing" => a.features.smoothing = qol::Smoothing::parse(&v()?).ok_or("--smoothing wants off, linear or pixel-art")?,
             "--fullscreen" => a.fullscreen = true,
             "--features" => features(&mut a.features, &v()?)?,
+            "--god" => a.features.god_mode = true,
             "--rebind" => a.rebind_shot = true,
             "--menu-row" => a.menu_row = v()?.parse().map_err(|_| "bad --menu-row")?,
             "--pack" => a.pack = Some(v()?.into()),
@@ -346,13 +355,14 @@ fn features(q: &mut Qol, list: &str) -> Result<(), String> {
             "hints" => q.hints = true,
             "repeat" => q.repeat = true,
             "gamepad" => q.gamepad = true,
+            "god" | "god_mode" => q.god_mode = true,
             "all" => {
                 let c = q.confirm;
                 *q = Qol { automap: true, minimap: true, charsheet: true, help: true, hints: true, ..*q };
                 q.confirm = c;
             }
             c if c.starts_with("confirm=") => q.confirm = c[8..].parse().map_err(|_| "--features confirm=N wants a number")?,
-            other => return Err(format!("unknown feature {other} (automap, minimap, character, help, hints, confirm=N, repeat, gamepad, all)")),
+            other => return Err(format!("unknown feature {other} (automap, minimap, character, help, hints, confirm=N, repeat, gamepad, god, all)")),
         }
     }
     Ok(())
@@ -787,6 +797,7 @@ struct SdlIo {
     qol: Qol,
     /// In space flight (for the fast space setting).
     in_space: bool,
+    space_front_view: bool,
     /// The area the game is in (its music, when music is on).
     area: Option<Track>,
     /// The tracks rendered so far (by a background thread).
@@ -846,10 +857,7 @@ impl SdlIo {
     /// renderer the first time it is needed, then play, crossfade or stop.
     fn sync_music(&mut self) {
         let Some((dev, rate)) = &mut self.audio else { return };
-        let want = self.area.filter(|_| self.qol.music && self.sound != SoundMode::Mute);
-        let master = f32::from(self.qol.master_volume) / 100.0;
-        let vol = f32::from(self.qol.music_volume) / 100.0 * master;
-        let sfx = f32::from(self.qol.sfx_volume) / 100.0 * master;
+        let (want, vol, sfx) = music_mix_settings(self.area, self.qol, self.sound);
         let have = dev.lock().music.current();
         if want.is_some() && !self.rendering {
             self.rendering = true;
@@ -1053,6 +1061,7 @@ impl SdlIo {
                     match win_event {
                         We::FocusLost => {
                             self.focus_lost = true;
+                            self.held.clear();
                             if !self.in_menu {
                                 self.in_menu = true;
                                 self.modal_wanted = Some(Modal::Paused);
@@ -1083,22 +1092,15 @@ impl SdlIo {
                 Event::KeyDown { keycode: Some(k), keymod, repeat, .. } => {
                     let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::CAPSMOD);
                     let alt = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
-                    let c = match k {
-                        // Fullscreen: never passed to the game.
-                        Keycode::Return | Keycode::KpEnter if alt => {
-                            let q = Qol { fullscreen: !self.qol.fullscreen, ..self.qol };
-                            self.apply_qol(q);
-                            self.save_config(false);
-                            continue;
-                        }
-                        Keycode::Left | Keycode::Kp4 => Some(keys::LEFT),
-                        Keycode::Right | Keycode::Kp6 => Some(keys::RIGHT),
-                        Keycode::Up | Keycode::Kp8 => Some(keys::UP),
-                        Keycode::Down | Keycode::Kp2 => Some(keys::DOWN),
-                        Keycode::Return | Keycode::KpEnter => Some(keys::ENTER),
-                        Keycode::Escape => Some(keys::ESC),
-                        Keycode::Backspace => Some(keys::BACKSPACE),
-                        // The engine's own keys: none of them the original's.
+                    // Fullscreen: never passed to the game.
+                    if matches!(k, Keycode::Return | Keycode::KpEnter) && alt {
+                        let q = Qol { fullscreen: !self.qol.fullscreen, ..self.qol };
+                        self.apply_qol(q);
+                        self.save_config(false);
+                        continue;
+                    }
+                    // The engine's own keys: none of them the original's.
+                    match k {
                         Keycode::F1 => {
                             self.open(Modal::Options);
                             continue;
@@ -1122,23 +1124,18 @@ impl SdlIo {
                             self.save_config(false);
                             continue;
                         }
+                        Keycode::PageUp if self.qol.log && !self.front && !self.in_menu => {
+                            self.open(Modal::Log);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    let c = match k {
                         Keycode::PageUp if self.in_menu => Some(msglog::keys::PGUP),
                         Keycode::PageDown if self.in_menu => Some(msglog::keys::PGDN),
                         Keycode::Home if self.in_menu => Some(msglog::keys::HOME),
                         Keycode::End if self.in_menu => Some(msglog::keys::END),
-                        Keycode::PageUp if self.qol.log && !self.front => {
-                            self.open(Modal::Log);
-                            continue;
-                        }
-                        _ => {
-                            let n = k.into_i32();
-                            if (0x20..0x7F).contains(&n) {
-                                let c = n as u8;
-                                Some(if shift { c.to_ascii_uppercase() } else { c })
-                            } else {
-                                None
-                            }
-                        }
+                        _ => keycode_to_byte(k, shift),
                     };
                     let name = k.name().to_lowercase();
                     // The screenshot key (except while the Keys window waits
@@ -1153,16 +1150,11 @@ impl SdlIo {
                         self.menu_keys.push_back((c.unwrap_or(0), name));
                         continue;
                     }
-                    if let Some(a) = c.filter(|&c| is_arrow(c) && self.qol.repeat) {
-                        // The engine's repeat replaces the system's.
-                        if repeat {
-                            continue;
-                        }
-                        self.hold_arrow(a, k.into_i32());
-                    }
                     let extra = self.keymap.code_for(&name).filter(|&x| self.wanted_code(x));
-                    if repeat && self.fresh_wait {
-                        continue;
+                    match arrow_dispatch(self.steady_front(), self.qol.repeat, self.fresh_wait, repeat, c) {
+                        ArrowDispatch::Drop => continue,
+                        ArrowDispatch::Arm(a) => self.hold_arrow(a, k.into_i32()),
+                        ArrowDispatch::Forward => {}
                     }
                     if c.is_some() || extra.is_some() {
                         self.dirty |= !self.front;
@@ -1193,6 +1185,34 @@ impl SdlIo {
             keys::HELP => self.qol.help,
             _ => true,
         }
+    }
+
+    fn reset_for_title(&mut self) {
+        self.pending.clear();
+        self.held.clear();
+        self.menu_keys.clear();
+        self.pad = PadInput::new(self.pad.map.clone());
+        self.at_prompt = false;
+        self.view_key = None;
+        self.in_space = false;
+        self.space_front_view = false;
+        self.fresh_wait = false;
+        self.clicked = false;
+        self.focus_lost = false;
+        self.modal_wanted = None;
+        self.in_menu = false;
+        self.current = None;
+        self.save_req = None;
+        self.save_base = None;
+        self.toast = None;
+        self.dirty = false;
+        self.front = true;
+        self.restart = false;
+        self.next = Instant::now();
+    }
+
+    fn steady_front(&self) -> bool {
+        steady_aim_context(self.in_space, self.space_front_view, self.qol.steady_aim)
     }
 
     /// Start the engine's repeat for arrow `a`, held by `by`.
@@ -1242,8 +1262,16 @@ impl SdlIo {
                 PadAction::Command(c) if self.wanted_code(c) => self.pending.push_back((None, Some(c))),
                 PadAction::Command(_) => {}
                 PadAction::Options => self.open(Modal::Options),
-                PadAction::Hold(a, by) => self.hold_arrow(a, by),
-                PadAction::Release(by) => self.held.release(by),
+                PadAction::Hold(a, by) => {
+                    // Steady aim wants a single edge press from the pad Key;
+                    // do not arm engine repeat while it is on.
+                    if self.qol.repeat && !self.steady_front() && !self.fresh_wait {
+                        self.hold_arrow(a, by);
+                    }
+                }
+                PadAction::Release(by) => {
+                    self.held.release(by);
+                }
             }
         }
     }
@@ -1263,7 +1291,7 @@ impl SdlIo {
     /// A held arrow due to repeat: only at the command prompt, with no
     /// key waiting and no window open, and at most one per step.
     fn repeat_due(&mut self) {
-        let ready = self.at_prompt && self.pending.is_empty() && !self.in_menu;
+        let ready = self.at_prompt && self.pending.is_empty() && !self.in_menu && !self.fresh_wait && self.qol.repeat && !self.steady_front();
         let (_, step) = self.qol.repeat_timing(self.scaled(POLL, Wait::Poll));
         if let Some(a) = self.held.due(Instant::now(), ready, step) {
             self.pending.push_back((Some(a), None));
@@ -1273,15 +1301,17 @@ impl SdlIo {
     /// Wait `d`, with the windows and restarts handled (time in a window
     /// does not count).
     fn wait(&mut self, t: &Term, d: Duration) -> IoResult<()> {
-        self.present(t)?;
-        let mut end = Instant::now() + d;
-        while Instant::now() < end {
-            self.pump()?;
-            end += self.menu(t)?;
-            self.restarting()?;
-            std::thread::sleep(Duration::from_millis(2).min(d));
-        }
-        Ok(())
+        presented_dwell(
+            self,
+            d,
+            |io| io.present(t),
+            |io| {
+                io.pump()?;
+                let extra = io.menu(t)?;
+                io.restarting()?;
+                Ok(extra)
+            },
+        )
     }
 
     /// Hold the game for a speaker effect of `len` (the original's CPU
@@ -1325,6 +1355,20 @@ impl Io for SdlIo {
         self.wait(t, self.scaled(TICK * ticks, Wait::Poll))
     }
 
+    fn title_dwell(&mut self, t: &Term) -> IoResult<()> {
+        if !self.qol.message_pauses() {
+            return self.pause(t, 12);
+        }
+        // wait() presents before starting its clock, pumps Quit/menu events,
+        // and never consumes a key as a skip. Ignore turbo/message speed.
+        self.pending.clear();
+        self.held.clear();
+        let result = self.wait(t, FIRST_TITLE_DWELL);
+        self.pending.clear();
+        self.held.clear();
+        result
+    }
+
     fn message_pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
         self.wait(t, self.scaled(TICK * ticks, Wait::Message))
     }
@@ -1335,6 +1379,7 @@ impl Io for SdlIo {
         self.pump()?;
         self.menu(t)?;
         self.restarting()?;
+        self.repeat_due();
         Ok(self.next_key())
     }
 
@@ -1344,6 +1389,7 @@ impl Io for SdlIo {
 
     fn flush(&mut self) {
         self.pending.clear();
+        self.held.clear();
     }
 
     fn any_key(&mut self, t: &Term) -> IoResult<()> {
@@ -1450,6 +1496,17 @@ impl Io for SdlIo {
 
     fn in_space(&mut self, on: bool) {
         self.in_space = on;
+        if !on {
+            self.space_front_view(false);
+        }
+    }
+
+    fn space_front_view(&mut self, on: bool) {
+        if self.space_front_view != on {
+            self.held.clear();
+            self.pending.retain(|(plain, _)| !plain.is_some_and(is_arrow));
+        }
+        self.space_front_view = on;
     }
 
     fn save_request(&mut self) -> Option<SaveReq> {
@@ -2014,6 +2071,7 @@ fn play(a: &Args) -> Result<(), String> {
         restart: false,
         qol: Qol::default(),
         in_space: false,
+        space_front_view: false,
         fresh_wait: false,
         clicked: false,
         area: None,
@@ -2055,7 +2113,7 @@ fn play(a: &Args) -> Result<(), String> {
         // apply_qol only touches the window for a change.
         io.apply_window();
     }
-    let chosen = match front(a, mode, &mut io)? {
+    let mut chosen = match front(a, mode, &mut io)? {
         Front::Halted(_) => {
             io.keep_window();
             return Ok(());
@@ -2067,12 +2125,13 @@ fn play(a: &Args) -> Result<(), String> {
     // game.
     io.front = false;
     io.restart = false;
+    let mut active_args = a.clone();
     let mut reload = None;
     let mut carried: Option<Explore> = None;
     loop {
         let mode = io.wanted;
         io.video_shown(mode);
-        let (mut g, _) = load(a, mode, chosen.as_deref(), reload.take())?;
+        let (mut g, _) = load(&active_args, mode, chosen.as_deref(), reload.take())?;
         if let Some(e) = carried.take() {
             g.explore = e;
         }
@@ -2080,6 +2139,25 @@ fn play(a: &Args) -> Result<(), String> {
         io.in_space = false;
         io.at_prompt = false;
         let _ = g.run(&mut io);
+        if g.return_to_title && !io.halt {
+            // Drop this Game without saving/overwriting the roster. Keep the
+            // window/config, but discard all transient input/modal/slot state.
+            io.reset_for_title();
+            active_args.for_title_return();
+            reload = None;
+            carried = None;
+            chosen = match front(&active_args, io.wanted, &mut io)? {
+                Front::Play(path) => Some(path),
+                Front::Halted(_) => {
+                    io.keep_window();
+                    return Ok(());
+                }
+                Front::Skip => unreachable!("title return explicitly enables intro"),
+            };
+            io.front = false;
+            io.restart = false;
+            continue;
+        }
         // A save slot was loaded: the game starts again from it.
         if let Some(r) = g.reload.take() {
             reload = Some(r);
@@ -2091,6 +2169,16 @@ fn play(a: &Args) -> Result<(), String> {
         }
         io.keep_window();
         return Ok(());
+    }
+}
+
+impl Args {
+    fn for_title_return(&mut self) {
+        self.intro = true;
+        self.gen = false;
+        self.player = None;
+        self.save = None;
+        self.pos = None;
     }
 }
 
@@ -2122,6 +2210,25 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Same policy for every area, including the ending. Original/Enhanced
+/// effects don't choose the music; Mute retains its existing global meaning.
+fn music_mix_settings(area: Option<Track>, q: Qol, sound: SoundMode) -> (Option<Track>, f32, f32) {
+    let master = f32::from(q.master_volume) / 100.0;
+    (area.filter(|_| q.music && sound != SoundMode::Mute), f32::from(q.music_volume) / 100.0 * master, f32::from(q.sfx_volume) / 100.0 * master)
+}
+
+/// Start elapsed time only after successful presentation. Pump throughout;
+/// keys cannot shorten the dwell. Modal window time extends the deadline.
+fn presented_dwell<T>(state: &mut T, duration: Duration, mut present: impl FnMut(&mut T) -> IoResult<()>, mut pump: impl FnMut(&mut T) -> IoResult<Duration>) -> IoResult<()> {
+    present(state)?;
+    let mut end = Instant::now() + duration;
+    while Instant::now() < end {
+        end += pump(state)?;
+        std::thread::sleep(Duration::from_millis(2).min(end.saturating_duration_since(Instant::now())));
+    }
+    Ok(())
 }
 
 /// Wraps long lines at spaces for the error window, which (on X11) does not
@@ -2226,8 +2333,126 @@ fn local_time() -> [u8; 4] {
     [h, m, s, (now.subsec_millis() / 10) as u8]
 }
 
+/// Both flags are needed: space can be top-down, and the front-end title
+/// sequence's `front` flag is unrelated to the space sights.
+fn steady_aim_context(in_space: bool, front_view: bool, enabled: bool) -> bool {
+    in_space && front_view && enabled
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ArrowDispatch {
+    Drop,
+    Arm(u8),
+    Forward,
+}
+
+/// Shared keyboard dispatch policy. Steady aim is an input context, not a
+/// global ban on repeat. Menus have their own earlier dispatch branch.
+fn arrow_dispatch(steady_front: bool, engine_repeat: bool, fresh_wait: bool, repeat: bool, c: Option<u8>) -> ArrowDispatch {
+    if fresh_wait {
+        return if repeat { ArrowDispatch::Drop } else { ArrowDispatch::Forward };
+    }
+    if let Some(a) = c.filter(|&a| is_arrow(a)) {
+        if repeat && (steady_front || engine_repeat) {
+            return ArrowDispatch::Drop;
+        }
+        if engine_repeat && !steady_front {
+            return ArrowDispatch::Arm(a);
+        }
+    }
+    ArrowDispatch::Forward
+}
+
+/// SDL key → engine byte for ordinary keys (not F1/F2/… modal shortcuts).
+/// Top-row digits are SDL ASCII keycodes (`Num6` → `b'6'`). Numpad 4/6/8/2
+/// stay arrows (`Kp6` → RIGHT) so they never jump F1 pages; space speed
+/// digits outside the menu are unchanged.
+fn keycode_to_byte(k: sdl2::keyboard::Keycode, shift: bool) -> Option<u8> {
+    use sdl2::keyboard::Keycode;
+    match k {
+        Keycode::Left | Keycode::Kp4 => Some(keys::LEFT),
+        Keycode::Right | Keycode::Kp6 => Some(keys::RIGHT),
+        Keycode::Up | Keycode::Kp8 => Some(keys::UP),
+        Keycode::Down | Keycode::Kp2 => Some(keys::DOWN),
+        Keycode::Return | Keycode::KpEnter => Some(keys::ENTER),
+        Keycode::Escape => Some(keys::ESC),
+        Keycode::Backspace => Some(keys::BACKSPACE),
+        _ => {
+            let n = k.into_i32();
+            if (0x20..0x7F).contains(&n) {
+                let c = n as u8;
+                Some(if shift { c.to_ascii_uppercase() } else { c })
+            } else {
+                None
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ending_music_respects_switch_volume_and_independent_effects() {
+        let mut q = Qol::default();
+        assert_eq!(music_mix_settings(Some(Track::Ending), q, SoundMode::Enhanced).0, None);
+        q.music = true;
+        q.music_volume = 40;
+        q.master_volume = 50;
+        q.sfx_volume = 0;
+        for sound in [SoundMode::Original, SoundMode::Enhanced] {
+            let (want, music, effects) = music_mix_settings(Some(Track::Ending), q, sound);
+            assert_eq!(want, Some(Track::Ending));
+            assert!((music - 0.2).abs() < 0.0001);
+            assert_eq!(effects, 0.0);
+            assert_eq!(music_mix_settings(Some(Track::Title), q, sound).0, Some(Track::Title));
+        }
+        assert_eq!(music_mix_settings(Some(Track::Ending), q, SoundMode::Mute).0, None);
+    }
+
+    #[test]
+    fn victory_title_return_drops_start_overrides_not_roster_or_preferences() {
+        let mut a = Args { save: Some("old-save.U1".into()), player: Some(3), pos: Some((99, 99)), roster: Some("my-roster".into()), gen: true, ..Default::default() };
+        a.features.attack_gem = true;
+        a.for_title_return();
+        assert!(a.intro && !a.gen);
+        assert!(a.save.is_none() && a.player.is_none() && a.pos.is_none());
+        assert_eq!(a.roster, Some("my-roster".into()));
+        assert!(a.features.attack_gem);
+        a.for_title_return(); // second session can also return
+        assert!(a.intro);
+    }
+
+    #[test]
+    fn dwell_times_from_presentation_and_pumps_until_elapsed() {
+        let mut shown = None;
+        let mut polls = 0;
+        super::presented_dwell(
+            &mut (false, 0usize),
+            FIRST_TITLE_DWELL,
+            |state| {
+                state.0 = true;
+                shown = Some(std::time::Instant::now());
+                Ok(())
+            },
+            |state| {
+                assert!(state.0);
+                state.1 += 1;
+                polls += 1;
+                Ok(std::time::Duration::ZERO)
+            },
+        )
+        .unwrap();
+        assert!(shown.unwrap().elapsed() >= FIRST_TITLE_DWELL);
+        assert!(polls > 2);
+    }
+
+    #[test]
+    fn dwell_close_event_aborts_promptly() {
+        let start = std::time::Instant::now();
+        assert!(super::presented_dwell(&mut (), std::time::Duration::from_millis(2800), |_| Ok(()), |_| Err(u1_assets::io::Halt)).is_err());
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
+    }
+
     #[test]
     fn screen_key_closes_its_screen() {
         use super::pick_key;
@@ -2277,6 +2502,100 @@ mod tests {
         assert!(matches!(run(axis(Axis::LeftX, 0))[..], [PadAction::Release(_)]));
         assert!(run(axis(Axis::TriggerLeft, 30000)).is_empty(), "triggers do nothing");
         assert!(pad_event(&Event::Quit { timestamp: 0 }).is_none());
+    }
+
+    #[test]
+    fn repeat_context_requires_front_view_space_and_steady_aim() {
+        for in_space in [false, true] {
+            for front_view in [false, true] {
+                for enabled in [false, true] {
+                    let edge_only = steady_aim_context(in_space, front_view, enabled);
+                    assert_eq!(edge_only, in_space && front_view && enabled);
+                    let action = arrow_dispatch(edge_only, true, false, false, Some(keys::LEFT));
+                    assert_eq!(action, if edge_only { ArrowDispatch::Forward } else { ArrowDispatch::Arm(keys::LEFT) });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn held_arrow_dispatch_is_contextual() {
+        use sdl2::keyboard::Keycode;
+        let key = keycode_to_byte(Keycode::Right, false);
+        // Actual keyboard dispatcher policy for overworld/town/dungeon,
+        // menus (handled before this policy), and top-down space: normal.
+        for _context in ["overworld", "town", "dungeon", "topdown"] {
+            assert_eq!(arrow_dispatch(false, true, false, false, key), ArrowDispatch::Arm(keys::RIGHT));
+            assert_eq!(arrow_dispatch(false, true, false, true, key), ArrowDispatch::Drop);
+            // Engine repeat OFF retains OS-repeat behavior.
+            assert_eq!(arrow_dispatch(false, false, false, true, key), ArrowDispatch::Forward);
+        }
+        // Front-view steady aim: edge only, regardless of engine-repeat setting.
+        for engine in [false, true] {
+            assert_eq!(arrow_dispatch(true, engine, false, false, key), ArrowDispatch::Forward);
+            assert_eq!(arrow_dispatch(true, engine, false, true, key), ArrowDispatch::Drop);
+        }
+        // Fresh message waits neither arm a held movement nor accept OS repeats.
+        assert_eq!(arrow_dispatch(false, true, true, false, key), ArrowDispatch::Forward);
+        assert_eq!(arrow_dispatch(false, true, true, true, key), ArrowDispatch::Drop);
+        assert_eq!(arrow_dispatch(true, false, false, true, Some(b'6')), ArrowDispatch::Forward);
+    }
+
+    #[test]
+    fn dispatched_hold_repeats_then_clears_on_release_focus_or_wait() {
+        let mut held = Repeater::default();
+        let now = Instant::now();
+        let key = keycode_to_byte(sdl2::keyboard::Keycode::Right, false);
+        if let ArrowDispatch::Arm(a) = arrow_dispatch(false, true, false, false, key) {
+            held.hold(a, 1, now, Duration::from_millis(250));
+        }
+        assert_eq!(held.due(now + Duration::from_millis(300), true, POLL), Some(keys::RIGHT));
+        held.release(1);
+        assert_eq!(held.due(now + Duration::from_secs(1), true, POLL), None);
+        held.hold(keys::RIGHT, 1, now, Duration::ZERO);
+        held.clear(); // same clear used by focus/menu/fresh wait paths
+        assert_eq!(held.due(now + Duration::from_secs(1), true, POLL), None);
+        // A new edge after returning from a wait arms normally again.
+        assert_eq!(arrow_dispatch(false, true, false, false, key), ArrowDispatch::Arm(keys::RIGHT));
+    }
+
+    /// Top-row 1..6 must reach F1 pages after SDL key translation (alt8
+    /// regression: digit jump was hardcoded to 1..5 after Space became a page).
+    /// Numpad 6 stays RIGHT so space/gameplay never confuse it with Interface.
+    #[test]
+    fn f1_digit_six_reaches_interface_via_keycode_dispatch() {
+        use sdl2::keyboard::Keycode;
+        use u1_assets::config::VideoChoice;
+        use u1_assets::options::{OptionsMenu, Page};
+        use u1_assets::soundpack::SoundMode;
+
+        assert_eq!(keycode_to_byte(Keycode::Num1, false), Some(b'1'));
+        assert_eq!(keycode_to_byte(Keycode::Num5, false), Some(b'5'));
+        assert_eq!(keycode_to_byte(Keycode::Num6, false), Some(b'6'), "SDL Num6 is ASCII 6");
+        assert_eq!(keycode_to_byte(Keycode::Kp6, false), Some(keys::RIGHT), "Kp6 is arrow, not page 6");
+        assert_eq!(keycode_to_byte(Keycode::Num0, false), Some(b'0'));
+
+        let mut m = OptionsMenu::new(VideoChoice::Ega, SoundMode::Original, [true; 4]);
+        let pages = [
+            (Keycode::Num1, Page::Video),
+            (Keycode::Num2, Page::Sound),
+            (Keycode::Num3, Page::Gameplay),
+            (Keycode::Num4, Page::Controls),
+            (Keycode::Num5, Page::Space),
+            (Keycode::Num6, Page::Interface),
+        ];
+        for (kc, page) in pages {
+            let b = keycode_to_byte(kc, false).expect("digit");
+            m.key(b);
+            assert_eq!(m.page(), page, "{kc:?} → {page:?}");
+            assert_eq!(m.row, 0);
+        }
+        assert_eq!(m.page(), Page::Interface);
+        assert_eq!(m.current(), Page::Interface.rows()[0]);
+        // Numpad 6 must not jump pages when fed through the same dispatch.
+        let before = m.page();
+        m.key(keycode_to_byte(Keycode::Kp6, false).unwrap());
+        assert_eq!(m.page(), before, "Kp6 is value-change RIGHT, not Interface");
     }
 
     /// Our button names are SDL's own (the config's `pad_<name>` keys).

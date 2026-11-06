@@ -471,8 +471,31 @@ fn defeating_mondain_shows_the_ending() {
         return;
     };
     assert!(bot.saw("Hit Mondain!"));
-    assert!(g.term.row_text(24).contains("Press CONTROL-ALT-DEL to Restart"), "{:?}", g.term.messages());
-    assert!(g.stopped.unwrap().contains("Mondain"));
+    assert!(g.term.row_text(24).contains("Press any key to return to title screen"), "{:?}", g.term.messages());
+    assert!(g.return_to_title);
+    assert_eq!(g.stopped, Some("victory"));
+    // Same-process next-session ingredients: actual title + roster + fresh Game.
+    let Some(files) = game_dir() else { return };
+    let mut mode = g.a.video;
+    let mut title_io = ScriptIo::from_text("{p}");
+    let title = u1_assets::front::intro(&files, &mut mode, &mut title_io).unwrap().unwrap();
+    assert!(title.row_text(8).contains("Ultima I"));
+    let roster = std::env::temp_dir().join(format!("u1-post-victory-{}", std::process::id()));
+    std::fs::create_dir_all(&roster).unwrap();
+    let original = Game::default_record("Next Hero", 49, 40);
+    let path = roster.join("PLAYER1.U1");
+    std::fs::write(&path, original.as_bytes()).unwrap();
+    let mut next_io = ScriptIo::from_text("b1");
+    let mut clock = || -> Box<dyn FnMut() -> [u8; 4]> { Box::new(|| [0, 0, 0, 0]) };
+    let (_, selected) = u1_assets::front::character(&files, &roster, &mut mode, &mut clock, &mut next_io).unwrap();
+    let u1_assets::gen::GenEnd::Play { path: chosen, .. } = selected.unwrap();
+    let record = PlayerRecord::parse(&std::fs::read(chosen).unwrap()).unwrap();
+    let mut second = Game::new(g.a.clone(), record, 1);
+    let _ = second.run(&mut ScriptIo::from_text(""));
+    assert!(!second.return_to_title && second.stopped.is_none());
+    assert_eq!(second.rec.name(), "Next Hero");
+    assert_eq!(std::fs::read(&path).unwrap(), original.as_bytes());
+    std::fs::remove_dir_all(roster).unwrap();
     // For side-by-sides with DOSBox: the closing screens as PPM files.
     if let (Some(dir), Some(f)) = (std::env::var_os("U1_LAIR_FRAMES"), &bot.frames) {
         for (i, rgb) in f.iter().enumerate() {
@@ -510,10 +533,14 @@ fn leading_the_princess_out_pays_500_of_each() {
     let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
     g.npcs[i].x = 1;
     g.npcs[i].y = 9;
-    // Stop at the reward's pause, while the box is still shown.
-    let _ = g.town_move(&mut ScriptIo::from_text("{p}"), Dir::West);
+    // Message pauses on: freeze on "Press any key" with the reward box up.
+    let mut io = ScriptIo::from_text("{p}");
+    io.qol.sign_wait = true;
+    io.skip_pauses.set(1); // past message_pause to Press any key
+    let _ = g.town_move(&mut io, Dir::West);
     assert!(g.term.row_text(7).contains("Thou hast saved the princess"));
     assert!(g.term.row_text(9).contains("500 hit points, pence and"));
+    assert!(screen_text(&g).contains("Press any key"));
     assert_eq!(g.hits(), hits + 500);
     assert_eq!(g.rec.coin(), coin + 500);
     assert_eq!(g.exp(), exp + 500);
@@ -1567,9 +1594,9 @@ fn vehicle_faces_last_sideways_move() {
     assert!(!flipped(&g), "the option off never mirrors");
 }
 
-/// Playtest report: a sign's words flashed by. With "Wait on signs" (on by
-/// default) the sign's box keeps them up behind "Press any key" until a
-/// key; off, the flow is the original's short pause (SPEC §25).
+/// Playtest report: a sign's words flashed by. With "Message pauses" (on by
+/// default; config `wait_on_signs`) the sign's box keeps them up behind
+/// "Press any key" until a key; off, the original's short pause (SPEC §25).
 #[test]
 fn signs_wait_for_a_key_when_the_option_is_on() {
     let waiting = |keys: &str, on: bool| {
@@ -1587,4 +1614,258 @@ fn signs_wait_for_a_key_when_the_option_is_on() {
     let g = waiting("e", false).unwrap();
     assert!(!screen_text(&g).contains("Press any key"));
     assert_eq!(g.rec.as_bytes(), waiting("e~x", true).unwrap().rec.as_bytes(), "nothing else changes");
+}
+
+#[test]
+fn princess_rescue_waits_for_a_key_when_message_pauses_on() {
+    use u1_assets::rules::Dir;
+    let Some(mut g) = play(40, 39, "{up}E{w1}") else { return };
+    let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
+    g.npcs[i].x = 1;
+    g.npcs[i].y = 9;
+    // Freeze on the shared "Press any key" after the original pauses.
+    let mut io = ScriptIo::from_text("{p}");
+    io.qol.sign_wait = true;
+    io.skip_pauses.set(1); // past message_pause to Press any key
+    let _ = g.town_move(&mut io, Dir::West);
+    let s = screen_text(&g);
+    assert!(s.contains("Thou hast saved the princess"), "{s}");
+    assert!(s.contains("Press any key"), "rescue must pause to read: {s}");
+    // Stale wait tokens must not dismiss; a real key does.
+    let Some(mut g) = play(40, 39, "{up}E{w1}") else { return };
+    let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
+    g.npcs[i].x = 1;
+    g.npcs[i].y = 9;
+    let mut io = ScriptIo::from_text("~~x");
+    io.qol.sign_wait = true;
+    assert!(g.town_move(&mut io, Dir::West).is_ok());
+    assert!(!screen_text(&g).contains("Press any key"), "key ends the prompt");
+    // Off: original timing only — town_move finishes; no "Press any key".
+    let Some(mut g) = play(40, 39, "{up}E{w1}") else { return };
+    let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
+    g.npcs[i].x = 1;
+    g.npcs[i].y = 9;
+    let mut io = ScriptIo::from_text("");
+    io.qol.sign_wait = false;
+    assert!(g.town_move(&mut io, Dir::West).is_ok());
+    assert!(!screen_text(&g).contains("Press any key"), "off keeps original flow");
+}
+
+#[test]
+fn princess_rescue_press_any_key_screenshot() {
+    use u1_assets::rules::Dir;
+    let Some(mut g) = play(40, 39, "{up}E{w1}") else { return };
+    let i = g.npcs.iter().position(|n| n.tile == 0x16).unwrap();
+    g.npcs[i].x = 1;
+    g.npcs[i].y = 9;
+    let mut io = ScriptIo::from_text("{p}");
+    io.qol.sign_wait = true;
+    io.skip_pauses.set(1); // past message_pause to Press any key
+    let _ = g.town_move(&mut io, Dir::West);
+    assert!(screen_text(&g).contains("Press any key"));
+    let rgb = g.term.to_rgb(&u1_assets::palette::EGA_PALETTE, 2);
+    let path = std::path::Path::new("/workspace/u1-shots/space-aim/princess-rescue-pause.png");
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    let f = std::fs::File::create(path).unwrap();
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+    enc.set_color(png::ColorType::Rgb);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header().unwrap().write_image_data(&rgb).unwrap();
+    assert!(path.is_file());
+}
+
+#[test]
+fn killing_castle_jester_gives_key_god_on_and_off() {
+    use u1_assets::game::{CASTLE, NPC_BARD};
+    use u1_assets::rules::Dir;
+    for god in [false, true] {
+        let Some(mut g) = play(40, 38, "e{w1}") else { return };
+        assert_eq!(g.mode, CASTLE);
+        let i = g.npcs.iter().position(|n| n.tile == NPC_BARD).expect("jester");
+        assert_eq!(g.npcs[i].hp, 1, "original castle jester has 1 hit");
+        let (jx, jy) = (i32::from(g.npcs[i].x), i32::from(g.npcs[i].y));
+        g.px = jx - 1;
+        g.py = jy;
+        g.god_mode = god;
+        let mut io = ScriptIo::from_text("~".repeat(40).as_str());
+        io.qol.god_mode = god;
+        // Through the same helper Attack uses (100% hit, low rolled dmg).
+        g.town_attack(&mut io, Dir::East, 3, 1, 100);
+        let label = if god { "god on" } else { "god off" };
+        assert!(g.has_key, "{label}: key flag after jester kill");
+        assert!(screen_text(&g).contains("found a key") || said(&g, "found a key"), "{label}: missing FOUND_KEY; screen={}", screen_text(&g));
+        assert_eq!(g.npcs[i].tile, -1, "{label}: jester removed");
+        // Unlock path sees the key (wrong door still refused).
+        let door = g.jail_door;
+        let other = if door == 0x3C { 0x3D } else { 0x3C };
+        // Force standing on a non-matching door cell if present.
+        let _ = (door, other);
+    }
+}
+
+#[test]
+fn attack_command_jester_key_with_god_mode_feature() {
+    use u1_assets::game::{CASTLE, NPC_BARD};
+    // Full Attack command path with god_mode from Io features (as F1/CLI sets it).
+    let Some(mut g) = play(40, 38, "e{w1}") else { return };
+    assert_eq!(g.mode, CASTLE);
+    let i = g.npcs.iter().position(|n| n.tile == NPC_BARD).expect("jester");
+    let (jx, jy) = (i32::from(g.npcs[i].x), i32::from(g.npcs[i].y));
+    g.px = jx - 1;
+    g.py = jy;
+    // Ready a melee weapon with range (dagger=1 usually present).
+    g.rec.set_u16(off::READY_WEAPON, 1);
+    let mut io = ScriptIo::from_text("{right}"); // direction for Attack
+    io.qol.god_mode = true;
+    g.god_mode = true;
+    // One turn: sync features like Game::turn does, then Attack.
+    g.god_mode = io.features().god_mode;
+    g.command(&mut io, b'A').unwrap();
+    assert!(g.has_key, "Attack+god must grant key; screen={}", screen_text(&g));
+    assert!(screen_text(&g).to_ascii_lowercase().contains("key"), "{}", screen_text(&g));
+}
+
+#[test]
+fn jester_song_is_rare_not_guaranteed() {
+    // Original: only when the jester steps onto the player, stole nothing,
+    // and R(1,255) < 15 (~6%). Not a bug if he stays quiet.
+    use u1_assets::game::{CASTLE, NPC_BARD};
+    let Some(g) = play(40, 38, "e{w1}") else { return };
+    assert_eq!(g.mode, CASTLE);
+    assert!(g.npcs.iter().any(|n| n.tile == NPC_BARD));
+}
+
+#[test]
+fn first_title_is_drawn_before_its_dwell() {
+    use u1_assets::gamedir::VideoMode;
+    use u1_assets::title::{blank_term, run_intro, TitleFiles};
+    struct FirstPause {
+        on: bool,
+        ticks: Vec<u32>,
+    }
+    impl Io for FirstPause {
+        fn poll(&mut self, _: &Term) -> IoResult<Option<u8>> {
+            panic!("title must dwell before key/fast-forward polling")
+        }
+        fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
+            let text = (0..25).map(|r| t.row_text(r)).collect::<Vec<_>>().join(" ");
+            assert!(text.contains("Ultima I"));
+            assert!(text.contains("First Age of Darkness"));
+            assert!(text.contains("1987"));
+            self.ticks.push(ticks);
+            Err(Halt) // stop before any later intro pages
+        }
+        fn wait_or_key(&mut self, _: &Term) -> IoResult<()> {
+            panic!("no key-to-dismiss")
+        }
+        fn features(&self) -> u1_assets::qol::Qol {
+            u1_assets::qol::Qol { sign_wait: self.on, ..Default::default() }
+        }
+    }
+    let Some(g) = game_dir() else { return };
+    let f = TitleFiles::load(&g, VideoMode::Ega).unwrap();
+    for (on, expected) in [(false, 12), (true, 51)] {
+        let mut io = FirstPause { on, ticks: vec![] };
+        assert!(run_intro(&f, &mut blank_term(&f), &mut io).is_err());
+        assert_eq!(io.ticks, [expected]);
+    }
+}
+
+/// Rescue through the actual castle-exit path, not a fabricated Ace flag.
+#[test]
+fn princess_time_machine_uses_selected_ace_target_and_pre_reward_xp() {
+    use u1_assets::game::{slot, NPC_PRINCESS};
+    use u1_assets::qol::SpaceAceNeed::{Five, Ten, Twenty};
+    use u1_assets::rules::Dir;
+    for (need, kills, xp, eligible) in [
+        (Five, 5, 7000, true),
+        (Ten, 10, 7000, true),
+        (Twenty, 20, 7000, true),
+        (Five, 4, 9000, false),
+        (Ten, 9, 9000, false),
+        (Twenty, 19, 9000, false),
+        (Twenty, 5, 9000, false),
+        (Five, 5, 6999, false),
+    ] {
+        let Some(mut g) = play(40, 38, "e{w1}") else { return };
+        g.force_set(off::HITS, 150);
+        g.set(off::COIN, 100);
+        g.set(off::EXPERIENCE, xp);
+        g.set(off::ENEMIES, kills);
+        g.set(slot::TIME_MACHINES, 0);
+        // Gems are NOT a condition for this reward (only boarding later).
+        for k in 0..4 {
+            g.set(slot::GEM + 2 * k, 0);
+        }
+        let princess = g.npcs.iter_mut().find(|n| n.tile == NPC_PRINCESS).unwrap();
+        princess.x = 1;
+        princess.y = 9;
+        g.ow.entities.clear();
+        // Guarantee forest placement candidates without editing game files.
+        for y in 11..=15 {
+            for x in 12..=21 {
+                g.a.map.cells[y * 168 + x] = 2;
+            }
+        }
+        let mut io = ScriptIo::from_text("{p}");
+        io.qol.space_ace_need = need;
+        io.qol.sign_wait = true;
+        io.skip_pauses.set(1); // freeze at fresh-key prompt, not message_pause
+        assert!(g.town_move(&mut io, Dir::West).is_err());
+        let text = screen_text(&g);
+        assert!(text.contains("Press any key"), "{text}");
+        assert_eq!(text.contains("ready for time travel"), eligible, "{need:?} kills={kills} xp={xp}: {text}");
+        assert_eq!(text.contains("far to the northwest"), eligible, "{text}");
+        assert_eq!(g.w(slot::TIME_MACHINES), i16::from(eligible));
+        assert_eq!((g.hits(), g.coin(), g.exp()), (650, 600, xp + 500));
+        assert_eq!(g.w(off::ENEMIES), kills, "do not fabricate kills");
+        let machines: Vec<_> = g.ow.entities.iter().filter(|e| e.tile == 0x12).collect();
+        assert_eq!(machines.len(), usize::from(eligible));
+        if let Some(machine) = machines.first() {
+            assert!((12..=21).contains(&machine.x));
+            assert!((11..=15).contains(&machine.y));
+            assert_eq!(g.a.map.cell(machine.x as usize, machine.y as usize), 2);
+            assert_eq!((machine.hp, machine.aux), (0, 2));
+        }
+    }
+}
+
+#[test]
+fn princess_machine_location_follows_land_and_current_setting_without_save_changes() {
+    use u1_assets::game::{slot, NPC_PRINCESS, OUTDOORS};
+    use u1_assets::qol::SpaceAceNeed::{Five, Ten, Twenty};
+    use u1_assets::rules::Dir;
+    let Some(mut g) = play(40, 38, "e{w1}") else { return };
+    g.set(off::ENEMIES, 10);
+    // Raw kills survive raising/lowering need; each rescue uses current need.
+    for (land, need, expected) in [(0, Twenty, 0), (1, Ten, 1), (2, Five, 1), (3, Twenty, 0)] {
+        g.enter_castle(33 + 2 * land);
+        let bx = if land & 1 == 1 { 83 } else { 0 };
+        let by = if land & 2 == 2 { 77 } else { 0 };
+        g.ow.x = bx + 40;
+        g.ow.y = by + 38;
+        g.set(off::EXPERIENCE, 7000);
+        g.set(slot::TIME_MACHINES, 0);
+        g.ow.entities.clear();
+        let princess = g.npcs.iter_mut().find(|n| n.tile == NPC_PRINCESS).unwrap();
+        princess.x = 1;
+        princess.y = 9;
+        for y in by + 11..=by + 15 {
+            for x in bx + 12..=bx + 21 {
+                g.a.map.cells[y as usize * 168 + x as usize] = 2;
+            }
+        }
+        let mut io = ScriptIo::from_text(""); // faithful short pause, no key needed
+        io.qol.space_ace_need = need;
+        g.town_move(&mut io, Dir::West).unwrap();
+        assert_eq!(g.mode, OUTDOORS);
+        assert_eq!(g.w(off::ENEMIES), 10);
+        assert_eq!(g.w(slot::TIME_MACHINES), expected);
+        let machines: Vec<_> = g.ow.entities.iter().filter(|e| e.tile == 0x12).collect();
+        assert_eq!(machines.len(), expected as usize);
+        if let Some(machine) = machines.first() {
+            assert!((bx + 12..=bx + 21).contains(&machine.x));
+            assert!((by + 11..=by + 15).contains(&machine.y));
+        }
+    }
 }

@@ -218,6 +218,20 @@ const FLAMES: [[&[Flame]; 4]; 3] = [
     ],
 ];
 
+/// Enhanced Inform scan layout (must fit inside `Term::boxed`: frame
+/// y 26..=124, fill y 23..=127). Grid + labels + prompt all stay inside.
+const ENH_SCAN_OX: i32 = 52;
+const ENH_SCAN_OY: i32 = 42;
+const ENH_SCAN_CELL: i32 = 9;
+const ENH_SCAN_GRID: i32 = ENH_SCAN_CELL * 7; // 63; bottom at 105
+/// Text row for "Any key: back" (pixel y = row*8); below the grid bottom.
+const ENH_SCAN_PROMPT_ROW: usize = 14; // y=112..119; ~7 px clear under the grid
+/// Earth / shuttle home sector (`make_galaxy` starts here; land-back target).
+const HOME_GX: usize = 3;
+const HOME_GY: usize = 3;
+/// Cyan corner brackets for the home cell (distinct from the yellow you-frame).
+const C_HOME: u8 = TEXT;
+
 fn sign(v: i16) -> i16 {
     v.signum()
 }
@@ -248,6 +262,10 @@ struct Space<'a> {
     cy: i16,
     dvx: i16,
     dvy: i16,
+    /// Front-view enemy phase so Half speed can skip every other tick.
+    enemy_phase: u8,
+    /// Space Ace ceremony already shown this flight (or earned before entry).
+    ace_done: bool,
     star_mode: i16,
     rel: [(i16, i16); 40],
     old: [(i16, i16); 40],
@@ -266,6 +284,7 @@ pub fn run_space(g: &mut Game, io: &mut dyn Io) -> IoResult<SpaceEnd> {
     io.music(crate::music::Track::Space);
     let Some(files) = g.space.take() else { return Ok(SpaceEnd::Landed) };
     io.in_space(true);
+    g.god_mode = io.features().god_mode;
     let mut s = Space::new(g, io, files);
     let r = s.main();
     let died = s.g.hits() <= 0;
@@ -308,6 +327,8 @@ impl<'a> Space<'a> {
             cy: 79,
             dvx: 0,
             dvy: 0,
+            enemy_phase: 0,
+            ace_done: false,
             star_mode: 2,
             rel: [(0, 0); 40],
             old: [(0, 0); 40],
@@ -401,6 +422,46 @@ impl<'a> Space<'a> {
         let v = self.g.coin();
         self.g.term.stat(24, i32::from(v), false);
     }
+
+    /// Optional HUD: kills toward Space Ace (save word 0xA6). The original
+    /// awards Ace at exactly 20 and keeps counting; we show `K:n/20` before
+    /// that and `Ace!` after so a post-20 total is not read as a goal.
+    ///
+    /// One compact field at columns 31..38 (the status panel is cols 31..39;
+    /// a separate "Kills" + value at 36 wrapped at column 40 and clipped).
+    fn show_kills(&mut self) {
+        if !self.io.features().space_kills {
+            return;
+        }
+        let k = self.g.w(off::ENEMIES);
+        let need = self.ace_need();
+        // Longest pre-Ace string is "K:19/20" (7); Ace is "Ace!" (4). Pad to
+        // 8 chars so a shorter string clears a longer one, staying in 31..38.
+        // Session Ace (ace_done) survives a raised threshold; no save-format Ace bit.
+        let (line, attr) = if self.ace_done || k >= need { ("Ace!    ".to_string(), C_PICK) } else { (format!("K:{k}/{need} "), TEXT) };
+        debug_assert!(line.chars().count() <= 8, "{line}");
+        let mut out: String = line.chars().take(8).collect();
+        while out.chars().count() < 8 {
+            out.push(' ');
+        }
+        self.g.term.print_at_attr(31, 20, &out, attr);
+    }
+    fn ace_need(&self) -> i16 {
+        self.io.features().space_ace_need.kills_required()
+    }
+
+    /// If the Ace threshold was lowered under an existing kill count, award once.
+    fn sync_ace(&mut self) -> R<()> {
+        let need = self.ace_need();
+        let kills = self.g.w(off::ENEMIES);
+        if !self.ace_done && kills >= need {
+            self.ace_done = true;
+            self.space_ace()?;
+            self.show_kills();
+        }
+        Ok(())
+    }
+
     fn use_shield(&mut self, n: i16) {
         let s = self.slot_mut();
         s.shield = (s.shield - n).max(0);
@@ -427,12 +488,14 @@ impl<'a> Space<'a> {
         let seed = self.g.rec.u16_at(off::SEED);
         self.srand(seed.wrapping_mul(2));
         self.make_galaxy();
+        self.ace_done = self.g.w(off::ENEMIES) >= self.ace_need();
         let t = self.timer();
         self.srand(t.wrapping_add(seed));
         self.new_stars();
         self.draw_all();
         self.show_fuel();
         self.show_shield();
+        self.show_kills();
         loop {
             if self.slot().shield == 0 {
                 self.g.rec.set_u16(off::SHUTTLE_0, 0);
@@ -453,6 +516,7 @@ impl<'a> Space<'a> {
                 self.tick()?;
                 let k = self.io.poll_now(&self.g.term)?;
                 self.switch_video();
+                self.sync_ace()?;
                 if k == Some(keys::HELP) || k == Some(keys::MAP) {
                     // F3: the command help for space (with the help
                     // screen on); Tab has no map out here, so it is
@@ -469,7 +533,8 @@ impl<'a> Space<'a> {
                     self.delay(2)?;
                 }
                 if let Some(k) = k {
-                    break k.to_ascii_uppercase();
+                    let k = k.to_ascii_uppercase();
+                    break k;
                 }
                 if n >= 1500 {
                     break b' ';
@@ -517,6 +582,7 @@ impl<'a> Space<'a> {
         }
         self.show_fuel();
         self.show_shield();
+        self.show_kills();
     }
 
     fn command(&mut self, key: u8) -> R<()> {
@@ -615,8 +681,9 @@ impl<'a> Space<'a> {
 
     /// `f25`: hits and food to zero, then leave.
     fn death(&mut self) -> R<()> {
-        self.g.set(off::HITS, 0);
-        self.g.set(off::FOOD, 0);
+        // Story / suit / drained-ship death: still ends the flight even in god mode.
+        self.g.force_set(off::HITS, 0);
+        self.g.force_set(off::FOOD, 0);
         self.g.term.stat(21, 0, true);
         self.g.term.stat(22, 0, true);
         self.exit()
@@ -726,8 +793,8 @@ impl<'a> Space<'a> {
         let shield = self.g.rec.u16_at(off::SHUTTLE_1) as i16;
         h.slots[2] = Slot { x: 260, y: 90, ty: 0, fuel, shield, hd: 0 };
         self.gal[3][3] = h;
-        self.gx = 3;
-        self.gy = 3;
+        self.gx = HOME_GX;
+        self.gy = HOME_GY;
     }
 
     /// `3741`: the port a slot's ship sits docked at, if any.
@@ -1041,6 +1108,7 @@ impl<'a> Space<'a> {
 
     /// `386b`: one tick of flight (top-down), or `3330` in front view.
     fn tick(&mut self) -> R<()> {
+        self.io.space_front_view(self.fp);
         if self.fp {
             return self.fp_tick();
         }
@@ -1113,8 +1181,17 @@ impl<'a> Space<'a> {
         self.eoy = self.ey;
         let dx = self.cx - self.ex;
         let dy = self.cy - self.ey;
-        self.ex -= sign(dx);
-        self.ey -= sign(dy);
+        // Half enemy speed: flee and grow only on every other tick. Aim,
+        // stars, laser and alien fire still run every tick.
+        self.enemy_phase = self.enemy_phase.wrapping_add(1);
+        let enemy_step = match self.io.features().enemy_speed {
+            crate::qol::EnemySpeed::Original => true,
+            crate::qol::EnemySpeed::Half => self.enemy_phase % 2 == 0,
+        };
+        if enemy_step {
+            self.ex -= sign(dx);
+            self.ey -= sign(dy);
+        }
         if self.ex > 280 || self.ex < 30 || self.ey > 125 || self.ey < 24 {
             if self.eox != 0 {
                 self.fighter(self.eox, self.eoy, self.esize, false);
@@ -1124,17 +1201,19 @@ impl<'a> Space<'a> {
             if self.eox != 0 {
                 self.fighter(self.eox, self.eoy, self.esize, false);
             }
-            if (self.hyper && self.grow >= 8 - self.speed) || self.grow > 15 {
-                let r = self.rnd(1, (self.speed + 3) * 10);
-                if r > 20 || self.hyper {
-                    self.esize += 1;
+            if enemy_step {
+                if (self.hyper && self.grow >= 8 - self.speed) || self.grow > 15 {
+                    let r = self.rnd(1, (self.speed + 3) * 10);
+                    if r > 20 || self.hyper {
+                        self.esize += 1;
+                    }
+                    if self.esize > 6 {
+                        self.spawn();
+                    }
+                    self.grow = 0;
+                } else {
+                    self.grow += 1;
                 }
-                if self.esize > 6 {
-                    self.spawn();
-                }
-                self.grow = 0;
-            } else {
-                self.grow += 1;
             }
         }
         if self.ex != 0 {
@@ -1174,10 +1253,19 @@ impl<'a> Space<'a> {
             self.println(d::BEEN_HIT);
             self.snd_ev(2, Sfx::Hurt);
             let n = self.slot().shield.min(321);
-            self.use_shield(n);
-            if self.slot().shield == 0 {
-                self.println(d::DRAINED);
-                self.death()?;
+            if self.g.god_mode {
+                // Hits never fall; keep a point of shield so the flight continues.
+                let leave = self.slot().shield.saturating_sub(n).max(1);
+                let take = self.slot().shield - leave;
+                if take > 0 {
+                    self.use_shield(take);
+                }
+            } else {
+                self.use_shield(n);
+                if self.slot().shield == 0 {
+                    self.println(d::DRAINED);
+                    self.death()?;
+                }
             }
         }
         self.prompt();
@@ -1202,27 +1290,44 @@ impl<'a> Space<'a> {
     }
 
     /// `1919`: arrows steer (front view) or turn and thrust (top-down).
+    ///
+    /// With Steady aim on, front-view steering still uses the original
+    /// drift (`dvx`/`dvy`), but a press opposite the current drift on that
+    /// axis stops the sights (both components cleared) and costs no fuel.
+    /// A later press — after the key is released so OS/engine repeats do
+    /// not count — starts that direction at the usual 2 fuel. Perpendicular
+    /// and same-direction presses keep the original replace-and-pay rule.
+    /// Steady aim off is unchanged.
     fn cmd_arrow(&mut self, dir: i16) -> R<()> {
         if !self.fp {
             return self.td_move(dir);
         }
         let name = self.ptr(d::FP_NAMES, dir as usize);
         self.g.term.println(&name);
+        let (nx, ny) = match dir {
+            1 => (-4i16, 0),
+            2 => (4, 0),
+            3 => (0, -4),
+            _ => (0, 4),
+        };
+        if self.io.features().steady_aim {
+            let counter = (nx != 0 && self.dvx == -nx) || (ny != 0 && self.dvy == -ny);
+            if counter {
+                // Free stop: do not check or spend fuel (works at 0/1 fuel).
+                self.dvx = 0;
+                self.dvy = 0;
+                return Ok(());
+            }
+        }
         if self.slot().fuel < 2 {
             self.println(d::NOT_ENOUGH_FUEL);
             return Ok(());
         }
         self.use_fuel(2);
-        match dir {
-            1 => (self.dvx, self.dvy) = (-4, 0),
-            2 => (self.dvx, self.dvy) = (4, 0),
-            3 => (self.dvx, self.dvy) = (0, -4),
-            _ => (self.dvx, self.dvy) = (0, 4),
-        }
+        (self.dvx, self.dvy) = (nx, ny);
         Ok(())
     }
 
-    /// `16d3`: top-down turning, thrust and retro.
     fn td_move(&mut self, dir: i16) -> R<()> {
         let name = self.ptr(d::TD_NAMES, dir as usize);
         self.g.term.println(&name);
@@ -1478,6 +1583,7 @@ impl<'a> Space<'a> {
                 return;
             }
             self.fp = true;
+            self.io.space_front_view(true);
             self.redraw = true;
             let (vx, vy) = (i32::from(self.vx), i32::from(self.vy));
             self.speed = Self::isqrt_up(vx * vx + vy * vy).min(8);
@@ -1494,6 +1600,7 @@ impl<'a> Space<'a> {
                 return;
             }
             self.fp = false;
+            self.io.space_front_view(false);
             self.println(d::EMPTY);
             self.redraw = true;
             let k = (self.speed.wrapping_mul(1000)).wrapping_div(self.entry_speed.max(1));
@@ -1534,16 +1641,26 @@ impl<'a> Space<'a> {
             self.fighter(self.ex, self.ey, self.esize, false);
         }
         let (x0, y0) = (self.wd(d::HIT_X0 + 2 * sz), self.wd(d::HIT_Y0 + 2 * sz));
-        if x0 <= dx && dx <= w && y0 <= dy && dy <= h {
+        // Optional forgiving margin: expand the original hit rectangle only.
+        let m = if self.io.features().wide_hits { 2 } else { 0 };
+        if x0 - m <= dx && dx <= w + m && y0 - m <= dy && dy <= h + m {
             self.snd_ev(2, Sfx::Explosion);
             self.println(d::HIT);
             self.g.add(off::EXPERIENCE, 100);
             self.show_exp();
             self.g.add(off::ENEMIES, 1);
             let kills = self.g.w(off::ENEMIES);
-            if kills == 20 {
+            let need = self.ace_need();
+            self.show_kills();
+            // Match original cadence: ceremony exactly at the need, "still Ace"
+            // after. Session flag blocks a second ceremony when F1 lowers the
+            // need under an existing total (see sync_ace); fire itself keys off
+            // the count so a fresh Space after Ace still says "still a Space Ace".
+            if kills == need {
+                self.ace_done = true;
                 self.space_ace()?;
-            } else if kills > 20 {
+                self.show_kills();
+            } else if kills > need {
                 self.println(d::STILL_ACE);
             }
             self.sec_mut().enemies -= 1;
@@ -1697,6 +1814,9 @@ impl<'a> Space<'a> {
     fn cmd_inform(&mut self) -> R<()> {
         self.puts(d::INFORM);
         self.g.term.sscene = None;
+        if self.io.features().space_map == crate::qol::SpaceMap::Enhanced {
+            return self.cmd_inform_enhanced();
+        }
         self.g.term.boxed(C_BLUE);
         let t = self.s(d::SCAN);
         self.g.term.print_at_attr(5, 4, &t, TEXT);
@@ -1731,36 +1851,248 @@ impl<'a> Space<'a> {
         Ok(())
     }
 
+    /// Clearer sector scan (F1 Space map = Enhanced): same intel as
+    /// [`scan_icon`], with a grid, coordinates, legend and a steady
+    /// "you are here" mark (not only a blink).
+    fn cmd_inform_enhanced(&mut self) -> R<()> {
+        self.draw_enhanced_scan(true);
+        loop {
+            if self.io.poll_now(&self.g.term)?.is_some() {
+                break;
+            }
+            self.delay(7)?;
+            // Soft pulse on the you-marker only; the yellow cell frame stays.
+            self.draw_you_marker(false);
+            if self.io.poll_now(&self.g.term)?.is_some() {
+                break;
+            }
+            self.delay(7)?;
+            self.draw_you_marker(true);
+        }
+        // View redraws via `redraw`; put the status panel back explicitly
+        // (labels and values live below the scan panel we may have cleared).
+        self.g.term.print_at_attr(31, 21, &self.s(d::SHLD), TEXT);
+        self.g.term.print_at_attr(31, 22, &self.s(d::FUEL), TEXT);
+        self.show_shield();
+        self.show_fuel();
+        self.show_exp();
+        self.show_coin();
+        self.show_kills();
+        self.redraw = true;
+        self.println(d::EMPTY);
+        Ok(())
+    }
+
+    fn draw_enhanced_scan(&mut self, with_you: bool) {
+        // Clear above the status panel only (rows 20..24 live at y>=160).
+        // A full-screen fill wiped Shld/Fuel/Exp/Coin and the kill counter.
+        self.g.term.fill(0, 0, 319, 158, BLACK);
+        self.g.term.boxed(C_BLUE);
+        self.g.term.print_at_attr(5, 3, &format!("Galaxy scan  (you: {},{})", self.gx, self.gy), TEXT);
+        {
+            let t = &mut self.g.term;
+            let (ox, oy, cell, grid) = (ENH_SCAN_OX, ENH_SCAN_OY, ENH_SCAN_CELL, ENH_SCAN_GRID);
+            debug_assert!(oy + grid <= 120, "grid must sit above the prompt");
+            for i in 0..=7 {
+                let x = ox + i * cell;
+                let y = oy + i * cell;
+                t.line_u1(ox, y, ox + grid, y, C_FRAME);
+                t.line_u1(x, oy, x, oy + grid, C_FRAME);
+            }
+            for gx in 0..7 {
+                for gy in 0..7 {
+                    let x = ox + gx as i32 * cell + 1;
+                    let y = oy + gy as i32 * cell + 1;
+                    Self::scan_glyph(t, x, y, Self::scan_kind(self.gal[gx][gy]));
+                }
+            }
+            for i in 0..7 {
+                Self::digit(t, ox + i * cell + 3, oy - 7, i as u8, TEXT);
+                Self::digit(t, ox - 7, oy + i * cell + 2, i as u8, TEXT);
+            }
+            // Legend: each icon's top matches the text row's pixel y (row*8).
+            let lx = ox + grid + 8;
+            t.print_at_attr(24, 4, "Legend", TEXT);
+            let entries: [(ScanKind, &str, usize); 4] = [(ScanKind::Enemies, "Fighters", 5), (ScanKind::Star, "Star", 6), (ScanKind::Station, "Station", 7), (ScanKind::Empty, "Empty", 8)];
+            for (kind, name, row) in entries {
+                // +1 matches the font's ink band inside the 8px text row.
+                let ly = (row * 8) as i32 + 1;
+                Self::scan_glyph(t, lx, ly, kind);
+                t.print_at_attr(26, row, name, TEXT);
+            }
+            let you_row = 9;
+            let ly = (you_row * 8) as i32 + 1;
+            // Legend sample: single yellow frame, same band as the label.
+            let (x0, y0, side) = (lx, ly, 7);
+            t.line_u1(x0, y0, x0 + side, y0, C_PICK);
+            t.line_u1(x0 + side, y0, x0 + side, y0 + side, C_PICK);
+            t.line_u1(x0 + side, y0 + side, x0, y0 + side, C_PICK);
+            t.line_u1(x0, y0 + side, x0, y0, C_PICK);
+            t.print_at_attr(26, you_row, "You", TEXT);
+            // Home: cyan corner brackets (sample matches draw_home_marker).
+            let home_row = 10;
+            let hy = (home_row * 8) as i32 + 1;
+            Self::home_corners(t, lx, hy, 7, C_HOME);
+            t.print_at_attr(26, home_row, "Home", TEXT);
+            // Prompt below the grid (grid ends at oy+grid = 110).
+            t.print_at_attr(5, ENH_SCAN_PROMPT_ROW, "Any key: back", TEXT);
+        }
+        self.draw_home_marker();
+        if with_you {
+            self.draw_you_marker(true);
+        }
+    }
+
+    /// Cyan corner brackets on the Earth home sector (always `(HOME_GX, HOME_GY)`).
+    /// Drawn outside the cell by 2 px so the yellow you-frame can sit inside
+    /// when you are home; the center glyph (fighters/star/station) is untouched.
+    fn draw_home_marker(&mut self) {
+        let (ox, oy, cell) = (ENH_SCAN_OX, ENH_SCAN_OY, ENH_SCAN_CELL);
+        let x0 = ox + HOME_GX as i32 * cell;
+        let y0 = oy + HOME_GY as i32 * cell;
+        // Outside you-frame (white at cell edge, yellow at -1): home at -2.
+        let pad = 2;
+        Self::home_corners(&mut self.g.term, x0 - pad, y0 - pad, cell + 2 * pad, C_HOME);
+    }
+
+    fn home_corners(t: &mut crate::term::Term, x0: i32, y0: i32, side: i32, c: u8) {
+        let arm = 3i32;
+        let x1 = x0 + side;
+        let y1 = y0 + side;
+        // Top-left
+        t.line_u1(x0, y0, x0 + arm, y0, c);
+        t.line_u1(x0, y0, x0, y0 + arm, c);
+        // Top-right
+        t.line_u1(x1 - arm, y0, x1, y0, c);
+        t.line_u1(x1, y0, x1, y0 + arm, c);
+        // Bottom-left
+        t.line_u1(x0, y1 - arm, x0, y1, c);
+        t.line_u1(x0, y1, x0 + arm, y1, c);
+        // Bottom-right
+        t.line_u1(x1, y1 - arm, x1, y1, c);
+        t.line_u1(x1 - arm, y1, x1, y1, c);
+    }
+
+    fn draw_you_marker(&mut self, fill_pulse: bool) {
+        let (ox, oy, cell) = (ENH_SCAN_OX, ENH_SCAN_OY, ENH_SCAN_CELL);
+        let x0 = ox + self.gx as i32 * cell;
+        let y0 = oy + self.gy as i32 * cell;
+        let t = &mut self.g.term;
+        // Double frame: white outer, yellow inner — readable on any cell icon.
+        for (d, c) in [(0, C_WHITE), (1, C_PICK)] {
+            let x = x0 - d;
+            let y = y0 - d;
+            let s = cell + 2 * d;
+            t.line_u1(x, y, x + s, y, c);
+            t.line_u1(x + s, y, x + s, y + s, c);
+            t.line_u1(x + s, y + s, x, y + s, c);
+            t.line_u1(x, y + s, x, y, c);
+        }
+        if fill_pulse {
+            for i in 1..cell {
+                t.plot(x0 + i, y0 + 1, C_PICK);
+                t.plot(x0 + i, y0 + cell - 1, C_PICK);
+            }
+        } else {
+            let kind = Self::scan_kind(self.gal[self.gx][self.gy]);
+            for i in 1..cell {
+                t.plot(x0 + i, y0 + 1, BLACK);
+                t.plot(x0 + i, y0 + cell - 1, BLACK);
+            }
+            Self::scan_glyph(t, x0 + 1, y0 + 1, kind);
+            for (d, c) in [(0, C_WHITE), (1, C_PICK)] {
+                let x = x0 - d;
+                let y = y0 - d;
+                let s = cell + 2 * d;
+                t.line_u1(x, y, x + s, y, c);
+                t.line_u1(x + s, y, x + s, y + s, c);
+                t.line_u1(x + s, y + s, x, y + s, c);
+                t.line_u1(x, y + s, x, y, c);
+            }
+        }
+    }
+
+    /// Same priority as the original `142b` scan.
+    fn scan_kind(s: Sector) -> ScanKind {
+        if s.enemies != 0 {
+            ScanKind::Enemies
+        } else if s.stx != 0 {
+            ScanKind::Star
+        } else if s.sx != 0 {
+            ScanKind::Station
+        } else {
+            ScanKind::Empty
+        }
+    }
+
     /// `142b`: one cell of the scan.
     fn scan_icon(&mut self, gx: usize, gy: usize) {
         let x = 10 * gx as i32 + 132;
         let y = 10 * gy as i32 + 46;
-        let s = self.gal[gx][gy];
-        let t = &mut self.g.term;
-        if s.enemies != 0 {
-            for i in 0..2 {
-                t.line_u1(x + i, y, x + i, y + 7, C_WHITE);
-                t.line_u1(x + i + 5, y, x + i + 5, y + 7, C_WHITE);
-                t.line_u1(x, y + 3 + i, x + 6, y + 3 + i, C_WHITE);
+        let kind = Self::scan_kind(self.gal[gx][gy]);
+        Self::scan_glyph(&mut self.g.term, x, y, kind);
+    }
+
+    fn scan_glyph(t: &mut crate::term::Term, x: i32, y: i32, kind: ScanKind) {
+        match kind {
+            ScanKind::Enemies => {
+                for i in 0..2 {
+                    t.line_u1(x + i, y, x + i, y + 7, C_WHITE);
+                    t.line_u1(x + i + 5, y, x + i + 5, y + 7, C_WHITE);
+                    t.line_u1(x, y + 3 + i, x + 6, y + 3 + i, C_WHITE);
+                }
             }
-        } else if s.stx != 0 {
-            for i in 0..2 {
-                t.line_u1(x + 3 + i, y, x + 3 + i, y + 7, C_WHITE);
-                t.line_u1(x, y + 3 + i, x + 7, y + 3 + i, C_WHITE);
+            ScanKind::Star => {
+                for i in 0..2 {
+                    t.line_u1(x + 3 + i, y, x + 3 + i, y + 7, C_WHITE);
+                    t.line_u1(x, y + 3 + i, x + 7, y + 3 + i, C_WHITE);
+                }
             }
-        } else if s.sx != 0 {
-            for i in 0..3 {
-                t.line_u1(x + 3 - i, y + 1 + i, x + 3 + i, y + 1 + i, C_WHITE);
-                t.line_u1(x + 3 - i, y + 6 - i, x + 3 + i, y + 6 - i, C_WHITE);
+            ScanKind::Station => {
+                for i in 0..3 {
+                    t.line_u1(x + 3 - i, y + 1 + i, x + 3 + i, y + 1 + i, C_WHITE);
+                    t.line_u1(x + 3 - i, y + 6 - i, x + 3 + i, y + 6 - i, C_WHITE);
+                }
             }
-        } else {
-            t.plot(x + 1, y + 1, C_WHITE);
-            t.plot(x + 3, y + 3, C_RED);
-            t.plot(x + 6, y + 2, C_BLUE);
-            t.plot(x + 4, y + 5, C_WHITE);
-            t.plot(x + 2, y + 6, C_BLUE);
+            ScanKind::Empty => {
+                t.plot(x + 1, y + 1, C_WHITE);
+                t.plot(x + 3, y + 3, C_RED);
+                t.plot(x + 6, y + 2, C_BLUE);
+                t.plot(x + 4, y + 5, C_WHITE);
+                t.plot(x + 2, y + 6, C_BLUE);
+            }
         }
     }
+
+    /// Tiny 3x5 digit for grid coordinates (0-6).
+    fn digit(t: &mut crate::term::Term, x: i32, y: i32, d: u8, c: u8) {
+        // rows of 3 bits, MSB left; digits 0-6 only.
+        const G: [[u8; 5]; 7] = [
+            [0b111, 0b101, 0b101, 0b101, 0b111], // 0
+            [0b010, 0b110, 0b010, 0b010, 0b111], // 1
+            [0b111, 0b001, 0b111, 0b100, 0b111], // 2
+            [0b111, 0b001, 0b111, 0b001, 0b111], // 3
+            [0b101, 0b101, 0b111, 0b001, 0b001], // 4
+            [0b111, 0b100, 0b111, 0b001, 0b111], // 5
+            [0b111, 0b100, 0b111, 0b101, 0b111], // 6
+        ];
+        let g = G[d as usize % 7];
+        for (row, bits) in g.iter().enumerate() {
+            for col in 0..3 {
+                if bits & (0b100 >> col) != 0 {
+                    t.plot(x + col, y + row as i32, c);
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScanKind {
+    Enemies,
+    Star,
+    Station,
+    Empty,
 }
 
 /// Checks against the user's own files (`U1_GAME_DIR`); skipped without.
@@ -1797,6 +2129,519 @@ mod real_game {
         s.esize = 1;
         s.ex = s.cx - 2;
         s.ey = s.cy - 5;
+    }
+
+    #[test]
+    fn original_aim_unchanged_when_steady_off() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        assert!(!io.qol.steady_aim);
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 500;
+        assert!(s.cmd_arrow(2).is_ok()); // right
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (4, 0, 498));
+        for _ in 0..5 {
+            s.stars();
+        }
+        assert_eq!((s.cx, s.dvx), (159 + 20, 4));
+        // Same direction again still pays (original).
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (4, 496));
+        // Opposite while drifting starts the new direction and pays (no stop).
+        assert!(s.cmd_arrow(1).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (-4, 0, 494));
+    }
+
+    #[test]
+    fn steady_aim_stationary_start_and_left_right_counter_stop() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.steady_aim = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 500;
+        // Stationary start: first press pays and drifts (original).
+        assert!(s.cmd_arrow(1).is_ok()); // left
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (-4, 0, 498));
+        // Counter right: free stop.
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 0, 498), "counter-stop costs no fuel");
+        // Second press right (after a "release" in the real front end): pays and goes right.
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (4, 0, 496));
+        // Counter left: stop again free.
+        assert!(s.cmd_arrow(1).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 0, 496));
+    }
+
+    #[test]
+    fn steady_aim_up_down_counter_stop() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.steady_aim = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 100;
+        assert!(s.cmd_arrow(3).is_ok()); // up
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, -4, 98));
+        assert!(s.cmd_arrow(4).is_ok()); // down counter
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 0, 98));
+        assert!(s.cmd_arrow(4).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 4, 96));
+    }
+
+    #[test]
+    fn steady_aim_counter_stop_works_at_low_fuel() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.steady_aim = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 2;
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (4, 0));
+        // 0 fuel: counter-stop must still work (no fuel check first).
+        assert!(s.cmd_arrow(1).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, 0, 0));
+        // Starting again with 0 fuel still refuses (original).
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (0, 0));
+        s.slot_mut().fuel = 1;
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (0, 1), "1 fuel cannot start");
+        // But can stop if somehow drifting with 1 fuel.
+        s.dvx = -4;
+        assert!(s.cmd_arrow(2).is_ok());
+        assert_eq!((s.dvx, s.slot().fuel), (0, 1));
+    }
+
+    #[test]
+    fn steady_aim_perpendicular_and_same_follow_original() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.steady_aim = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().fuel = 50;
+        assert!(s.cmd_arrow(2).is_ok()); // right
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (4, 0, 48));
+        // Perpendicular up replaces drift and pays (not a free stop).
+        assert!(s.cmd_arrow(3).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, -4, 46));
+        // Same direction again pays and keeps that drift.
+        assert!(s.cmd_arrow(3).is_ok());
+        assert_eq!((s.dvx, s.dvy, s.slot().fuel), (0, -4, 44));
+    }
+
+    #[test]
+    fn enemy_half_speed_flees_slower_without_changing_aim() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut run = |half: bool| {
+            let mut io = ScriptIo::from_text("");
+            if half {
+                io.qol.enemy_speed = crate::qol::EnemySpeed::Half;
+            }
+            let mut s = Space::new(&mut g, &mut io, files.clone());
+            s.make_galaxy();
+            s.fp = true;
+            s.sec_mut().enemies = 3;
+            s.ex = 100;
+            s.ey = 79;
+            s.cx = 159;
+            s.cy = 79;
+            s.esize = 1;
+            s.grow = 0;
+            // Skip stars/retrace/drawing: drive the flee step only.
+            let start = s.ex;
+            for _ in 0..10 {
+                s.enemy_phase = s.enemy_phase.wrapping_add(1);
+                let step = match s.io.features().enemy_speed {
+                    crate::qol::EnemySpeed::Original => true,
+                    crate::qol::EnemySpeed::Half => s.enemy_phase % 2 == 0,
+                };
+                if step {
+                    let dx = s.cx - s.ex;
+                    s.ex -= sign(dx);
+                }
+            }
+            (start, s.ex, s.cx)
+        };
+        let (a0, a1, acx) = run(false);
+        let (b0, b1, bcx) = run(true);
+        assert_eq!(acx, bcx, "sights untouched");
+        assert_eq!(a0 - a1, 10, "original flees 1 px/tick");
+        assert_eq!(b0 - b1, 5, "half flees every other tick");
+    }
+
+    #[test]
+    fn enhanced_space_map_matches_scan_icon_priority_and_marks_you() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("x");
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.gx = 3;
+        s.gy = 3;
+        s.gal[1][1].enemies = 2;
+        s.gal[1][1].stx = 0;
+        s.gal[1][1].sx = 0;
+        s.gal[2][2].enemies = 0;
+        s.gal[2][2].stx = 50;
+        s.gal[2][2].sx = 0;
+        s.gal[4][4].enemies = 0;
+        s.gal[4][4].stx = 0;
+        s.gal[4][4].sx = 50;
+        s.gal[5][5].enemies = 0;
+        s.gal[5][5].stx = 0;
+        s.gal[5][5].sx = 0;
+        assert_eq!(Space::scan_kind(s.gal[1][1]), ScanKind::Enemies);
+        assert_eq!(Space::scan_kind(s.gal[2][2]), ScanKind::Star);
+        assert_eq!(Space::scan_kind(s.gal[4][4]), ScanKind::Station);
+        assert_eq!(Space::scan_kind(s.gal[5][5]), ScanKind::Empty);
+        s.gal[2][2].enemies = 1;
+        assert_eq!(Space::scan_kind(s.gal[2][2]), ScanKind::Enemies);
+        s.draw_enhanced_scan(true);
+        let x0 = ENH_SCAN_OX + 3 * ENH_SCAN_CELL;
+        let y0 = ENH_SCAN_OY + 3 * ENH_SCAN_CELL;
+        assert_eq!(s.g.term.at(x0 as usize, y0 as usize), C_WHITE, "outer you-frame");
+        assert_eq!(s.g.term.at((x0 + 1) as usize, (y0 + 1) as usize), C_PICK, "inner you-frame");
+        assert!(s.cmd_inform().is_ok());
+    }
+
+    #[test]
+    fn enhanced_space_map_layout_fits_panel_without_overlap() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.gx = 3;
+        s.gy = 6; // bottom row — must still be inside the panel
+        s.draw_enhanced_scan(true);
+        let grid_bot = ENH_SCAN_OY + ENH_SCAN_GRID;
+        assert_eq!(grid_bot, 105, "expected compact grid bottom");
+        assert!(grid_bot + 5 <= (ENH_SCAN_PROMPT_ROW * 8) as i32, "clear gap above prompt");
+        // Frame of Term::boxed ends at y=124; prompt glyphs live in row*8..+7.
+        let prompt_bot = (ENH_SCAN_PROMPT_ROW * 8 + 7) as i32;
+        assert!(prompt_bot <= 124, "prompt inside blue frame");
+        // Row-6 you-marker still on-panel.
+        let y0 = ENH_SCAN_OY + 6 * ENH_SCAN_CELL;
+        assert!(y0 + ENH_SCAN_CELL <= 110, "row 6 cell inside panel above prompt");
+        assert_eq!(s.g.term.at((ENH_SCAN_OX + 3 * ENH_SCAN_CELL) as usize, y0 as usize), C_WHITE);
+        // Outside the blue fill, upper margins are black (status y>=160 kept).
+        assert_eq!(s.g.term.at(10, 10), BLACK);
+        assert_eq!(s.g.term.at(300, 100), BLACK);
+        // Legend icon tops align with text rows 5..=8 (pixel y = row*8).
+        let lx = (ENH_SCAN_OX + ENH_SCAN_GRID + 8) as usize;
+        for row in 5..=8 {
+            let y = row * 8;
+            // At least one non-black pixel in the 8x8 glyph box (icons use white/colour).
+            let ink = (0..8).any(|dy| (0..8).any(|dx| s.g.term.at(lx + dx, y + dy) != BLACK));
+            assert!(ink, "legend glyph missing at row {row}");
+        }
+        // Prompt row has text ink; the row above (grid) must not be the prompt string
+        // — check a known letter column for 'A' of "Any" at col 5 = x 40.
+        let py = ENH_SCAN_PROMPT_ROW * 8;
+        let prompt_ink = (40..40 + 8 * 12).any(|x| s.g.term.at(x, py + 2) != BLACK);
+        assert!(prompt_ink, "prompt text missing below grid");
+        // No prompt ink overlapping the last grid row interior.
+        let gy = (ENH_SCAN_OY + 6 * ENH_SCAN_CELL + 4) as usize;
+        let overlap = (40..120).filter(|&x| s.g.term.at(x, gy) == TEXT).count();
+        assert!(overlap < 20, "prompt text must not sit in grid row 6");
+    }
+
+    #[test]
+    fn enhanced_home_marker_distinct_from_you_elsewhere_and_at_home() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        assert_eq!((s.gx, s.gy), (HOME_GX, HOME_GY), "make_galaxy homes at 3,3");
+        // Elsewhere: home corners cyan, you-frame on another cell.
+        s.gx = 1;
+        s.gy = 1;
+        // Put a station in home so we can prove the glyph survives.
+        s.gal[HOME_GX][HOME_GY].enemies = 0;
+        s.gal[HOME_GX][HOME_GY].stx = 0;
+        s.gal[HOME_GX][HOME_GY].sx = 50;
+        s.draw_enhanced_scan(true);
+        let hx0 = ENH_SCAN_OX + HOME_GX as i32 * ENH_SCAN_CELL;
+        let hy0 = ENH_SCAN_OY + HOME_GY as i32 * ENH_SCAN_CELL;
+        let pad = 2;
+        assert_eq!(s.g.term.at((hx0 - pad) as usize, (hy0 - pad) as usize), C_HOME, "home TL corner");
+        assert_eq!(s.g.term.at(hx0 as usize, hy0 as usize), C_FRAME, "cell grid line kept under home pad");
+        // Station glyph ink still in cell interior (scan_glyph at +1,+1).
+        let ink = (1..ENH_SCAN_CELL).any(|dy| {
+            (1..ENH_SCAN_CELL).any(|dx| {
+                let p = s.g.term.at((hx0 + dx) as usize, (hy0 + dy) as usize);
+                p != BLACK && p != C_HOME && p != C_FRAME
+            })
+        });
+        assert!(ink, "home cell content preserved");
+        let yx0 = ENH_SCAN_OX + 1 * ENH_SCAN_CELL;
+        let yy0 = ENH_SCAN_OY + 1 * ENH_SCAN_CELL;
+        assert_eq!(s.g.term.at(yx0 as usize, yy0 as usize), C_WHITE, "you elsewhere");
+        assert_ne!(s.g.term.at(yx0 as usize, yy0 as usize), C_HOME);
+        // Legend lists Home.
+        assert!(s.g.term.row_text(10).contains("Home"), "{}", s.g.term.row_text(10));
+        // At home: both markers present — cyan outer corners + yellow you-frame.
+        s.gx = HOME_GX;
+        s.gy = HOME_GY;
+        s.draw_enhanced_scan(true);
+        assert_eq!(s.g.term.at((hx0 - pad) as usize, (hy0 - pad) as usize), C_HOME, "home corners when you=home");
+        assert_eq!(s.g.term.at(hx0 as usize, hy0 as usize), C_WHITE, "you outer at home");
+        assert_eq!(s.g.term.at((hx0 + 1) as usize, (hy0 + 1) as usize), C_PICK, "you inner at home");
+    }
+
+    #[test]
+    fn enhanced_space_map_screenshot_for_preview() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.gx = 3;
+        s.gy = 3;
+        s.draw_enhanced_scan(true);
+        let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
+        let path = std::path::Path::new("/workspace/u1-shots/space-aim/enhanced-space-map.png");
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let f = std::fs::File::create(path).expect("png");
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut wr = enc.write_header().unwrap();
+        wr.write_image_data(&rgb).unwrap();
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn enhanced_map_preserves_status_panel() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 5);
+        g.rec.set_u16(off::EXPERIENCE, 1111);
+        g.rec.set_u16(off::COIN, 2222);
+        let mut io = ScriptIo::from_text("x"); // close Inform
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.slot_mut().shield = 3333;
+        s.slot_mut().fuel = 4444;
+        s.g.term.print_at_attr(31, 21, &s.s(d::SHLD), TEXT);
+        s.g.term.print_at_attr(31, 22, &s.s(d::FUEL), TEXT);
+        s.show_shield();
+        s.show_fuel();
+        s.show_exp();
+        s.show_coin();
+        s.show_kills();
+        assert!(s.cmd_inform().is_ok());
+        let shld = s.g.term.row_text(21);
+        let fuel = s.g.term.row_text(22);
+        let exp = s.g.term.row_text(23);
+        let coin = s.g.term.row_text(24);
+        let kills = s.g.term.row_text(20);
+        assert!(shld.contains("3333"), "{shld}");
+        assert!(fuel.contains("4444"), "{fuel}");
+        assert!(exp.contains("1111"), "{exp}");
+        assert!(coin.contains("2222"), "{coin}");
+        assert!(kills.contains("K:5/20"), "{kills}"); // default need 20
+        let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
+        let path = std::path::Path::new("/workspace/u1-shots/space-aim/enhanced-map-status.png");
+        let _ = std::fs::create_dir_all(path.parent().unwrap());
+        let f = std::fs::File::create(path).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&rgb).unwrap();
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn kill_counter_hud_fits_status_panel_and_keeps_other_stats() {
+        let Some((mut g, files)) = setup() else { return };
+        // Longest pre-Ace count; high but in-range status values.
+        g.rec.set_u16(off::ENEMIES, 19);
+        g.rec.set_u16(off::EXPERIENCE, 9999);
+        g.rec.set_u16(off::COIN, 9999);
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        s.make_galaxy();
+        s.slot_mut().shield = 9999;
+        s.slot_mut().fuel = 9999;
+        // Space status labels (as main() installs) plus outdoor Exp/Coin.
+        s.g.term.print_at_attr(31, 21, &s.s(d::SHLD), TEXT);
+        s.g.term.print_at_attr(31, 22, &s.s(d::FUEL), TEXT);
+        s.show_shield();
+        s.show_fuel();
+        s.show_exp();
+        s.show_coin();
+        s.show_kills();
+        let kills = s.g.term.row_text(20);
+        let field: String = kills.chars().skip(31).take(8).collect();
+        assert!(field.contains("K:19/20"), "got {field:?} from {kills:?}");
+        assert_eq!(field.chars().count(), 8, "field must be an 8-col slot");
+        // Nothing written at column 39 or wrapped onto row 21.
+        assert_eq!(kills.chars().nth(39).unwrap_or(' '), ' ', "col 39 stays clear");
+        let shld = s.g.term.row_text(21);
+        let fuel = s.g.term.row_text(22);
+        let exp = s.g.term.row_text(23);
+        let coin = s.g.term.row_text(24);
+        assert!(shld.contains("9999"), "shield value visible: {shld:?}");
+        assert!(fuel.contains("9999"), "fuel value visible: {fuel:?}");
+        assert!(exp.contains("9999"), "exp value visible: {exp:?}");
+        assert!(coin.contains("9999"), "coin value visible: {coin:?}");
+        // Ace! fits and stays yellow in-panel.
+        drop(s);
+        g.rec.set_u16(off::ENEMIES, 20);
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.show_kills();
+        let ace: String = s.g.term.row_text(20).chars().skip(31).take(8).collect();
+        assert!(ace.starts_with("Ace!"), "got {ace:?}");
+        let pick = (31 * 8..35 * 8).any(|x| (20 * 8..20 * 8 + 8).any(|y| s.g.term.at(x, y) == C_PICK));
+        assert!(pick, "Ace! in yellow");
+    }
+
+    #[test]
+    fn kill_counter_screenshot_for_preview() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 19);
+        g.rec.set_u16(off::EXPERIENCE, 4321);
+        g.rec.set_u16(off::COIN, 8765);
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.fp = true;
+        s.slot_mut().shield = 2500;
+        s.slot_mut().fuel = 1800;
+        s.draw_all();
+        s.g.term.print_at_attr(31, 21, &s.s(d::SHLD), TEXT);
+        s.g.term.print_at_attr(31, 22, &s.s(d::FUEL), TEXT);
+        // Exp./Coin labels remain from Term::new / restore_labels.
+        s.show_shield();
+        s.show_fuel();
+        s.show_exp();
+        s.show_coin();
+        s.show_kills();
+        let field: String = s.g.term.row_text(20).chars().skip(31).take(8).collect();
+        assert!(field.contains("K:19/20"), "{field}");
+        assert!(s.g.term.row_text(21).contains("2500"), "{}", s.g.term.row_text(21));
+        assert!(s.g.term.row_text(22).contains("1800"), "{}", s.g.term.row_text(22));
+        assert!(s.g.term.row_text(23).contains("4321"), "{}", s.g.term.row_text(23));
+        assert!(s.g.term.row_text(24).contains("8765"), "{}", s.g.term.row_text(24));
+        let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
+        let path = std::path::Path::new("/workspace/u1-shots/space-aim/kill-counter.png");
+        let _ = std::fs::create_dir_all(path.parent().unwrap());
+        let f = std::fs::File::create(path).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&rgb).unwrap();
+        assert!(path.is_file());
+    }
+
+    #[test]
+    fn wide_hits_expands_hit_box_without_changing_damage() {
+        let Some((mut g, files)) = setup() else { return };
+        let mut io = ScriptIo::from_text("");
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        fighter_in_sights(&mut s);
+        s.esize = 1;
+        // Place sights just outside the original box for size 1.
+        let sz = s.esize as usize;
+        let (w, h) = (s.wd(d::HIT_W + 2 * sz), s.wd(d::HIT_H + 2 * sz));
+        let (_x0, y0) = (s.wd(d::HIT_X0 + 2 * sz), s.wd(d::HIT_Y0 + 2 * sz));
+        // dx one past the right edge.
+        s.cx = s.ex + w + 1;
+        s.cy = s.ey + (y0 + h) / 2;
+        s.slot_mut().fuel = 500;
+        let exp = s.g.exp();
+        assert!(s.cmd_fire().is_ok());
+        assert_eq!(s.g.w(off::ENEMIES), 0, "original miss");
+        assert_eq!(s.g.exp(), exp);
+        // Same geometry with wide hits: hit, +100 exp only (no extra damage rules).
+        drop(s);
+        let mut io = ScriptIo::from_text("");
+        io.qol.wide_hits = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        fighter_in_sights(&mut s);
+        s.esize = 1;
+        s.cx = s.ex + w + 1;
+        s.cy = s.ey + (y0 + h) / 2;
+        s.slot_mut().fuel = 500;
+        let exp = s.g.exp();
+        assert!(s.cmd_fire().is_ok());
+        assert_eq!(s.g.w(off::ENEMIES), 1, "forgiving hit");
+        assert_eq!(s.g.exp(), exp + 100);
+    }
+
+    #[test]
+    fn ace_need_five_awards_and_hud_match() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 4);
+        let mut io = ScriptIo::from_text("{w1}");
+        io.qol.space_ace_need = crate::qol::SpaceAceNeed::Five;
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        assert!(!s.ace_done);
+        fighter_in_sights(&mut s);
+        assert!(s.cmd_fire().is_ok());
+        assert_eq!(s.g.w(off::ENEMIES), 5);
+        assert!(s.ace_done);
+        s.show_kills();
+        let field: String = s.g.term.row_text(20).chars().skip(31).take(8).collect();
+        assert!(field.starts_with("Ace!"), "{field}");
+    }
+
+    #[test]
+    fn lowering_ace_need_under_existing_kills_awards_once() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 12);
+        // Session started under need=20 (not yet Ace), then F1 lowers to 10.
+        // Recreate Space after the option change (Io is exclusively borrowed).
+        let mut io = ScriptIo::from_text("{w1}");
+        io.qol.space_ace_need = crate::qol::SpaceAceNeed::Twenty;
+        {
+            let s = Space::new(&mut g, &mut io, files.clone());
+            assert!(!s.ace_done, "12 < 20");
+            assert!(s.g.w(off::ENEMIES) < s.ace_need());
+        }
+        io.qol.space_ace_need = crate::qol::SpaceAceNeed::Ten;
+        let mut s = Space::new(&mut g, &mut io, files.clone());
+        // Mid-session: ace_done still false until sync sees kills >= new need.
+        assert!(!s.ace_done);
+        assert!(s.sync_ace().is_ok());
+        assert!(s.ace_done);
+        assert!(s.sync_ace().is_ok());
+        assert!(s.ace_done);
+        assert_eq!(s.g.w(off::ENEMIES), 12, "save count unchanged");
+    }
+
+    #[test]
+    fn already_ace_on_entry_skips_ceremony() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 25);
+        let mut io = ScriptIo::from_text("");
+        io.qol.space_ace_need = crate::qol::SpaceAceNeed::Twenty;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.ace_done = s.g.w(off::ENEMIES) >= s.ace_need();
+        assert!(s.ace_done);
+        assert!(s.sync_ace().is_ok());
+        assert!(s.ace_done);
     }
 
     #[test]

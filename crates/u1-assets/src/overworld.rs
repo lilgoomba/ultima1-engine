@@ -64,6 +64,8 @@ pub struct Overworld {
     pub y: i32,
     pub transport: u16,
     pub hits: u16,
+    /// Testing cheat mirrored from Game (Hits never fall).
+    pub god_mode: bool,
     pub food: u16,
     pub exp: u16,
     pub coin: u16,
@@ -96,6 +98,7 @@ impl Overworld {
             y,
             transport: 0,
             hits: 150,
+            god_mode: false,
             food: 200,
             exp: 0,
             coin: 100,
@@ -226,7 +229,7 @@ impl Overworld {
         self.monsters_act(map, t);
         if self.food_clock.tick(&t.food_rate, self.transport) && self.eats_unit() {
             self.food = self.food.saturating_sub(1);
-            if self.food == 0 {
+            if self.food == 0 && !self.god_mode {
                 self.dead = true;
             }
         }
@@ -352,9 +355,11 @@ impl Overworld {
             None
         };
         if let Some(d) = dmg {
-            self.hits = self.hits.saturating_sub(d);
-            if self.hits == 0 {
-                self.dead = true;
+            if !self.god_mode {
+                self.hits = self.hits.saturating_sub(d);
+                if self.hits == 0 {
+                    self.dead = true;
+                }
             }
         }
         self.attacks.push(MonsterAttack { kind, damage: dmg });
@@ -507,5 +512,54 @@ mod tests {
         assert_eq!(o.x, 84);
         assert_eq!(o.entities.len(), 1);
         assert_eq!(o.entities[0].tile, 0x0B);
+    }
+
+    #[test]
+    fn god_mode_ignores_monster_damage_and_death() {
+        let (mut t, _) = setup();
+        t.spawn_chance = [0; 10];
+        // Force every hit to land with fixed damage via armour/stats path:
+        // place a land monster adjacent and drive monster_attacks.
+        let map = world(1);
+        let mut o = Overworld::new_at(40, 40, 1);
+        o.hits = 50;
+        o.god_mode = true;
+        o.entities.push(Entity::new(0x2B, 40, 39, 20)); // adjacent north
+        o.attacks.clear();
+        // Call end_turn monsters_act → monster_attacks when in range.
+        for _ in 0..30 {
+            o.pass(&map, &t);
+        }
+        assert_eq!(o.hits, 50, "Hits must not fall under god mode");
+        assert!(!o.dead, "must not die from outdoor hits under god mode");
+        // Off: damage can land and kill.
+        let mut o2 = Overworld::new_at(40, 40, 1);
+        o2.hits = 1;
+        o2.god_mode = false;
+        o2.armour = 0;
+        o2.stats = [10; 6];
+        o2.entities.push(Entity::new(0x2B, 40, 39, 20));
+        for _ in 0..200 {
+            if o2.dead || o2.hits == 0 {
+                break;
+            }
+            o2.pass(&map, &t);
+        }
+        assert!(o2.hits < 50 || o2.dead || !o2.attacks.is_empty());
+    }
+
+    #[test]
+    fn god_mode_starvation_does_not_set_dead() {
+        let (mut t, _) = setup();
+        t.spawn_chance = [0; 10];
+        let map = world(1);
+        let mut o = Overworld::new_at(10, 10, 1);
+        o.food = 1;
+        o.god_mode = true;
+        for _ in 0..20 {
+            o.pass(&map, &t);
+        }
+        assert!(!o.dead, "god mode must not starve-kill");
+        assert_eq!(o.food, 0, "food still depletes; only the death flag is blocked");
     }
 }

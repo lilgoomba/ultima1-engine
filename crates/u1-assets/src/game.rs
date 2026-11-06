@@ -154,10 +154,14 @@ pub struct Game {
     pub mondain: Option<crate::mondain::MondainFiles>,
     /// OUT was restarted (after space); the turn ends without a world turn.
     pub restarted: bool,
+    /// Victory acknowledged: front end returns to title, never saved.
+    pub return_to_title: bool,
     /// Next blinking-cursor frame (`3a50`).
     pub cursor_phase: u8,
     /// What the player has seen, for the automap and the mini-map (SPEC
     /// §23.1); kept beside the save, never in the record.
+    /// Testing cheat (from F1 Controls / config); not in the save.
+    pub god_mode: bool,
     pub explore: crate::explore::Explore,
     /// A save slot was loaded: its explored map, for the next run.
     pub reload_explore: Option<crate::explore::Explore>,
@@ -219,6 +223,8 @@ impl Game {
             space: None,
             mondain: None,
             restarted: false,
+            return_to_title: false,
+            god_mode: false,
             explore: Default::default(),
             reload_explore: None,
             explore_mode: None,
@@ -259,10 +265,21 @@ impl Game {
     }
 
     pub fn set(&mut self, o: usize, v: i16) {
+        if self.god_mode && o == off::HITS && v < self.hits() {
+            return;
+        }
+        self.force_set(o, v);
+    }
+
+    /// Write a record word even under god mode (story death / resurrection).
+    pub fn force_set(&mut self, o: usize, v: i16) {
         self.rec.set_u16(o, v as u16);
     }
 
     pub fn add(&mut self, o: usize, v: i16) {
+        if self.god_mode && o == off::HITS && v < 0 {
+            return;
+        }
         let n = self.w(o).wrapping_add(v);
         self.set(o, n);
     }
@@ -305,6 +322,7 @@ impl Game {
 
     /// Copy the record's values into the outdoor state before it runs.
     pub fn to_ow(&mut self) {
+        self.ow.god_mode = self.god_mode;
         let r = &self.rec;
         self.ow.hits = r.hits();
         self.ow.food = r.food();
@@ -753,7 +771,9 @@ impl Game {
 
     /// One pass of the main loop: prompt, key, command, world turn.
     pub fn turn(&mut self, io: &mut dyn Io) -> IoResult<()> {
-        if self.hits() <= 0 || self.food() <= 0 {
+        self.god_mode = io.features().god_mode;
+        self.ow.god_mode = self.god_mode;
+        if !self.god_mode && (self.hits() <= 0 || self.food() <= 0) {
             self.death(io)?;
         }
         io.music(crate::music::Track::for_mode(self.mode));
@@ -1044,12 +1064,15 @@ impl Game {
 
     /// The time machine with all four gems: OUT hands over to MONDAIN.EXE.
     /// A fallen player comes back through OUT's death and resurrection; a
-    /// victory ends the game (the original waits for a reboot).
+    /// acknowledged victory returns to the desktop title/roster loop.
     fn time_travel(&mut self, io: &mut dyn Io) -> IoResult<()> {
         self.ow.transport = self.transport();
         self.sync_record();
         match crate::mondain::run_mondain(self, io)? {
-            crate::mondain::MondainEnd::Won => self.stopped = Some("Mondain is defeated; the game ends here as in the original"),
+            crate::mondain::MondainEnd::Won => {
+                self.return_to_title = true;
+                self.stopped = Some("victory");
+            }
             crate::mondain::MondainEnd::Died => self.restart_out(),
         }
         Ok(())
@@ -1133,8 +1156,8 @@ impl Game {
             self.dungeon = None;
         }
         self.mode = OUTDOORS;
-        self.set(off::FOOD, 0);
-        self.set(off::HITS, 0);
+        self.force_set(off::FOOD, 0);
+        self.force_set(off::HITS, 0);
         self.set(off::COIN, 0);
         self.show_stats();
         self.term.clear_view();
@@ -1148,7 +1171,7 @@ impl Game {
         io.message_pause(&self.term, 80)?;
         self.sayln(m::RESURRECTION);
         for h in 1..=99 {
-            self.set(off::HITS, h);
+            self.force_set(off::HITS, h);
             self.show_hits();
             io.pause(&self.term, 1)?;
         }
@@ -1372,7 +1395,7 @@ impl Game {
             self.snd(io, 6);
         }
         self.wait(io)?;
-        if io.features().sign_wait {
+        if io.features().message_pauses() {
             self.press_any_key(io)?;
         }
         if l != 6 {
@@ -1382,9 +1405,11 @@ impl Game {
         Ok(())
     }
 
-    /// The engine's "Wait on signs": "Press any key" on the sign's box
-    /// (row 14, below its text) until a fresh key, click or pad button.
-    fn press_any_key(&mut self, io: &mut dyn Io) -> IoResult<()> {
+    /// Shared "Message pauses": "Press any key" on the box (row 14, below
+    /// its text) until a fresh key, click or pad button. Used for signs
+    /// and the princess rescue reward; ignores typed-ahead / held repeats
+    /// via [`Io::any_key`].
+    pub(crate) fn press_any_key(&mut self, io: &mut dyn Io) -> IoResult<()> {
         let (col, row) = (self.term.col, self.term.row);
         self.term.print_at(13, 14, "Press any key");
         io.any_key(&self.term)?;
@@ -1483,6 +1508,9 @@ impl Game {
         }
         self.draw_world_tile(col, row, shot);
         let i = self.ow.entity_at(cell.0, cell.1).expect("monster");
+        let cur = i32::from(self.ow.entities[i].hp);
+        let fatal = self.god_mode || dmg >= cur;
+        let dmg = if fatal { cur.max(dmg) } else { dmg };
         let hp = (self.ow.entities[i].hp as i16).wrapping_sub(dmg as i16);
         self.ow.entities[i].hp = hp as u16;
         self.say(if hp <= 0 { m::KILLED_THE } else { m::HIT_THE });
@@ -1852,5 +1880,102 @@ pub fn vehicle_flip(tile: usize, left: bool) -> bool {
         0x0B..=0x0F => left,
         0x10 => !left,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod god_mode_hits {
+    use super::*;
+    use crate::io::ScriptIo;
+    use crate::save::PlayerRecord;
+
+    fn setup() -> Option<Game> {
+        let g = crate::gamedir::GameDir::new(std::env::var_os("U1_GAME_DIR")?).ok()?;
+        let mode = g.detect_video_mode()?;
+        let exe = g.read("OUT.EXE").ok()?;
+        let assets = Assets {
+            t: crate::rules::ExeTables::from_out_exe(&exe).unwrap(),
+            locs: crate::locations::LocationTable::from_out_exe(&exe).unwrap(),
+            exe: crate::exe::Exe::new(exe).unwrap(),
+            map: g.load_world_map().unwrap(),
+            world_tiles: g.load_world_tiles(mode).unwrap(),
+            town_tiles: g.load_town_tiles(mode).unwrap(),
+            tcd: crate::tcd::TownCastleMaps::parse(&g.read("TCD.BIN").unwrap()).unwrap(),
+            video: mode,
+        };
+        let rec = PlayerRecord::parse(&g.read("PLAYER2.U1").ok()?).unwrap();
+        Some(Game::new(assets, rec, 1))
+    }
+
+    #[test]
+    fn hits_never_fall_via_set_or_add_when_on() {
+        let Some(mut g) = setup() else { return };
+        g.god_mode = true;
+        g.force_set(off::HITS, 200);
+        assert_eq!(g.hits(), 200);
+        g.add(off::HITS, -50);
+        assert_eq!(g.hits(), 200, "add(-) must no-op under god mode");
+        g.set(off::HITS, 1);
+        assert_eq!(g.hits(), 200, "set to a lower Hits must no-op");
+        g.set(off::HITS, 250);
+        assert_eq!(g.hits(), 250, "healing / raise still works");
+        // Story death path still writes zero.
+        g.force_set(off::HITS, 0);
+        assert_eq!(g.hits(), 0);
+    }
+
+    #[test]
+    fn hits_fall_normally_when_off() {
+        let Some(mut g) = setup() else { return };
+        assert!(!g.god_mode);
+        g.force_set(off::HITS, 200);
+        g.add(off::HITS, -50);
+        assert_eq!(g.hits(), 150);
+        g.set(off::HITS, 10);
+        assert_eq!(g.hits(), 10);
+    }
+
+    #[test]
+    fn outdoor_hit_kills_instantly_when_on() {
+        let Some(mut g) = setup() else { return };
+        g.god_mode = true;
+        g.ow.x = 40;
+        g.ow.y = 40;
+        // Monster one cell east of the player, in the shot path.
+        g.ow.entities.clear();
+        g.ow.entities.push(crate::overworld::Entity::new(0x2B, 41, 40, 99));
+        let mut io = ScriptIo::from_text("~".repeat(40).as_str());
+        // hit chance 100, damage 1 — under god mode the 99 hp must still die.
+        g.outdoor_attack(&mut io, crate::rules::Dir::East, 1, 3, 1, 100, crate::game::SHOT_TILE).unwrap();
+        assert!(g.ow.entities.is_empty(), "successful hit must kill under god mode");
+    }
+
+    #[test]
+    fn outdoor_hit_leaves_hp_when_off_and_dmg_low() {
+        let Some(mut g) = setup() else { return };
+        assert!(!g.god_mode);
+        g.ow.x = 40;
+        g.ow.y = 40;
+        g.ow.entities.clear();
+        g.ow.entities.push(crate::overworld::Entity::new(0x2B, 41, 40, 99));
+        let mut io = ScriptIo::from_text("~".repeat(40).as_str());
+        g.outdoor_attack(&mut io, crate::rules::Dir::East, 1, 3, 1, 100, crate::game::SHOT_TILE).unwrap();
+        assert_eq!(g.ow.entities.len(), 1);
+        assert_eq!(g.ow.entities[0].hp, 98);
+    }
+
+    #[test]
+    fn outdoor_miss_still_misses_under_god_mode() {
+        let Some(mut g) = setup() else { return };
+        g.god_mode = true;
+        g.ow.x = 40;
+        g.ow.y = 40;
+        g.ow.entities.clear();
+        g.ow.entities.push(crate::overworld::Entity::new(0x2B, 41, 40, 99));
+        let mut io = ScriptIo::from_text("~".repeat(40).as_str());
+        // hit chance 0 → always miss
+        g.outdoor_attack(&mut io, crate::rules::Dir::East, 1, 3, 50, 0, crate::game::SHOT_TILE).unwrap();
+        assert_eq!(g.ow.entities.len(), 1);
+        assert_eq!(g.ow.entities[0].hp, 99);
     }
 }

@@ -18,8 +18,106 @@ pub enum Scaling {
     Fill,
 }
 
-/// How fast food goes outdoors (an optional engine rule change).
+/// Fighter kills required for Space Ace (HUD, ceremony and princess reward).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpaceAceNeed {
+    /// Original: twentieth kill.
+    #[default]
+    Twenty = 20,
+    Ten = 10,
+    Five = 5,
+}
+
+impl SpaceAceNeed {
+    pub const ALL: [SpaceAceNeed; 3] = [SpaceAceNeed::Twenty, SpaceAceNeed::Ten, SpaceAceNeed::Five];
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            "20" | "twenty" => Some(Self::Twenty),
+            "10" | "ten" => Some(Self::Ten),
+            "5" | "five" => Some(Self::Five),
+            _ => None,
+        }
+    }
+    pub fn get(self) -> u16 {
+        self as u16
+    }
+    /// Shared signed threshold for the save's kill-count word. This option
+    /// changes eligibility, never the persisted count or an earned-state flag.
+    pub fn kills_required(self) -> i16 {
+        self as i16
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Twenty => "20",
+            Self::Ten => "10",
+            Self::Five => "5",
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        self.label()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpaceMap {
+    /// The original sector-scan icons and blinking cell.
+    #[default]
+    Original,
+    /// Larger grid, labels, legend and a steady "you are here" mark.
+    Enhanced,
+}
+
+impl SpaceMap {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "original" | "off" | "classic" => Some(Self::Original),
+            "enhanced" | "on" => Some(Self::Enhanced),
+            _ => None,
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Original => "Original",
+            Self::Enhanced => "Enhanced",
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Original => "original",
+            Self::Enhanced => "enhanced",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EnemySpeed {
+    #[default]
+    /// The original: the fighter flees one pixel per front-view tick.
+    Original,
+    /// Half: the fighter flees and grows every other tick, so it stays
+    /// in view about twice as long. Aim, fire, stars and damage are unchanged.
+    Half,
+}
+
+impl EnemySpeed {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "original" | "full" => Some(Self::Original),
+            "half" => Some(Self::Half),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Original => "Original",
+            Self::Half => "Half",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// How fast food goes outdoors (an optional engine rule change).
 pub enum FoodUse {
     /// The original's rate.
     #[default]
@@ -175,13 +273,40 @@ pub struct Qol {
     /// Ask before closing the window with progress not yet saved (an
     /// engine safety net only: nothing in the game changes).
     pub confirm_quit: bool,
-    /// After a signpost or pillar's text, wait for a key (or click or
-    /// pad button) behind a "Press any key" line instead of only the
-    /// original's short pause.
+    /// After a signpost/pillar or the princess-rescue reward text, wait
+    /// for a key (or click or pad button) behind "Press any key" instead
+    /// of only the original's short pause. Config key remains
+    /// `wait_on_signs` (alias `message_pauses`). Not pubs/shops/etc.
     pub sign_wait: bool,
     /// The original's 500-coin fee for refuelling at a space station; off
     /// refuels free (the suit is still needed).
     pub docking_fee: bool,
+    /// Space front-view: original drift, but an opposite press stops free;
+    /// a later edge press starts that way (see SPEC).
+    pub steady_aim: bool,
+    /// Front-view fighters flee (and grow) at this pace. Aim, fire and
+    /// the rest of the simulation are unchanged.
+    pub enemy_speed: EnemySpeed,
+    /// I (Inform) in space: original sector scan, or a clearer grid.
+    pub space_map: SpaceMap,
+    /// Show space fighter kills toward Space Ace (save 0xA6) on the HUD.
+    pub space_kills: bool,
+    /// Kills required for Space Ace (HUD and award); save still stores the raw count.
+    pub space_ace_need: SpaceAceNeed,
+    /// Expand the front-view fighter hit box by a few pixels (damage unchanged).
+    pub wide_hits: bool,
+    /// Testing cheat: Hits never fall; a successful hit kills instantly.
+    /// Not stored in the save. Off by default.
+    pub god_mode: bool,
+    /// Optional alternative to G in Mondain's lair; not a save field.
+    pub attack_gem: bool,
+}
+
+impl Qol {
+    /// Shared "Message pauses" (signs + princess rescue).
+    pub fn message_pauses(self) -> bool {
+        self.sign_wait
+    }
 }
 
 impl Default for Qol {
@@ -217,6 +342,14 @@ impl Default for Qol {
             confirm_quit: true,
             sign_wait: true,
             docking_fee: true,
+            steady_aim: false,
+            enemy_speed: EnemySpeed::Original,
+            space_map: SpaceMap::Original,
+            space_kills: false,
+            space_ace_need: SpaceAceNeed::Twenty,
+            wide_hits: false,
+            god_mode: false,
+            attack_gem: false,
         }
     }
 }

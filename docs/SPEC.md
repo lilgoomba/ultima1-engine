@@ -925,8 +925,13 @@ from the user's `OUT.EXE` at run time, and maps come from `TCD.BIN`.
   princess follows the player once the castle is roused. Stepping off the
   map with her in one of the eight cells around the player adds 500 coin,
   500 hits and 500 experience [DOSBox, Phase 6]. If at least
-  20 enemy ships were destroyed and experience is 7000 or more, a time
-  machine is also placed on land near the castle.
+  20 enemy ships were destroyed and experience is 7000 or more BEFORE the
+  reward, she says a time machine is far to the northwest. It is placed
+  on a free forest cell in the current land's northwest region: quadrant
+  base (0/83, 0/77) + (R(12,21), R(11,15)), subject to the existing count/
+  object capacity limits. No gem or other quest flag is tested here.
+  Optional Ace need (§23) substitutes its selected 5/10/20 kill threshold;
+  the original/default threshold remains 20.
 
 **Commands inside** (original keys): arrows move; `A` attack; `D` drop
 coin into the pond; `E`; `G` get (in a castle, from the storeroom, only
@@ -1917,7 +1922,11 @@ fighter hit test grows by 2 pixels on each side of the original rectangle;
 experience and damage are unchanged.
 
 **Ace need.** 20 by default (F1 Space, `space_ace_need` = 20|10|5). The HUD
-denominator and the Space Ace award both use this count. The save still
+denominator, Space Ace award and princess time-machine reward all use
+this count. Princess eligibility also requires 7000 XP before her +500
+reward; gems are checked only when boarding the machine. Changing the
+setting recalculates future rescue eligibility from raw kills, not a
+session ceremony flag; previously placed machines are retained. The save still
 stores the raw kill total (0xA6). Ceremony runs once when kills first reach
 the need (or when the need is lowered under an existing total); further
 kills print "still a Space Ace". Entering space already at/above the need

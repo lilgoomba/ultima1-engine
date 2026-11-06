@@ -533,7 +533,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | Enemy speed | Original | | F1 → Space. Half: front-view fighters flee and grow every other tick (about twice as long on screen). Aim, lasers, alien fire chance, stars and damage are unchanged. |
 | Space map | Original | I in space | F1 → Space. Enhanced: a labelled 7×7 grid, legend (fighters / star / station / empty) and a steady yellow “you” frame; same intel as the original scan. |
 | Hit box | off | | F1 → Space. Slightly larger fighter hit box (+2 px); damage unchanged. |
-| Ace need | 20 | | F1 → Space. Kills for Space Ace: 20, 10 or 5 (HUD and award). |
+| Ace need | 20 | | F1 → Space. Kills for Space Ace: 20, 10 or 5 (HUD, award and princess time-machine eligibility; still needs 7000 XP before rescue). |
 | Kill counter | off | | F1 → Space. HUD `K:n/N` or `Ace!` (N from Ace need). |
 | F3 in space | with Help screen | F3 | Lists the space commands; F3 or any key closes it. |
 | Hyperspace pacing | always | H | The "Lightspeed!" star streaks are paced (about 1.7 s per phase) so they are seen, as on the original's PC. |

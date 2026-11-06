@@ -90,7 +90,9 @@ impl Game {
 
     /// `4bd6`: the reward for leading a princess out.
     fn princess_reward(&mut self, io: &mut dyn Io) -> IoResult<()> {
-        let ace = self.w(off::ENEMIES) >= 20 && self.exp() as u16 >= 7000;
+        // Same selected target as space HUD/ceremony; the save contains raw
+        // kills, not a separate permanent Ace flag. Test before +500 XP.
+        let ace = self.w(off::ENEMIES) >= io.features().space_ace_need.kills_required() && self.exp() as u16 >= 7000;
         let o = if ace { 0 } else { 2 };
         self.term.boxed(BLUE);
         self.at(5, 5 + o, m::PRINCESS_SAVED[0]);

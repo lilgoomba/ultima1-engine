@@ -1749,3 +1749,102 @@ fn first_title_is_drawn_before_its_dwell() {
         assert_eq!(io.ticks, [expected]);
     }
 }
+
+/// Rescue through the actual castle-exit path, not a fabricated Ace flag.
+#[test]
+fn princess_time_machine_uses_selected_ace_target_and_pre_reward_xp() {
+    use u1_assets::game::{slot, NPC_PRINCESS};
+    use u1_assets::qol::SpaceAceNeed::{Five, Ten, Twenty};
+    use u1_assets::rules::Dir;
+    for (need, kills, xp, eligible) in [
+        (Five, 5, 7000, true),
+        (Ten, 10, 7000, true),
+        (Twenty, 20, 7000, true),
+        (Five, 4, 9000, false),
+        (Ten, 9, 9000, false),
+        (Twenty, 19, 9000, false),
+        (Twenty, 5, 9000, false),
+        (Five, 5, 6999, false),
+    ] {
+        let Some(mut g) = play(40, 38, "e{w1}") else { return };
+        g.force_set(off::HITS, 150);
+        g.set(off::COIN, 100);
+        g.set(off::EXPERIENCE, xp);
+        g.set(off::ENEMIES, kills);
+        g.set(slot::TIME_MACHINES, 0);
+        // Gems are NOT a condition for this reward (only boarding later).
+        for k in 0..4 {
+            g.set(slot::GEM + 2 * k, 0);
+        }
+        let princess = g.npcs.iter_mut().find(|n| n.tile == NPC_PRINCESS).unwrap();
+        princess.x = 1;
+        princess.y = 9;
+        g.ow.entities.clear();
+        // Guarantee forest placement candidates without editing game files.
+        for y in 11..=15 {
+            for x in 12..=21 {
+                g.a.map.cells[y * 168 + x] = 2;
+            }
+        }
+        let mut io = ScriptIo::from_text("{p}");
+        io.qol.space_ace_need = need;
+        io.qol.sign_wait = true;
+        io.skip_pauses.set(1); // freeze at fresh-key prompt, not message_pause
+        assert!(g.town_move(&mut io, Dir::West).is_err());
+        let text = screen_text(&g);
+        assert!(text.contains("Press any key"), "{text}");
+        assert_eq!(text.contains("ready for time travel"), eligible, "{need:?} kills={kills} xp={xp}: {text}");
+        assert_eq!(text.contains("far to the northwest"), eligible, "{text}");
+        assert_eq!(g.w(slot::TIME_MACHINES), i16::from(eligible));
+        assert_eq!((g.hits(), g.coin(), g.exp()), (650, 600, xp + 500));
+        assert_eq!(g.w(off::ENEMIES), kills, "do not fabricate kills");
+        let machines: Vec<_> = g.ow.entities.iter().filter(|e| e.tile == 0x12).collect();
+        assert_eq!(machines.len(), usize::from(eligible));
+        if let Some(machine) = machines.first() {
+            assert!((12..=21).contains(&machine.x));
+            assert!((11..=15).contains(&machine.y));
+            assert_eq!(g.a.map.cell(machine.x as usize, machine.y as usize), 2);
+            assert_eq!((machine.hp, machine.aux), (0, 2));
+        }
+    }
+}
+
+#[test]
+fn princess_machine_location_follows_land_and_current_setting_without_save_changes() {
+    use u1_assets::game::{slot, NPC_PRINCESS, OUTDOORS};
+    use u1_assets::qol::SpaceAceNeed::{Five, Ten, Twenty};
+    use u1_assets::rules::Dir;
+    let Some(mut g) = play(40, 38, "e{w1}") else { return };
+    g.set(off::ENEMIES, 10);
+    // Raw kills survive raising/lowering need; each rescue uses current need.
+    for (land, need, expected) in [(0, Twenty, 0), (1, Ten, 1), (2, Five, 1), (3, Twenty, 0)] {
+        g.enter_castle(33 + 2 * land);
+        let bx = if land & 1 == 1 { 83 } else { 0 };
+        let by = if land & 2 == 2 { 77 } else { 0 };
+        g.ow.x = bx + 40;
+        g.ow.y = by + 38;
+        g.set(off::EXPERIENCE, 7000);
+        g.set(slot::TIME_MACHINES, 0);
+        g.ow.entities.clear();
+        let princess = g.npcs.iter_mut().find(|n| n.tile == NPC_PRINCESS).unwrap();
+        princess.x = 1;
+        princess.y = 9;
+        for y in by + 11..=by + 15 {
+            for x in bx + 12..=bx + 21 {
+                g.a.map.cells[y as usize * 168 + x as usize] = 2;
+            }
+        }
+        let mut io = ScriptIo::from_text(""); // faithful short pause, no key needed
+        io.qol.space_ace_need = need;
+        g.town_move(&mut io, Dir::West).unwrap();
+        assert_eq!(g.mode, OUTDOORS);
+        assert_eq!(g.w(off::ENEMIES), 10);
+        assert_eq!(g.w(slot::TIME_MACHINES), expected);
+        let machines: Vec<_> = g.ow.entities.iter().filter(|e| e.tile == 0x12).collect();
+        assert_eq!(machines.len(), expected as usize);
+        if let Some(machine) = machines.first() {
+            assert!((bx + 12..=bx + 21).contains(&machine.x));
+            assert!((by + 11..=by + 15).contains(&machine.y));
+        }
+    }
+}

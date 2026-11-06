@@ -18,7 +18,7 @@ pub enum Scaling {
     Fill,
 }
 
-/// Fighter kills required for the Space Ace award (HUD and ceremony).
+/// Fighter kills required for Space Ace (HUD, ceremony and princess reward).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpaceAceNeed {
     /// Original: twentieth kill.
@@ -40,6 +40,11 @@ impl SpaceAceNeed {
     }
     pub fn get(self) -> u16 {
         self as u16
+    }
+    /// Shared signed threshold for the save's kill-count word. This option
+    /// changes eligibility, never the persisted count or an earned-state flag.
+    pub fn kills_required(self) -> i16 {
+        self as i16
     }
     pub fn label(self) -> &'static str {
         match self {

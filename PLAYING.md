@@ -103,8 +103,8 @@ speed Half keeps fighters in view longer; it does not change your aim,
 lasers or damage. Space map Enhanced makes I show a labelled galaxy
 grid with a legend; Original keeps the classic scan. Hit box (off by
 default) slightly enlarges the fighter hit rectangle (+2 px; damage
-unchanged). Ace need is 20, 10 or 5 (default 20) for both the Space Ace
-award and the kill HUD. Kill counter (off by default) shows `K:n/N` on
+unchanged). Ace need is 20, 10 or 5 (default 20) for the Space Ace
+award, kill HUD and princess time-machine reward. Kill counter (off by default) shows `K:n/N` on
 the space status panel, or `Ace!` once you have reached the need.
 
 The game also pauses when its window loses focus. Closing the window with
@@ -151,3 +151,14 @@ Steady aim only suppresses held-arrow repeat in front-view space. Walking
 repeat. F1 Controls Repeat selects the engine timing; when off, keyboard
 OS repeat remains as before. After focus changes, menus or a fresh-key
 message, release and press again to resume held movement.
+
+For the time machine, lead a freed princess out of a castle with her
+adjacent to you (any of the eight neighboring cells). Before her +500 XP
+reward, you need at least 7000 XP and the selected Ace need in actual
+fighter kills. She then says a time machine is far to the northwest and
+places one in the northwest forest region of your current land. Gems
+are not checked at rescue; all four are needed to use the machine later.
+If an earlier rescue only gave 500 of each, enter a castle and rescue a
+princess again after meeting the requirements. Changing Ace need uses
+your existing raw kill count; raising it may make a future rescue
+ineligible but does not remove an already placed machine.

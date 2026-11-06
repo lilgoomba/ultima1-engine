@@ -447,7 +447,7 @@ impl<'a> Space<'a> {
         self.g.term.print_at_attr(31, 20, &out, attr);
     }
     fn ace_need(&self) -> i16 {
-        i16::try_from(self.io.features().space_ace_need.get()).unwrap_or(20)
+        self.io.features().space_ace_need.kills_required()
     }
 
     /// If the Ace threshold was lowered under an existing kill count, award once.

@@ -244,7 +244,7 @@ impl Row {
             Row::SpaceMap => "I in space: original scan icons, or a clearer labelled grid.",
             Row::SpaceKills => "Show fighter kills toward Space Ace on the space HUD.",
             Row::WideHits => "Slightly larger fighter hit box (aim only; damage unchanged).",
-            Row::AceNeed => "Fighter kills required for Space Ace (HUD and award).",
+            Row::AceNeed => "Kills for Ace and princess time-machine eligibility.",
             Row::GodMode => "Testing cheat: Hits stay up; your hits kill at once.",
         }
     }

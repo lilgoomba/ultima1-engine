@@ -1664,14 +1664,17 @@ fn princess_rescue_press_any_key_screenshot() {
     let _ = g.town_move(&mut io, Dir::West);
     assert!(screen_text(&g).contains("Press any key"));
     let rgb = g.term.to_rgb(&u1_assets::palette::EGA_PALETTE, 2);
-    let path = std::path::Path::new("/workspace/u1-shots/space-aim/princess-rescue-pause.png");
-    let _ = std::fs::create_dir_all(path.parent().unwrap());
-    let f = std::fs::File::create(path).unwrap();
+    let dir = std::env::temp_dir().join(format!("u1-screenshot-princess-rescue-pause-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temporary screenshot directory");
+    let path = dir.join("preview.png");
+    let f = std::fs::File::create(&path).unwrap();
     let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
     enc.set_color(png::ColorType::Rgb);
     enc.set_depth(png::BitDepth::Eight);
     enc.write_header().unwrap().write_image_data(&rgb).unwrap();
     assert!(path.is_file());
+    std::fs::remove_file(&path).unwrap();
+    std::fs::remove_dir(&dir).unwrap();
 }
 
 #[test]

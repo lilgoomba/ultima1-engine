@@ -2411,17 +2411,19 @@ mod real_game {
         s.gy = 3;
         s.draw_enhanced_scan(true);
         let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
-        let path = std::path::Path::new("/workspace/u1-shots/space-aim/enhanced-space-map.png");
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let f = std::fs::File::create(path).expect("png");
+        let dir = std::env::temp_dir().join(format!("u1-screenshot-enhanced-space-map-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temporary screenshot directory");
+        let path = dir.join("preview.png");
+        let f = std::fs::File::create(&path).expect("png");
         let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
         let mut wr = enc.write_header().unwrap();
         wr.write_image_data(&rgb).unwrap();
+        drop(wr);
         assert!(path.is_file());
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
     }
 
     #[test]
@@ -2456,14 +2458,17 @@ mod real_game {
         assert!(coin.contains("2222"), "{coin}");
         assert!(kills.contains("K:5/20"), "{kills}"); // default need 20
         let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
-        let path = std::path::Path::new("/workspace/u1-shots/space-aim/enhanced-map-status.png");
-        let _ = std::fs::create_dir_all(path.parent().unwrap());
-        let f = std::fs::File::create(path).unwrap();
+        let dir = std::env::temp_dir().join(format!("u1-screenshot-enhanced-map-status-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temporary screenshot directory");
+        let path = dir.join("preview.png");
+        let f = std::fs::File::create(&path).unwrap();
         let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
         enc.write_header().unwrap().write_image_data(&rgb).unwrap();
         assert!(path.is_file());
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
     }
 
     #[test]
@@ -2543,14 +2548,17 @@ mod real_game {
         assert!(s.g.term.row_text(23).contains("4321"), "{}", s.g.term.row_text(23));
         assert!(s.g.term.row_text(24).contains("8765"), "{}", s.g.term.row_text(24));
         let rgb = s.g.term.to_rgb(&crate::palette::EGA_PALETTE, 2);
-        let path = std::path::Path::new("/workspace/u1-shots/space-aim/kill-counter.png");
-        let _ = std::fs::create_dir_all(path.parent().unwrap());
-        let f = std::fs::File::create(path).unwrap();
+        let dir = std::env::temp_dir().join(format!("u1-screenshot-kill-counter-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temporary screenshot directory");
+        let path = dir.join("preview.png");
+        let f = std::fs::File::create(&path).unwrap();
         let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
         enc.write_header().unwrap().write_image_data(&rgb).unwrap();
         assert!(path.is_file());
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
     }
 
     #[test]

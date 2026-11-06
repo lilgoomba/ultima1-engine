@@ -721,14 +721,17 @@ mod tests {
         // Header tabs mark Interface selected; first Interface row is Slots.
         assert_eq!(m.current(), Row::Slots);
         let rgb = t.to_rgb(&crate::palette::EGA_PALETTE, 2);
-        let path = std::path::Path::new("/workspace/u1-shots/space-aim/f1-interface-via-6.png");
-        let _ = std::fs::create_dir_all(path.parent().unwrap());
-        let f = std::fs::File::create(path).unwrap();
+        let dir = std::env::temp_dir().join(format!("u1-screenshot-f1-interface-via-6-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temporary screenshot directory");
+        let path = dir.join("preview.png");
+        let f = std::fs::File::create(&path).unwrap();
         let mut enc = png::Encoder::new(std::io::BufWriter::new(f), 640, 400);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
         enc.write_header().unwrap().write_image_data(&rgb).unwrap();
         assert!(path.is_file());
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&dir).unwrap();
     }
 
     #[test]

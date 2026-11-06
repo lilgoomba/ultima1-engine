@@ -453,7 +453,7 @@ scaler for one run. Screenshots take `--crt`, `--slots`, `--log` and
 | Confirm | | Ask "Sure? (Y/N)" before selling or dropping anything worth 10/50/100/250/500 or more. |
 | Arrow repeat | | Our own repeat for a held arrow: Repeat delay (250-800 ms, default 250) and Repeat rate (default "Game pace", one step each pass of the main loop as the original moves; or 4-16 a second, never faster than the game pace). Repeats come only at the command prompt, so they never answer a question. "System" is the old behaviour. |
 | Gamepad | | SDL game controllers: d-pad or left stick move; buttons as below. |
-| Music | | Original chiptune music per area (title, overworld, town, castle, dungeon, space, Mondain's lair; victory and death stings), crossfaded on area changes and paused in the F1 menu. Music volume (10-100%, default 50%) is separate from the effects. Independent of the effects mode: it plays with Original beeps or Enhanced sound, following only its own switch and volume; Mute silences everything, music included. See CREDITS. |
+| Music | | Original chiptune music per area (title, overworld, town, castle, dungeon, space, Mondain's lair; ending narrative; victory and death stings), crossfaded on area changes and paused in the F1 menu. Music volume (10-100%, default 50%) is separate from the effects. Independent of the effects mode: it plays with Original beeps or Enhanced sound, following only its own switch and volume; Mute silences everything, music included. See CREDITS. |
 | Smoothing | | How the picture is enlarged: Off (square pixels, as the original), Linear (bilinear filtering) or Pixel art (our own Scale2x/EPX edge-rounding scaler to at least 1280 wide, then a short linear stretch). Works in both EGA and enhanced video, and with whole-pixel scaling (the fit is still whole multiples of the original size). With CRT on, the pixel-art scaler runs first and the scanlines are drawn on its output; any smoothing also filters the CRT texture. Note: Pixel art also rounds the square corners of the screen frames and text-window borders (an effect of the edge-rounding scaler); use Linear or Off for sharp corners. |
 | Keys | Enter | The rebind screen: give any command or screen one extra key. |
 
@@ -620,3 +620,5 @@ GPL-3.0-or-later. See [LICENSE](LICENSE).
 with or endorsed by Electronic Arts or GOG. It ships no game content.
 
 Victory ends with a fresh-key return to the title/roster in the same window, not a reboot prompt. No automatic character-save overwrite.
+
+The ending narrative has its own original 48-second instrumental loop, "Sosaria Restored" (D major, 80 bpm), under the existing Music switch/volume. The short victory fanfare remains unchanged; returning to title crossfades to title music.

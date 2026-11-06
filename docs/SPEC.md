@@ -1807,7 +1807,7 @@ off by default and change nothing when off.
 **Music.** Config `music` (default false) and `music_volume` (10-100,
 default 50), F1 rows Music and Music volume. One track per game mode
 (outdoors, town, castle, dungeon), plus title (intro and character
-creation), space (space flight), lair (Mondain's lair), and two one-shot
+creation), space (space flight), lair (Mondain's lair), ending narrative, and two one-shot
 stings: victory (Mondain defeated) and death. Area changes crossfade over
 one second; a sting replaces the loop and ends in silence until the next
 area. The music pauses while the F1 menu is open. It is independent of the
@@ -2050,3 +2050,13 @@ direction/range and hit-chance checks; a hit destroys the gem in one step
 through the same destruction/explosion/HP-cost routine as G. God mode is
 not required. Neither gem destruction alone nor a missed attack bypasses
 Mondain's existing death/transformation/victory prerequisites.
+
+**Ending narrative music.** `Track::Ending` is a new original CC-BY-SA 4.0
+composition, "Sosaria Restored": D major, 80 bpm, 16 bars in four phrases,
+48 seconds looping. It uses the existing procedural synth (pulse lead,
+plucked figures, pad and triangle bass, no battle drums). The unchanged
+Victory sting starts at the victory panel; Ending is selected once when
+the closing NIF/narrative starts appearing. It persists through the fresh
+key wait. The front-end title program selects Title on return, replacing
+the ending with the normal crossfade. No music option/default changes;
+original/enhanced effects modes are independent, global Mute unchanged.

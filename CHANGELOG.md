@@ -21,6 +21,7 @@ No tagged releases yet; entries are by branch.
   Enhanced map layout tightened so the grid and prompt no longer overlap.
 - Enhanced Inform no longer clears the status panel (Shld/Fuel/Exp/Coin/Kills).
 - F1 page digits derive from page count (1–6 after Space); key 6 opens Interface again.
+- New original ending-narrative music "Sosaria Restored" (48 s loop), using existing Music/volume controls. Other tracks and victory sting unchanged.
 - Ending: fresh-key return to the actual title/roster in-process, replacing the reboot prompt; preserves roster/config and clears transient input/start overrides.
 - Optional Attack gem (F1 Controls, off; `attack_gem`): successful in-range attacks share G's instant gem destruction and explosion cost. No God mode required.
 - Princess time-machine reward honors the selected Ace need (5/10/20), matching space HUD/award; 7000 pre-reward XP and rescue are still required. No save changes.

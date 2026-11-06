@@ -24,12 +24,14 @@ pub enum Track {
     Lair,
     /// Short and played once: Mondain defeated.
     Victory,
+    /// Warm narrative-screen resolution; loops while the ending is read.
+    Ending,
     /// Short and played once: the player has died.
     Death,
 }
 
 impl Track {
-    pub const ALL: [Track; 9] = [Track::Title, Track::Overworld, Track::Town, Track::Castle, Track::Dungeon, Track::Space, Track::Lair, Track::Victory, Track::Death];
+    pub const ALL: [Track; 10] = [Track::Title, Track::Overworld, Track::Town, Track::Castle, Track::Dungeon, Track::Space, Track::Lair, Track::Victory, Track::Ending, Track::Death];
 
     /// Whether it loops (the area tracks) or plays once (the stings).
     pub fn loops(self) -> bool {
@@ -46,6 +48,7 @@ impl Track {
             Track::Space => "space",
             Track::Lair => "lair",
             Track::Victory => "victory",
+            Track::Ending => "ending",
             Track::Death => "death",
         }
     }
@@ -222,7 +225,7 @@ fn style(t: Track) -> Option<Style> {
             bass: 2,
             drums: "k.hsk.hsk.ksk.ss",
         },
-        Track::Victory | Track::Death => return None,
+        Track::Victory | Track::Ending | Track::Death => return None,
     })
 }
 
@@ -250,6 +253,9 @@ fn snap(want: i32, root: i32, scale: &[i32]) -> i32 {
 
 /// The score as notes (times in beats).
 fn score(t: Track) -> (Vec<Note>, f32, f32) {
+    if t == Track::Ending {
+        return ending_score();
+    }
     let n = |at: f32, len: f32, midi: i32, vel: f32, inst: Inst, wet: bool| Note { at, len, midi: midi as f32, vel, inst, wet };
     let mut v = Vec::new();
     let Some(s) = style(t) else {
@@ -376,6 +382,75 @@ fn score(t: Track) -> (Vec<Note>, f32, f32) {
         }
     }
     (v, s.bpm, bars as f32 * 4.0)
+}
+
+/// "Sosaria Restored": an original, hand-written D-major processional.
+/// 16 bars, 4/4, 80 bpm (48 seconds), four four-bar phrases: welcome,
+/// gratitude, remembrance, homecoming. No battle drums. Pulse/flute lead,
+/// harp-like plucks, soft string pad and sustained triangle bass use the
+/// existing synth/echo. The final tonic opens back into the first phrase.
+fn ending_score() -> (Vec<Note>, f32, f32) {
+    let mut notes = Vec::new();
+    let mut add = |at, len, midi: i32, vel, inst, wet| {
+        notes.push(Note { at, len, midi: midi as f32, vel, inst, wet });
+    };
+    let melody = [
+        [74, 78, 81],
+        [83, 81, 79],
+        [76, 78, 81],
+        [78, 76, 74],
+        [78, 81, 86],
+        [85, 83, 81],
+        [79, 83, 81],
+        [76, 73, 76],
+        [83, 81, 78],
+        [79, 78, 74],
+        [78, 76, 74],
+        [73, 76, 81],
+        [79, 83, 86],
+        [85, 81, 76],
+        [78, 76, 74],
+        [74, 74, 74],
+    ];
+    let harmony = [
+        Chord(0, MAJ),
+        Chord(5, MAJ),
+        Chord(7, MAJ),
+        Chord(0, MAJ),
+        Chord(0, MAJ),
+        Chord(9, MIN),
+        Chord(5, MAJ),
+        Chord(7, MAJ),
+        Chord(9, MIN),
+        Chord(5, MAJ),
+        Chord(0, MAJ),
+        Chord(7, MAJ),
+        Chord(5, MAJ),
+        Chord(7, MAJ),
+        Chord(0, MAJ),
+        Chord(0, MAJ),
+    ];
+    for bar in 0..16 {
+        let at = bar as f32 * 4.0;
+        let chord = harmony[bar];
+        let root = 50 + chord.0;
+        let tones = [root, root + chord.1[0], root + chord.1[1]];
+        for pitch in tones {
+            add(at, 3.9, pitch + 12, 0.15, Inst::Pad, true);
+        }
+        add(at, 3.8, root - 12, 0.55, Inst::Bass, false);
+        for (step, degree) in [0, 1, 2, 1, 0, 2, 1, 2].into_iter().enumerate() {
+            add(at + step as f32 * 0.5, 0.43, tones[degree] + 12, 0.22, Inst::Pluck, true);
+        }
+        if bar == 15 {
+            add(at, 3.8, 74, 0.46, Inst::Lead(0.5), true);
+        } else {
+            for (beat, len, pitch) in [(0.0, 0.9, melody[bar][0]), (1.0, 0.9, melody[bar][1]), (2.0, 1.8, melody[bar][2])] {
+                add(at + beat, len, pitch, 0.46, Inst::Lead(0.5), true);
+            }
+        }
+    }
+    (notes, 80.0, 64.0)
 }
 
 fn midi_hz(m: f32) -> f32 {
@@ -606,6 +681,50 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ending_score_duration_determinism_and_optional_preview() {
+        let rendered = render(Track::Ending, 8000);
+        assert_eq!(rendered.len(), 48 * 8000);
+        assert_eq!(rendered, render(Track::Ending, 8000));
+        assert!(Track::Ending.loops());
+        assert_ne!(rendered, render(Track::Victory, 8000));
+        if let Some(path) = std::env::var_os("U1_ENDING_WAV") {
+            let rate = 44_100;
+            let mut preview = render(Track::Ending, rate);
+            preview.truncate(24 * rate as usize);
+            let len = preview.len();
+            let fade = 2 * rate as usize;
+            for (i, sample) in preview[len - fade..].iter_mut().enumerate() {
+                *sample = (i32::from(*sample) * (fade - i) as i32 / fade as i32) as i16;
+            }
+            std::fs::write(path, crate::soundpack::encode_wav(rate, &preview)).unwrap();
+        }
+    }
+
+    #[test]
+    fn ending_player_loops_without_restarting_and_leaves_for_title() {
+        use std::sync::Arc;
+        let mut player = Player::new(10);
+        player.volume = 0.5;
+        player.start(Track::Ending, Arc::new(vec![2000; 5]));
+        for _ in 0..20 {
+            assert_eq!(player.sample(), 1000);
+        }
+        player.start(Track::Ending, Arc::new(vec![7; 5]));
+        assert_eq!(player.sample(), 1000, "no refresh of existing loop");
+        player.start(Track::Title, Arc::new(vec![-2000; 50]));
+        for _ in 0..20 {
+            player.sample();
+        }
+        assert_eq!(player.current(), Some(Track::Title));
+        assert_eq!(player.sample(), -1000, "ending no longer leaks after crossfade");
+        player.stop();
+        for _ in 0..20 {
+            player.sample();
+        }
+        assert_eq!(player.sample(), 0);
+    }
 
     #[test]
     fn every_track_renders_and_loops_or_ends() {

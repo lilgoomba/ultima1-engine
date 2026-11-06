@@ -1153,6 +1153,7 @@ impl Lair<'_> {
                 self.delay(1)?;
             }
         }
+        self.io.music(crate::music::Track::Ending);
         self.g.term.fill(0, 0, 319, 199, BLACK);
         // The original plots the picture a pixel at a time, so it appears
         // from the top down; in DOSBox at cycles=20000 (the speed the poll
@@ -1274,6 +1275,15 @@ mod interaction_tests {
             assert_eq!(matches!(result, Err(Stop::Halt)), !acknowledge);
             assert!(l.g.term.row_text(24).contains("Press any key to return to title screen"));
             assert!(!l.g.term.row_text(24).contains("ALT"));
+            drop(l);
+            assert_eq!(io.music, [crate::music::Track::Victory, crate::music::Track::Ending], "one context change, not every animation/poll");
+            if acknowledge {
+                let dir = crate::gamedir::GameDir::new(std::env::var_os("U1_GAME_DIR").unwrap()).unwrap();
+                let mut mode = g.a.video;
+                io.keys = ScriptIo::from_text("{p}").keys;
+                assert!(crate::front::intro(&dir, &mut mode, &mut io).unwrap().is_some());
+                assert_eq!(io.music, [crate::music::Track::Victory, crate::music::Track::Ending, crate::music::Track::Title]);
+            }
         }
     }
 }

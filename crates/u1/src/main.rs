@@ -857,10 +857,7 @@ impl SdlIo {
     /// renderer the first time it is needed, then play, crossfade or stop.
     fn sync_music(&mut self) {
         let Some((dev, rate)) = &mut self.audio else { return };
-        let want = self.area.filter(|_| self.qol.music && self.sound != SoundMode::Mute);
-        let master = f32::from(self.qol.master_volume) / 100.0;
-        let vol = f32::from(self.qol.music_volume) / 100.0 * master;
-        let sfx = f32::from(self.qol.sfx_volume) / 100.0 * master;
+        let (want, vol, sfx) = music_mix_settings(self.area, self.qol, self.sound);
         let have = dev.lock().music.current();
         if want.is_some() && !self.rendering {
             self.rendering = true;
@@ -2215,6 +2212,13 @@ fn main() -> ExitCode {
     }
 }
 
+/// Same policy for every area, including the ending. Original/Enhanced
+/// effects don't choose the music; Mute retains its existing global meaning.
+fn music_mix_settings(area: Option<Track>, q: Qol, sound: SoundMode) -> (Option<Track>, f32, f32) {
+    let master = f32::from(q.master_volume) / 100.0;
+    (area.filter(|_| q.music && sound != SoundMode::Mute), f32::from(q.music_volume) / 100.0 * master, f32::from(q.sfx_volume) / 100.0 * master)
+}
+
 /// Start elapsed time only after successful presentation. Pump throughout;
 /// keys cannot shorten the dwell. Modal window time extends the deadline.
 fn presented_dwell<T>(state: &mut T, duration: Duration, mut present: impl FnMut(&mut T) -> IoResult<()>, mut pump: impl FnMut(&mut T) -> IoResult<Duration>) -> IoResult<()> {
@@ -2387,6 +2391,24 @@ fn keycode_to_byte(k: sdl2::keyboard::Keycode, shift: bool) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ending_music_respects_switch_volume_and_independent_effects() {
+        let mut q = Qol::default();
+        assert_eq!(music_mix_settings(Some(Track::Ending), q, SoundMode::Enhanced).0, None);
+        q.music = true;
+        q.music_volume = 40;
+        q.master_volume = 50;
+        q.sfx_volume = 0;
+        for sound in [SoundMode::Original, SoundMode::Enhanced] {
+            let (want, music, effects) = music_mix_settings(Some(Track::Ending), q, sound);
+            assert_eq!(want, Some(Track::Ending));
+            assert!((music - 0.2).abs() < 0.0001);
+            assert_eq!(effects, 0.0);
+            assert_eq!(music_mix_settings(Some(Track::Title), q, sound).0, Some(Track::Title));
+        }
+        assert_eq!(music_mix_settings(Some(Track::Ending), q, SoundMode::Mute).0, None);
+    }
+
     #[test]
     fn victory_title_return_drops_start_overrides_not_roster_or_preferences() {
         let mut a = Args { save: Some("old-save.U1".into()), player: Some(3), pos: Some((99, 99)), roster: Some("my-roster".into()), gen: true, ..Default::default() };

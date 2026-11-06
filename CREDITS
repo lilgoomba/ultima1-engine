@@ -20,7 +20,7 @@ Enhanced sound effects (assets/enhanced/sounds/)
   (assets/enhanced/sounds/CREDITS).
 
 Music (crates/u1-assets/src/music.rs)
-  Nine original compositions written for this project and kept as compact
+  Ten original compositions written for this project and kept as compact
   scores, rendered at run time by the engine's own chiptune synthesizer;
   no recordings, samples or third-party music. Compositions CC-BY-SA 4.0,
   "ultima1-engine contributors"; the synthesizer code GPL-3.0-or-later.
@@ -32,6 +32,7 @@ Music (crates/u1-assets/src/music.rs)
     space       "Among the Stars"        E dorian, 100 bpm, loops
     lair        "Mondain's Lair"         B harmonic minor, 144 bpm, loops
     victory     "The Gem Shattered"      sting, once
+    ending      "Sosaria Restored"       D major, 80 bpm, 16 bars / 48 s, loops
     death       "Fallen"                 sting, once
 
 Pixel-art smoothing (crates/u1-assets/src/qol.rs, scale2x / pixel_art)

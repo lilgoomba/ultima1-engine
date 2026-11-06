@@ -176,3 +176,10 @@ Use a fresh press (held/queued keys do not dismiss it). The same window
 returns to the actual title sequence and character roster; you can
 create a new character or select an existing one. This does not save
 over your character or change your options. No reboot keys are needed.
+
+With Music enabled, the closing narrative plays "Sosaria Restored", a
+new original 48-second instrumental loop (warm lead, plucked arpeggios,
+strings and bass). The victory fanfare remains separate. Music stays
+off by default and follows its own volume/master volume; effects may be
+Original or Enhanced independently (global Mute still silences all).
+Returning to title changes to the title theme through the usual crossfade.

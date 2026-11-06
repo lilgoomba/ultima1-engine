@@ -19,6 +19,7 @@ No tagged releases yet; entries are by branch.
 - Kill counter option (F1 → Controls, `space_kills`, off by default):
   space HUD shows fighter kills toward Space Ace (`K:n/20`, then `Ace!`).
   Enhanced map layout tightened so the grid and prompt no longer overlap.
+- Enhanced Inform no longer clears the status panel (Shld/Fuel/Exp/Coin/Kills).
 
 ## polish-1 (merged into main)
 

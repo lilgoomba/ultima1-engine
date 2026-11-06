@@ -1918,15 +1918,24 @@ impl<'a> Space<'a> {
             self.delay(7)?;
             self.draw_you_marker(true);
         }
+        // View redraws via `redraw`; put the status panel back explicitly
+        // (labels and values live below the scan panel we may have cleared).
+        self.g.term.print_at_attr(31, 21, &self.s(d::SHLD), TEXT);
+        self.g.term.print_at_attr(31, 22, &self.s(d::FUEL), TEXT);
+        self.show_shield();
+        self.show_fuel();
+        self.show_exp();
+        self.show_coin();
+        self.show_kills();
         self.redraw = true;
         self.println(d::EMPTY);
         Ok(())
     }
 
     fn draw_enhanced_scan(&mut self, with_you: bool) {
-        // Clear the whole screen so a Term dump (and a busy overworld
-        // behind the box) does not show through the panel margins.
-        self.g.term.fill(0, 0, 319, 199, BLACK);
+        // Clear above the status panel only (rows 20..24 live at y>=160).
+        // A full-screen fill wiped Shld/Fuel/Exp/Coin and the kill counter.
+        self.g.term.fill(0, 0, 319, 158, BLACK);
         self.g.term.boxed(C_BLUE);
         self.g.term.print_at_attr(5, 3, &format!("Galaxy scan  (you: {},{})", self.gx, self.gy), TEXT);
         {
@@ -2308,9 +2317,9 @@ mod real_game {
         let y0 = ENH_SCAN_OY + 6 * ENH_SCAN_CELL;
         assert!(y0 + ENH_SCAN_CELL <= 110, "row 6 cell inside panel above prompt");
         assert_eq!(s.g.term.at((ENH_SCAN_OX + 3 * ENH_SCAN_CELL) as usize, y0 as usize), C_WHITE);
-        // Outside the blue fill, margins are black (clean dump, no overworld).
+        // Outside the blue fill, upper margins are black (status y>=160 kept).
         assert_eq!(s.g.term.at(10, 10), BLACK);
-        assert_eq!(s.g.term.at(300, 180), BLACK);
+        assert_eq!(s.g.term.at(300, 100), BLACK);
         // Legend icon tops align with text rows 5..=8 (pixel y = row*8).
         let lx = (ENH_SCAN_OX + ENH_SCAN_GRID + 8) as usize;
         for row in 5..=8 {
@@ -2352,6 +2361,39 @@ mod real_game {
         let mut wr = enc.write_header().unwrap();
         wr.write_image_data(&rgb).unwrap();
         assert!(path.is_file());
+    }
+
+    #[test]
+    fn enhanced_map_preserves_status_panel() {
+        let Some((mut g, files)) = setup() else { return };
+        g.rec.set_u16(off::ENEMIES, 5);
+        g.rec.set_u16(off::EXPERIENCE, 1111);
+        g.rec.set_u16(off::COIN, 2222);
+        let mut io = ScriptIo::from_text("x"); // close Inform
+        io.qol.space_map = crate::qol::SpaceMap::Enhanced;
+        io.qol.space_kills = true;
+        let mut s = Space::new(&mut g, &mut io, files);
+        s.make_galaxy();
+        s.slot_mut().shield = 3333;
+        s.slot_mut().fuel = 4444;
+        s.g.term.print_at_attr(31, 21, &s.s(d::SHLD), TEXT);
+        s.g.term.print_at_attr(31, 22, &s.s(d::FUEL), TEXT);
+        s.show_shield();
+        s.show_fuel();
+        s.show_exp();
+        s.show_coin();
+        s.show_kills();
+        assert!(s.cmd_inform().is_ok());
+        let shld = s.g.term.row_text(21);
+        let fuel = s.g.term.row_text(22);
+        let exp = s.g.term.row_text(23);
+        let coin = s.g.term.row_text(24);
+        let kills = s.g.term.row_text(20);
+        assert!(shld.contains("3333"), "{shld}");
+        assert!(fuel.contains("4444"), "{fuel}");
+        assert!(exp.contains("1111"), "{exp}");
+        assert!(coin.contains("2222"), "{coin}");
+        assert!(kills.contains("K:5/20"), "{kills}");
     }
 
     #[test]

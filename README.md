@@ -526,7 +526,7 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | Vehicle facing | **on** | | Enhanced video: vehicles face the way they last moved sideways; kept in the `.map` sidecar. |
 | `--save FILE` fix | | | Saves back to FILE (or to the roster when FILE is in the game folder), no longer over roster character 1. `--player N` plays character N. |
 | God mode | **off** | | F1 → Controls (testing). Hits never fall; a successful hit kills instantly. Not in the save. CLI `--god` / `--features god`. |
-| Message pauses | **on** | | Signs and princess rescue stay up behind "Press any key" (`wait_on_signs`; alias `message_pauses`). Also keeps the character-menu "Please wait whilst / thy game loads" screen readable (~2.5 s) after it is drawn; off: original short pause (~0.5 s). Not pubs/shops. |
+| Message pauses | **on** | | First title: 2.8-second timed dwell (off: previous timing).  Signs and princess rescue stay up behind "Press any key" (`wait_on_signs`; alias `message_pauses`). Off: original short pause. Not pubs/shops. |
 | Docking fees | **on** | | The original's 500-coin refuel fee at a space station. Off: refuelling is free (the suit rule is unchanged). |
 | Ship choice by arrow | always | Left/Right, Enter/Space, pad A | At "Choose thy ship", the arrows pick the port on that side (shown in yellow); digits still work. |
 | Steady aim | off | arrows / pad (front view in space) | F1 → Space. Front-view uses the original drift, but an opposite press stops free (no fuel); after release, press again to go that way (2 fuel). OS/engine arrow-repeat is ignored so a hold cannot re-bill. Off: original drift unchanged. |

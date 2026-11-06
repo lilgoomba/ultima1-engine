@@ -82,9 +82,7 @@ never reads:
 
 A sign post's or pillar's words, and the princess rescue reward text,
 stay up until you press a key (F1, Gameplay: Message pauses; on by
-default, off for the original's short pause). The same option also keeps
-the "Please wait whilst thy game loads" screen up for about 2½ seconds
-after it appears (off: the original short flash). Pubs, shops and the time
+default, off for the original's short pause). Pubs, shops and the time
 machine are unchanged.
 
 Docking at a space station costs 500 coin to refuel, as in the original;
@@ -145,3 +143,5 @@ Please report problems as [GitHub issues](https://github.com/lilgoomba/ultima1-e
 which release, your distribution, what you did and what happened; the
 terminal output (start the AppImage from a terminal) and a screenshot
 help. Please do not attach game files or saves made from them.
+
+First title (Ultima I / The First Age of Darkness / 1987 copyright): Message pauses on keeps it visible for 2.8 seconds after presentation, unaffected by turbo/message speed or held keys; no key required. Off retains the previous engine 12-tick pause. Character-menu loading retains its 9-tick pause.

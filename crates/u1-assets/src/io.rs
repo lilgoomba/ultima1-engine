@@ -155,6 +155,12 @@ pub trait Io {
         self.pause(t, ticks)
     }
 
+    /// Present the first title, then dwell without a key-to-skip requirement.
+    /// SDL uses a real-time, unscaled minimum when Message pauses is on.
+    fn title_dwell(&mut self, t: &Term) -> IoResult<()> {
+        self.pause(t, if self.features().message_pauses() { 51 } else { 12 })
+    }
+
     /// Space flight starts (`true`) or ends (the fast space setting).
     fn in_space(&mut self, _on: bool) {}
 
@@ -214,8 +220,6 @@ pub struct ScriptIo {
     /// Let this many timed `pause`/`message_pause` calls ignore a leading
     /// `{p}` so a later [`any_key`] can freeze on "Press any key".
     pub skip_pauses: std::cell::Cell<u32>,
-    /// Each `pause` call's tick count (start-up dwell tests).
-    pub pause_ticks: std::cell::RefCell<Vec<u32>>,
 }
 
 impl ScriptIo {
@@ -319,8 +323,7 @@ impl Io for ScriptIo {
         1
     }
 
-    fn pause(&mut self, _t: &Term, ticks: u32) -> IoResult<()> {
-        self.pause_ticks.borrow_mut().push(ticks);
+    fn pause(&mut self, _t: &Term, _ticks: u32) -> IoResult<()> {
         if self.keys.front() == Some(&keys::STOP_AT_PAUSE) {
             let n = self.skip_pauses.get();
             if n > 0 {

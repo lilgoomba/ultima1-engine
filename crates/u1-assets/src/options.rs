@@ -237,7 +237,7 @@ impl Row {
             Row::MasterVolume => "How loud everything is.",
             Row::SfxVolume => "How loud the beeps and sound effects are.",
             Row::ConfirmQuit => "Ask before closing the window with progress not saved.",
-            Row::MessagePauses => "Signs, princess rescue, and a longer Please-wait load dwell.",
+            Row::MessagePauses => "Signs/princess: key; first title: longer timed dwell.",
             Row::DockFee => "Pay 500 coin to refuel at a station.",
             Row::SteadyAim => "Original drift; opposite press stops free. Press again to go that way.",
             Row::EnemySpeed => "How fast front-view fighters flee and grow (aim and fire unchanged).",

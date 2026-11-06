@@ -57,6 +57,7 @@ type Overlay<'a> = (&'a Term, (usize, usize, usize, usize));
 const POLL: Duration = Duration::from_micros(130_000);
 /// One tick of the PC timer.
 const TICK: Duration = Duration::from_micros(54_925);
+const FIRST_TITLE_DWELL: Duration = Duration::from_millis(2800);
 /// Start of a new character (verified from GEN.EXE).
 const DEFAULT_POS: (u16, u16) = (49, 40);
 
@@ -531,15 +532,11 @@ fn front(a: &Args, mode: VideoMode, io: &mut dyn Io) -> Result<Front, String> {
     let (t, r) = u1_assets::front::character(&g, &dir, &mut mode, &mut clock, io).map_err(|e| e.to_string())?;
     match r {
         Ok(GenEnd::Play { path, .. }) => {
-            // The "please wait" screen is already drawn. Dwell after that
-            // presentation (Message pauses on → readable ~2.5 s; off →
-            // original ~0.5 s). Flush after so a held roster key cannot
-            // bleed into the game; the window keeps pumping during pause.
-            let ticks = u1_assets::gen::loading_dwell_ticks(io.features().message_pauses());
-            if io.pause(&t, ticks).is_err() && io.display_restart().is_none() {
+            // The "please wait" screen stays up while the game loads (a
+            // display chosen now is the game's).
+            if io.pause(&t, 9).is_err() && io.display_restart().is_none() {
                 return Ok(Front::Halted(t));
             }
-            io.flush();
             Ok(Front::Play(path))
         }
         Err(Halt) => Ok(Front::Halted(t)),
@@ -1286,15 +1283,17 @@ impl SdlIo {
     /// Wait `d`, with the windows and restarts handled (time in a window
     /// does not count).
     fn wait(&mut self, t: &Term, d: Duration) -> IoResult<()> {
-        self.present(t)?;
-        let mut end = Instant::now() + d;
-        while Instant::now() < end {
-            self.pump()?;
-            end += self.menu(t)?;
-            self.restarting()?;
-            std::thread::sleep(Duration::from_millis(2).min(d));
-        }
-        Ok(())
+        presented_dwell(
+            self,
+            d,
+            |io| io.present(t),
+            |io| {
+                io.pump()?;
+                let extra = io.menu(t)?;
+                io.restarting()?;
+                Ok(extra)
+            },
+        )
     }
 
     /// Hold the game for a speaker effect of `len` (the original's CPU
@@ -1336,6 +1335,20 @@ impl Io for SdlIo {
 
     fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
         self.wait(t, self.scaled(TICK * ticks, Wait::Poll))
+    }
+
+    fn title_dwell(&mut self, t: &Term) -> IoResult<()> {
+        if !self.qol.message_pauses() {
+            return self.pause(t, 12);
+        }
+        // wait() presents before starting its clock, pumps Quit/menu events,
+        // and never consumes a key as a skip. Ignore turbo/message speed.
+        self.pending.clear();
+        self.held.clear();
+        let result = self.wait(t, FIRST_TITLE_DWELL);
+        self.pending.clear();
+        self.held.clear();
+        result
     }
 
     fn message_pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
@@ -2138,6 +2151,18 @@ fn main() -> ExitCode {
     }
 }
 
+/// Start elapsed time only after successful presentation. Pump throughout;
+/// keys cannot shorten the dwell. Modal window time extends the deadline.
+fn presented_dwell<T>(state: &mut T, duration: Duration, mut present: impl FnMut(&mut T) -> IoResult<()>, mut pump: impl FnMut(&mut T) -> IoResult<Duration>) -> IoResult<()> {
+    present(state)?;
+    let mut end = Instant::now() + duration;
+    while Instant::now() < end {
+        end += pump(state)?;
+        std::thread::sleep(Duration::from_millis(2).min(end.saturating_duration_since(Instant::now())));
+    }
+    Ok(())
+}
+
 /// Wraps long lines at spaces for the error window, which (on X11) does not
 /// wrap by itself. Leading indentation is kept on the continuation lines.
 fn wrap_text(text: &str, width: usize) -> String {
@@ -2275,14 +2300,34 @@ fn keycode_to_byte(k: sdl2::keyboard::Keycode, shift: bool) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn loading_dwell_follows_message_pauses() {
-        use u1_assets::gen::{loading_dwell_ticks, LOADING_DWELL_ORIGINAL, LOADING_DWELL_READABLE};
-        assert_eq!(loading_dwell_ticks(false), LOADING_DWELL_ORIGINAL);
-        assert_eq!(loading_dwell_ticks(true), LOADING_DWELL_READABLE);
-        // Wall time of the readable dwell (engine tick = 54_925 µs).
-        let ms = u64::from(LOADING_DWELL_READABLE) * 54_925 / 1_000;
-        assert!((2_400..=2_700).contains(&ms), "{ms} ms");
-        assert!(LOADING_DWELL_READABLE > LOADING_DWELL_ORIGINAL);
+    fn dwell_times_from_presentation_and_pumps_until_elapsed() {
+        let mut shown = None;
+        let mut polls = 0;
+        super::presented_dwell(
+            &mut (false, 0usize),
+            FIRST_TITLE_DWELL,
+            |state| {
+                state.0 = true;
+                shown = Some(std::time::Instant::now());
+                Ok(())
+            },
+            |state| {
+                assert!(state.0);
+                state.1 += 1;
+                polls += 1;
+                Ok(std::time::Duration::ZERO)
+            },
+        )
+        .unwrap();
+        assert!(shown.unwrap().elapsed() >= FIRST_TITLE_DWELL);
+        assert!(polls > 2);
+    }
+
+    #[test]
+    fn dwell_close_event_aborts_promptly() {
+        let start = std::time::Instant::now();
+        assert!(super::presented_dwell(&mut (), std::time::Duration::from_millis(2800), |_| Ok(()), |_| Err(u1_assets::io::Halt)).is_err());
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 
     #[test]

@@ -1715,36 +1715,37 @@ fn jester_song_is_rare_not_guaranteed() {
 }
 
 #[test]
-fn loading_please_wait_dwell_follows_message_pauses() {
+fn first_title_is_drawn_before_its_dwell() {
     use u1_assets::gamedir::VideoMode;
-    use u1_assets::gen::{loading_dwell_ticks, GenEnd, LOADING_DWELL_ORIGINAL, LOADING_DWELL_READABLE};
+    use u1_assets::title::{blank_term, run_intro, TitleFiles};
+    struct FirstPause {
+        on: bool,
+        ticks: Vec<u32>,
+    }
+    impl Io for FirstPause {
+        fn poll(&mut self, _: &Term) -> IoResult<Option<u8>> {
+            panic!("title must dwell before key/fast-forward polling")
+        }
+        fn pause(&mut self, t: &Term, ticks: u32) -> IoResult<()> {
+            let text = (0..25).map(|r| t.row_text(r)).collect::<Vec<_>>().join(" ");
+            assert!(text.contains("Ultima I"));
+            assert!(text.contains("First Age of Darkness"));
+            assert!(text.contains("1987"));
+            self.ticks.push(ticks);
+            Err(Halt) // stop before any later intro pages
+        }
+        fn wait_or_key(&mut self, _: &Term) -> IoResult<()> {
+            panic!("no key-to-dismiss")
+        }
+        fn features(&self) -> u1_assets::qol::Qol {
+            u1_assets::qol::Qol { sign_wait: self.on, ..Default::default() }
+        }
+    }
     let Some(g) = game_dir() else { return };
-    let create_and_select = format!("a{{right}}{{right}}{{down}}{{right}}{{up}}{}{{down}}{} baaHero{{enter}}yb1", "{right}".repeat(13), "{right}".repeat(14));
-    for (pauses, expect) in [(false, LOADING_DWELL_ORIGINAL), (true, LOADING_DWELL_READABLE)] {
-        assert_eq!(loading_dwell_ticks(pauses), expect);
-        let dir = std::env::temp_dir().join(format!("u1-load-dwell-{}-{pauses}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        // Character program draws the loading screen and returns Play; the
-        // binary front() then dwells. Mirror that dwell here.
-        let mut io = ScriptIo::from_text(&create_and_select);
-        io.qol.sign_wait = pauses;
-        let mut mode = VideoMode::Ega;
-        let mut clock = || -> Box<dyn FnMut() -> [u8; 4]> { Box::new(|| [0, 0, 0, 0]) };
-        let (t, r) = u1_assets::front::character(&g, &dir, &mut mode, &mut clock, &mut io).unwrap();
-        let Ok(GenEnd::Play { .. }) = r else { panic!("pauses={pauses}: {r:?}") };
-        let loading = (0..25usize).any(|row| {
-            let line = t.row_text(row);
-            line.contains("Please wait") || line.contains("thy game loads")
-        });
-        assert!(loading, "pauses={pauses}: loading text missing on screen");
-        let ticks = loading_dwell_ticks(io.features().message_pauses());
-        assert_eq!(ticks, expect);
-        let before = io.pause_ticks.borrow().len();
-        io.pause(&t, ticks).expect("dwell must not require a key");
-        let recorded = io.pause_ticks.borrow().clone();
-        assert_eq!(recorded.len(), before + 1);
-        assert_eq!(recorded[before], expect, "pauses={pauses} recorded={recorded:?}");
-        let _ = std::fs::remove_dir_all(&dir);
+    let f = TitleFiles::load(&g, VideoMode::Ega).unwrap();
+    for (on, expected) in [(false, 12), (true, 51)] {
+        let mut io = FirstPause { on, ticks: vec![] };
+        assert!(run_intro(&f, &mut blank_term(&f), &mut io).is_err());
+        assert_eq!(io.ticks, [expected]);
     }
 }

@@ -20,6 +20,10 @@
 //! which must not be the game directory). Tables, names and messages come
 //! from the user's OUT.EXE at start-up.
 
+// The Windows portable build opens no console window; errors still show in
+// a message box (see `main`). Other builds are unchanged.
+#![cfg_attr(all(windows, feature = "windows-gui"), windows_subsystem = "windows")]
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
@@ -40,6 +44,7 @@ use u1_assets::msglog::{self, LogView};
 use u1_assets::music::{self, Track};
 use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
 use u1_assets::palette::{cga_as_16, Rgb, CGA_PALETTE_1_LOW, EGA_PALETTE};
+use u1_assets::portable::Portable;
 use u1_assets::qol::{self, Qol, Wait};
 use u1_assets::rules::ExeTables;
 use u1_assets::save::PlayerRecord;
@@ -64,7 +69,7 @@ const DEFAULT_POS: (u16, u16) = (49, 40);
 const USAGE: &str = "usage: u1 [--game-dir <path>] [--player N | --save FILE | --pos X,Y]
           [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
           [--video original|enhanced] [--sound original|enhanced|mute] [--pack DIR]
-          [--fullscreen] [--crt] [--smoothing off|linear|pixel-art]
+          [--fullscreen] [--crt] [--portable] [--smoothing off|linear|pixel-art]
           [--screenshot out.png [--keys TEXT] [--counter N] [--options | --slots | --log] [--crt]]
 
 Without --game-dir the game files are looked for in $U1_GAME_DIR, the
@@ -110,7 +115,11 @@ dropping things worth a set amount, extra keys for the commands (F1, Keys),
 a gamepad and the engine's own arrow repeat. --features LIST turns some on
 for one run (automap, minimap, character, help, hints, confirm=N, repeat,
 gamepad, god); --god is the testing cheat (Hits never fall; hits kill). In screenshots --keys may hold {map} {help}, and --rebind
-draws the key window.";
+draws the key window.
+--portable (or a portable.txt file beside the program, as in the Windows
+portable ZIP) keeps config.toml and saves\\ beside the program, uses its
+assets\\enhanced and looks for the game files only there (or in its ULTIMA1
+folder), --game-dir and $U1_GAME_DIR still apply.";
 
 #[derive(Clone)]
 struct Args {
@@ -152,6 +161,8 @@ struct Args {
     rebind_shot: bool,
     /// Screenshots: the options menu's chosen row.
     menu_row: usize,
+    /// Portable mode (`portable.txt` beside the program, or `--portable`).
+    portable: Option<Portable>,
 }
 
 impl Default for Args {
@@ -187,6 +198,7 @@ impl Default for Args {
             features: Qol::default(),
             rebind_shot: false,
             menu_row: 0,
+            portable: None,
         }
     }
 }
@@ -194,6 +206,7 @@ impl Default for Args {
 fn parse_args() -> Result<Args, String> {
     let mut a = Args::default();
     let mut have_dir = false;
+    let mut forced_portable = false;
     let mut it = std::env::args().skip(1);
     while let Some(k) = it.next() {
         let mut v = || it.next().ok_or(format!("{k} needs a value"));
@@ -266,6 +279,7 @@ fn parse_args() -> Result<Args, String> {
             "--rebind" => a.rebind_shot = true,
             "--menu-row" => a.menu_row = v()?.parse().map_err(|_| "bad --menu-row")?,
             "--pack" => a.pack = Some(v()?.into()),
+            "--portable" => forced_portable = true,
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
             // The original's only video choice: a first argument starting
@@ -277,6 +291,7 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other}\n{USAGE}")),
         }
     }
+    a.portable = Portable::for_this_program(forced_portable);
     let interactive = a.screenshot.is_none() && a.sound_demo.is_none() && a.music_demo.is_none();
     let start_given = a.player.is_some() || a.save.is_some() || a.pos.is_some() || a.intro || a.gen;
     if interactive && !start_given {
@@ -284,10 +299,10 @@ fn parse_args() -> Result<Args, String> {
     }
     if a.sound_demo.is_none() && a.music_demo.is_none() {
         let front = a.intro || a.gen;
-        a.game_dir = if have_dir { gamedir::locate(std::slice::from_ref(&a.game_dir), front)? } else { gamedir::locate(&game_dir_candidates(), front)? };
+        a.game_dir = if have_dir { gamedir::locate(std::slice::from_ref(&a.game_dir), front)? } else { gamedir::locate(&game_dir_candidates(a.portable.as_ref()), front)? };
     }
     if interactive && a.save_to.is_none() && a.roster.is_none() {
-        if let Some(d) = gamedir::data_dir().map(|d| d.join("saves")) {
+        if let Some(d) = saves_dir(a.portable.as_ref()) {
             let new = !d.is_dir();
             std::fs::create_dir_all(&d).map_err(|e| format!("{}: {e}", d.display()))?;
             // The first time, the characters that came with the game join
@@ -321,11 +336,13 @@ fn parse_args() -> Result<Args, String> {
 }
 
 /// Where to look for the game files without `--game-dir`, in order.
-fn game_dir_candidates() -> Vec<PathBuf> {
-    let mut v = Vec::new();
-    if let Some(d) = std::env::var_os("U1_GAME_DIR").filter(|d| !d.is_empty()) {
-        v.push(PathBuf::from(d));
+fn game_dir_candidates(portable: Option<&Portable>) -> Vec<PathBuf> {
+    let env_dir = std::env::var_os("U1_GAME_DIR").filter(|d| !d.is_empty()).map(PathBuf::from);
+    if let Some(p) = portable {
+        return p.game_dir_candidates(env_dir);
     }
+    let mut v = Vec::new();
+    v.extend(env_dir);
     // The AppImage's own path (the program inside runs from a temporary mount).
     if let Some(d) = std::env::var_os("APPIMAGE").map(PathBuf::from).and_then(|p| p.parent().map(Path::to_path_buf)) {
         v.push(d);
@@ -342,6 +359,23 @@ fn game_dir_candidates() -> Vec<PathBuf> {
         v.push(d.join("game"));
     }
     v
+}
+
+/// Characters and saves: beside the program when portable, else the
+/// user's data folder.
+fn saves_dir(portable: Option<&Portable>) -> Option<PathBuf> {
+    match portable {
+        Some(p) => Some(p.saves_dir()),
+        None => gamedir::data_dir().map(|d| d.join("saves")),
+    }
+}
+
+/// The configuration file: beside the program when portable.
+fn config_path(portable: Option<&Portable>) -> Option<PathBuf> {
+    match portable {
+        Some(p) => Some(p.config_path()),
+        None => config::default_path(),
+    }
 }
 
 /// `--features LIST`: turn the named §23 features on in `q`.
@@ -375,7 +409,11 @@ fn pack_dir(a: &Args) -> Option<PathBuf> {
     match &a.pack {
         Some(d) => Some(d.clone()),
         None => {
-            let mut c = vec![PathBuf::from("assets/enhanced")];
+            let mut c = Vec::new();
+            if let Some(p) = &a.portable {
+                c.push(p.pack_dir());
+            }
+            c.push(PathBuf::from("assets/enhanced"));
             // Installed (the AppImage): <prefix>/share/ultima1-engine/enhanced
             // beside <prefix>/bin.
             if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
@@ -1994,7 +2032,7 @@ fn available(a: &Args) -> [bool; 4] {
 
 fn play(a: &Args) -> Result<(), String> {
     // The command line, then the config file, then the defaults.
-    let cfg_path = config::default_path();
+    let cfg_path = config_path(a.portable.as_ref());
     let cfg = cfg_path.as_deref().map(Config::load).unwrap_or_default();
     for w in &cfg.warnings {
         eprintln!("config: {w}");

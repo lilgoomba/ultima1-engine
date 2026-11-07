@@ -32,6 +32,7 @@ pub mod music;
 pub mod options;
 pub mod overworld;
 pub mod palette;
+pub mod portable;
 pub mod qol;
 pub mod render;
 pub mod rng;

@@ -1,0 +1,60 @@
+# The portable Windows ZIP (packaging/windows): built, smoke-tested and
+# uploaded as an Actions artifact. Started by hand, or by pushes to the
+# windows-portable branch. Nothing is published as a release.
+name: Windows portable
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [windows-portable]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  portable:
+    name: Windows portable ZIP (build, test, package, smoke test)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        env:
+          CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+        run: cargo test --workspace --locked --features u1/bundled
+      - name: Package
+        shell: pwsh
+        run: packaging/windows/build-portable.ps1
+      - name: Smoke test the extracted ZIP from another folder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $x = Join-Path $env:RUNNER_TEMP 'unzipped'
+          Expand-Archive build/ultima1-engine-windows-portable-x86_64.zip $x
+          $dir = Join-Path $x 'ultima1-engine-windows-portable-x86_64'
+          $exe = Join-Path $dir 'ultima1-engine.exe'
+          $cwd = Join-Path $env:RUNNER_TEMP 'elsewhere'
+          New-Item -ItemType Directory $cwd | Out-Null
+          $before = Get-ChildItem -Recurse -File $dir | ForEach-Object FullName
+          # Starts, finds the pack beside it (not via the current folder) and
+          # renders the enhanced sounds.
+          $p = Start-Process $exe -ArgumentList '--sound-demo', (Join-Path $cwd 'demo.wav'), '--portable' -WorkingDirectory $cwd -Wait -PassThru -RedirectStandardError (Join-Path $cwd 'err.txt') -RedirectStandardOutput (Join-Path $cwd 'out.txt')
+          Get-Content (Join-Path $cwd 'err.txt')
+          if ($p.ExitCode -ne 0) { throw "sound demo exited $($p.ExitCode)" }
+          if ((Get-Item (Join-Path $cwd 'demo.wav')).Length -lt 100000) { throw 'demo too short' }
+          if (Select-String -Quiet 'no enhanced sounds found' (Join-Path $cwd 'err.txt')) { throw 'pack beside the program not found' }
+          # Without game files it reports the program's own folders, never the current one.
+          $p = Start-Process $exe -ArgumentList '--screenshot', (Join-Path $cwd 's.png') -WorkingDirectory $cwd -Wait -PassThru -RedirectStandardError (Join-Path $cwd 'err2.txt') -RedirectStandardOutput (Join-Path $cwd 'out2.txt')
+          $e = Get-Content -Raw (Join-Path $cwd 'err2.txt')
+          Write-Host $e
+          if ($p.ExitCode -eq 0) { throw 'started without game files' }
+          if ($e -notmatch [regex]::Escape($dir)) { throw 'did not look beside the program' }
+          if ($e -match [regex]::Escape($cwd)) { throw 'looked in the current folder' }
+          $after = Get-ChildItem -Recurse -File $dir | ForEach-Object FullName
+          if (Compare-Object $before $after) { throw 'the package folder changed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ultima1-engine-windows-portable-x86_64
+          path: build/ultima1-engine-windows-portable-x86_64/
+          if-no-files-found: error

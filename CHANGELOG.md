@@ -2,6 +2,18 @@
 
 No tagged releases yet; entries are by branch.
 
+## windows-portable (unreleased)
+
+### Added
+- Portable Windows x86-64 ZIP (`packaging/windows`, Actions workflow
+  `windows-portable.yml`): extract anywhere, put your own game files in
+  `ULTIMA1`, run `ultima1-engine.exe`; no installer or admin rights.
+- Portable mode (`portable.txt` beside the program, or `--portable`):
+  `config.toml` and `saves/` beside the program, its own
+  `assets/enhanced`, game files looked for only there. Without the marker
+  every path is unchanged.
+- `u1/windows-gui` Cargo feature (used by the ZIP only): no console window.
+
 ## space-aim-alt (unreleased)
 
 ### Added

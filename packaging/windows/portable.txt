@@ -1,0 +1,1 @@
+This file makes the Ultima I engine keep config.toml and saves\ in this folder.

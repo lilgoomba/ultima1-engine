@@ -135,6 +135,12 @@ facing, saved beside your save in its `.map` file).
   fine. `--save-to FILE` or `--roster DIR` choose another place.
 * **Settings**: `~/.config/ultima1-engine/config.toml`
   (`$XDG_CONFIG_HOME/ultima1-engine/config.toml`), written by the F1 menu.
+* **Portable mode** (the Windows portable ZIP, or `--portable`): when a
+  `portable.txt` file sits beside the program, settings are `config.toml`
+  and saves are `saves/` in the program's own folder (not the current
+  folder), the enhanced assets are its `assets/enhanced`, and the game files
+  are looked for only in that folder or its `ULTIMA1` folder (`--game-dir`
+  and `$U1_GAME_DIR` still work). The game files are still only read.
 
 ## 6. Bugs
 

@@ -16,6 +16,8 @@ libc = "0.2"
 # Build SDL2 from source (needs cmake and a C compiler) and link it in, for
 # platforms without a system SDL2 (the Windows CI job).
 bundled = ["sdl2/bundled", "sdl2/static-link"]
+# No console window on Windows (the portable ZIP); no effect elsewhere.
+windows-gui = []
 
 [lints]
 workspace = true

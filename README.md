@@ -605,6 +605,14 @@ and attaches it to a GitHub release (a pre-release for tags such as
 `v0.1.0-alpha.1`); started by hand it only keeps the AppImage as a run
 artifact.
 
+`.github/workflows/windows-portable.yml` (started by hand, or by pushes
+to the `windows-portable` branch) runs the tests on Windows, builds
+`packaging/windows/build-portable.ps1`'s portable ZIP (release build with
+SDL2 linked in, no console window, enhanced assets, licences, a
+`portable.txt` marker and an empty `ULTIMA1` folder; no game files), checks
+its DLL imports, smoke-tests it from another folder and keeps it as a run
+artifact. Nothing is published.
+
 ## Roadmap
 
 1. Finish the remaining open items in SPEC §11.

@@ -1,5 +1,10 @@
 # Quality-of-life roadmap
 
+Historical enhancement plan and implementation record. The current desktop
+beta prioritizes bug fixes; see [BETA.md](BETA.md). Later approved defaults
+(such as save slots and Confirm quit) supersede the early all-off policy
+below; use [PLAYING.md](../PLAYING.md) for current behavior.
+
 Approved, **optional** features. Built (branch qol-review-1, SPEC §22):
 fullscreen, whole-number scaling, CRT filter, save slots, quicksave and
 quickload, the scrollback message log, turbo, adjustable message delay,

@@ -56,4 +56,5 @@ star field well below, and the five sounds for events the original leaves
 silent at 0.3; the overworld footsteps at about 0.12-0.15.
 
 Any event without a file here plays the original effect instead.
-Music: none (the original has none; no music is added).
+Music is not in these WAV files. Optional original compositions are
+rendered by the engine at run time; see the root CREDITS file.

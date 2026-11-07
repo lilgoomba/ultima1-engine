@@ -1,26 +1,27 @@
-# Playing Ultima I with ultima1-engine (Linux AppImage)
+# Playing Ultima I with ultima1-engine
 
-ultima1-engine plays *Ultima I* (the 1986 MS-DOS release) from **your own
-copy** of the game: the CD-ROM *Ultima 1-3* collection or the GOG.com
-edition. The AppImage contains the engine, SDL2 and our own CC-BY-SA
-enhanced art and sounds, but **no game files**.
+**0.1.0-beta.1**, not a final release. This unofficial engine uses your own
+MS-DOS Ultima I remake files (the tested CD-ROM DOS set). No original game
+files are distributed. See the [README](README.md) for supported files,
+ready-to-run downloads, and compatibility limits.
 
 ## 1. Download
 
-Take `ultima1-engine-<version>-x86_64.AppImage` from the
-[Releases page](https://github.com/lilgoomba/ultima1-engine/releases) and
-make it executable:
+Use the [beta release](https://github.com/lilgoomba/ultima1-engine/releases/tag/v0.1.0-beta.1):
 
-```sh
-chmod +x ultima1-engine-*-x86_64.AppImage
-./ultima1-engine-*-x86_64.AppImage
-```
+- **Windows x64:** extract the entire portable ZIP to a writable folder,
+  copy your own game files into `ULTIMA1/`, and double-click
+  `ultima1-engine.exe`. Keep the DLL, assets and `portable.txt` beside it.
+  Settings (`config.toml`) and `saves/` stay beside the program. No installer
+  or admin access is needed; the unsigned exe may trigger SmartScreen.
+- **Linux x86-64:** make the AppImage executable and run it next to your
+  `ULTIMA1/` folder, or pass `--game-dir`. Requires glibc 2.35+. SDL2 is
+  bundled; if FUSE 2 is unavailable, use `--appimage-extract-and-run`.
+  See [Linux setup](README.md#linux-put-the-appimage-next-to-your-ultima1-folder)
+  for commands, extraction and dependencies.
 
-It is built on Ubuntu 22.04 and runs on x86-64 distributions with glibc
-2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, and so on). AppImages
-need FUSE 2 (`libfuse2`, called `libfuse2t64` on Ubuntu 24.04). Without it,
-run it as `./ultima1-engine-*.AppImage --appimage-extract-and-run` or set
-`APPIMAGE_EXTRACT_AND_RUN=1`.
+Back up settings/saves before updates. For existing Windows portable
+installs, preserve `config.toml`, `saves/` and your own `ULTIMA1/` folder.
 
 ## 2. Point it at your game files
 
@@ -29,11 +30,13 @@ The engine needs these files from your copy (any case of the name):
 tiles (`EGATILES.BIN` + `EGATOWN.BIN`, or the `T1K` or `CGA` pair). The rest
 (`SPACE.EXE`, `MONDAIN.EXE`, `NIF.BIN`, `CASTLE.16`/`CASTLE.4`, the
 `*FIGHT`, `*SPACE` and `*MOND` tiles) are used when present; copy the whole
-folder to be safe. On the CD and in GOG installs they are in a folder
-called `ULTIMA1`.
+folder to be safe. The tested CD-ROM set is in `ULTIMA1`. GOG installation layouts may vary;
+locate the actual DOS files, not the shortcut or installer.
 
-Any one of these works. Without `--game-dir` the places are tried in this
-order and the first complete one wins:
+For a normal Linux run the places below are tried in order. `--game-dir`
+explicitly selects a folder; otherwise the first complete one wins. Windows
+portable mode uses only `U1_GAME_DIR` (if set) and the exe folder / its
+`ULTIMA1` subfolder, not the working folder or per-user game directory:
 
 1. `--game-dir /path/to/ULTIMA1` on the command line.
 2. `$U1_GAME_DIR`.
@@ -152,10 +155,11 @@ facing, saved beside your save in its `.map` file).
 ## 6. Bugs
 
 Please report problems as [GitHub issues](https://github.com/lilgoomba/ultima1-engine/issues)
-(the repository is private: ask for access if you cannot open it). Say
-which release, your distribution, what you did and what happened; the
-terminal output (start the AppImage from a terminal) and a screenshot
-help. Please do not attach game files or saves made from them.
+Say which release, OS/distribution, settings, what you did and what
+happened. Terminal output (start the AppImage from a terminal) can help;
+review logs for personal details before posting. Do not attach original
+game files, extracted assets, ROM fonts, original-art screenshots or
+saves made from the supplied game data.
 
 First title (Ultima I / The First Age of Darkness / 1987 copyright): Message pauses on keeps it visible for 2.8 seconds after presentation, unaffected by turbo/message speed or held keys; no key required. Off retains the previous engine 12-tick pause. Character-menu loading retains its 9-tick pause.
 

@@ -1,7 +1,7 @@
 # 0.1.0-beta.1
 
 Beta targets: Linux x86-64 (AppImage, glibc 2.35 or newer) and Windows x64
-(portable ZIP; Windows 10/11 recommended). The repository remains private.
+(portable ZIP; Windows 10/11 recommended). This is a prerelease, not a final release.
 Beta work prioritizes bug fixes and regressions rather than new features.
 
 ## Try it
@@ -21,7 +21,8 @@ Beta work prioritizes bug fixes and regressions rather than new features.
   after loading/saving. Y quits without saving; N/Enter/fresh Escape
   cancels. Q outdoors and explicit save slots retain their existing saves.
 - Report the version, OS, steps to reproduce, settings, and (if useful) a
-  copy of the affected save. The program supports --version; BUILD-INFO.txt
+  description of the affected save (do not post original game files or
+  saves made from the supplied game data). The program supports --version; BUILD-INFO.txt
   in each package records the version and exact source commit.
 
 ## Tested and remaining gaps

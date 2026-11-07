@@ -1,9 +1,11 @@
 ultima1-engine - credits
 ========================
 
-Ultima I is by Richard Garriott / Origin Systems. This engine contains none
-of the original game's files, art, text or sound; it reads them from your
-own copy at run time.
+Ultima I is by Richard Garriott / Origin Systems. This distribution includes no
+original game files or extracted game art/audio. Runtime game data and text
+are read from your own copy; the spec and tests contain behavioral examples.
+This project is independent and is not endorsed by the original creators.
+Third-party components keep their own licenses (THIRD_PARTY.md).
 
 Engine code
   The ultima1-engine contributors, 2026. GPL-3.0-or-later (LICENSE).

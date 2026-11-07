@@ -1,6 +1,49 @@
 # Changelog
 
-No tagged releases yet; entries are by branch.
+## 0.1.0-beta.1
+
+First Linux x86-64 / Windows x64 beta, promoting the reviewed space-aim-alt
+and windows-portable work. Beta development focuses on bugs and regressions.
+
+- Portable Windows ZIP with bundled runtime, executable-folder settings
+  and saves; Linux AppImage. Both require your own Ultima I files.
+- Space combat options, enhanced galaxy map and Space Ace target/HUD;
+  princess eligibility follows the selected target.
+- Testing-only God mode (off), optional gem attacks, readable title/message
+  pauses, jester reward hardening and normal movement key repeat fixes.
+- Safe victory return to title and the original ending composition
+  "Sosaria Restored"; Escape quits through the shared confirmation flow.
+- Confirm quit always asks during gameplay when enabled, even just after
+  loading/saving; queued/repeated keys cannot answer the new question.
+- Save record format and faithful defaults preserved. No original game
+  assets or reference implementation code are distributed.
+
+Testing scope and caveats: see docs/BETA.md. Historical branch entries below.
+
+
+## windows-portable (unreleased)
+
+### Fixed
+- Confirm quit now always asks during gameplay when on (including a
+  freshly loaded or saved game), for Escape and window close. Previously
+  the input-derived "dirty" flag could bypass it. No save is written.
+- Keys queued in the batch that opened the quit question, and held-key
+  repeats while it is open, cannot answer it accidentally.
+
+
+### Added
+- Portable Windows x86-64 ZIP (`packaging/windows`, Actions workflow
+  `windows-portable.yml`): extract anywhere, put your own game files in
+  `ULTIMA1`, run `ultima1-engine.exe`; no installer or admin rights.
+- Portable mode (`portable.txt` beside the program, or `--portable`):
+  `config.toml` and `saves/` beside the program, its own
+  `assets/enhanced`, game files looked for only there. Without the marker
+  every path is unchanged.
+- `u1/windows-gui` Cargo feature (used by the ZIP only): no console window.
+- Escape at the command prompt (outdoors, towns, castles, dungeons, space,
+  Mondain's lair) quits like closing the window: the Confirm quit question
+  when progress is unsaved (on by default), nothing saved. Windows and
+  other prompts keep Escape as close/cancel.
 
 ## space-aim-alt (unreleased)
 

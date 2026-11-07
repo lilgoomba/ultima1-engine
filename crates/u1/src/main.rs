@@ -20,6 +20,10 @@
 //! which must not be the game directory). Tables, names and messages come
 //! from the user's OUT.EXE at start-up.
 
+// The Windows portable build opens no console window; errors still show in
+// a message box (see `main`). Other builds are unchanged.
+#![cfg_attr(all(windows, feature = "windows-gui"), windows_subsystem = "windows")]
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
@@ -40,6 +44,7 @@ use u1_assets::msglog::{self, LogView};
 use u1_assets::music::{self, Track};
 use u1_assets::options::{self as opts, MenuKey, OptionsMenu, PANEL};
 use u1_assets::palette::{cga_as_16, Rgb, CGA_PALETTE_1_LOW, EGA_PALETTE};
+use u1_assets::portable::Portable;
 use u1_assets::qol::{self, Qol, Wait};
 use u1_assets::rules::ExeTables;
 use u1_assets::save::PlayerRecord;
@@ -64,7 +69,7 @@ const DEFAULT_POS: (u16, u16) = (49, 40);
 const USAGE: &str = "usage: u1 [--game-dir <path>] [--player N | --save FILE | --pos X,Y]
           [--mode ega|t1k|cga | C] [--font FILE] [--intro | --gen] [--roster DIR] [--scale N] [--save-to FILE]
           [--video original|enhanced] [--sound original|enhanced|mute] [--pack DIR]
-          [--fullscreen] [--crt] [--smoothing off|linear|pixel-art]
+          [--fullscreen] [--crt] [--portable] [--smoothing off|linear|pixel-art]
           [--screenshot out.png [--keys TEXT] [--counter N] [--options | --slots | --log] [--crt]]
 
 Without --game-dir the game files are looked for in $U1_GAME_DIR, the
@@ -110,7 +115,11 @@ dropping things worth a set amount, extra keys for the commands (F1, Keys),
 a gamepad and the engine's own arrow repeat. --features LIST turns some on
 for one run (automap, minimap, character, help, hints, confirm=N, repeat,
 gamepad, god); --god is the testing cheat (Hits never fall; hits kill). In screenshots --keys may hold {map} {help}, and --rebind
-draws the key window.";
+draws the key window.
+--portable (or a portable.txt file beside the program, as in the Windows
+portable ZIP) keeps config.toml and saves\\ beside the program, uses its
+assets\\enhanced and looks for the game files only there (or in its ULTIMA1
+folder), --game-dir and $U1_GAME_DIR still apply.";
 
 #[derive(Clone)]
 struct Args {
@@ -152,6 +161,8 @@ struct Args {
     rebind_shot: bool,
     /// Screenshots: the options menu's chosen row.
     menu_row: usize,
+    /// Portable mode (`portable.txt` beside the program, or `--portable`).
+    portable: Option<Portable>,
 }
 
 impl Default for Args {
@@ -187,6 +198,7 @@ impl Default for Args {
             features: Qol::default(),
             rebind_shot: false,
             menu_row: 0,
+            portable: None,
         }
     }
 }
@@ -194,6 +206,7 @@ impl Default for Args {
 fn parse_args() -> Result<Args, String> {
     let mut a = Args::default();
     let mut have_dir = false;
+    let mut forced_portable = false;
     let mut it = std::env::args().skip(1);
     while let Some(k) = it.next() {
         let mut v = || it.next().ok_or(format!("{k} needs a value"));
@@ -266,6 +279,7 @@ fn parse_args() -> Result<Args, String> {
             "--rebind" => a.rebind_shot = true,
             "--menu-row" => a.menu_row = v()?.parse().map_err(|_| "bad --menu-row")?,
             "--pack" => a.pack = Some(v()?.into()),
+            "--portable" => forced_portable = true,
             "--counter" => a.counter = v()?.parse().map_err(|_| "bad --counter")?,
             "-h" | "--help" => return Err(USAGE.into()),
             // The original's only video choice: a first argument starting
@@ -277,6 +291,7 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other}\n{USAGE}")),
         }
     }
+    a.portable = Portable::for_this_program(forced_portable);
     let interactive = a.screenshot.is_none() && a.sound_demo.is_none() && a.music_demo.is_none();
     let start_given = a.player.is_some() || a.save.is_some() || a.pos.is_some() || a.intro || a.gen;
     if interactive && !start_given {
@@ -284,10 +299,10 @@ fn parse_args() -> Result<Args, String> {
     }
     if a.sound_demo.is_none() && a.music_demo.is_none() {
         let front = a.intro || a.gen;
-        a.game_dir = if have_dir { gamedir::locate(std::slice::from_ref(&a.game_dir), front)? } else { gamedir::locate(&game_dir_candidates(), front)? };
+        a.game_dir = if have_dir { gamedir::locate(std::slice::from_ref(&a.game_dir), front)? } else { gamedir::locate(&game_dir_candidates(a.portable.as_ref()), front)? };
     }
     if interactive && a.save_to.is_none() && a.roster.is_none() {
-        if let Some(d) = gamedir::data_dir().map(|d| d.join("saves")) {
+        if let Some(d) = saves_dir(a.portable.as_ref()) {
             let new = !d.is_dir();
             std::fs::create_dir_all(&d).map_err(|e| format!("{}: {e}", d.display()))?;
             // The first time, the characters that came with the game join
@@ -321,11 +336,13 @@ fn parse_args() -> Result<Args, String> {
 }
 
 /// Where to look for the game files without `--game-dir`, in order.
-fn game_dir_candidates() -> Vec<PathBuf> {
-    let mut v = Vec::new();
-    if let Some(d) = std::env::var_os("U1_GAME_DIR").filter(|d| !d.is_empty()) {
-        v.push(PathBuf::from(d));
+fn game_dir_candidates(portable: Option<&Portable>) -> Vec<PathBuf> {
+    let env_dir = std::env::var_os("U1_GAME_DIR").filter(|d| !d.is_empty()).map(PathBuf::from);
+    if let Some(p) = portable {
+        return p.game_dir_candidates(env_dir);
     }
+    let mut v = Vec::new();
+    v.extend(env_dir);
     // The AppImage's own path (the program inside runs from a temporary mount).
     if let Some(d) = std::env::var_os("APPIMAGE").map(PathBuf::from).and_then(|p| p.parent().map(Path::to_path_buf)) {
         v.push(d);
@@ -342,6 +359,23 @@ fn game_dir_candidates() -> Vec<PathBuf> {
         v.push(d.join("game"));
     }
     v
+}
+
+/// Characters and saves: beside the program when portable, else the
+/// user's data folder.
+fn saves_dir(portable: Option<&Portable>) -> Option<PathBuf> {
+    match portable {
+        Some(p) => Some(p.saves_dir()),
+        None => gamedir::data_dir().map(|d| d.join("saves")),
+    }
+}
+
+/// The configuration file: beside the program when portable.
+fn config_path(portable: Option<&Portable>) -> Option<PathBuf> {
+    match portable {
+        Some(p) => Some(p.config_path()),
+        None => config::default_path(),
+    }
 }
 
 /// `--features LIST`: turn the named §23 features on in `q`.
@@ -375,7 +409,11 @@ fn pack_dir(a: &Args) -> Option<PathBuf> {
     match &a.pack {
         Some(d) => Some(d.clone()),
         None => {
-            let mut c = vec![PathBuf::from("assets/enhanced")];
+            let mut c = Vec::new();
+            if let Some(p) = &a.portable {
+                c.push(p.pack_dir());
+            }
+            c.push(PathBuf::from("assets/enhanced"));
             // Installed (the AppImage): <prefix>/share/ultima1-engine/enhanced
             // beside <prefix>/bin.
             if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)) {
@@ -1041,20 +1079,15 @@ impl SdlIo {
         use sdl2::event::Event;
         use sdl2::keyboard::{Keycode, Mod};
         let evs: Vec<Event> = self.events.poll_iter().collect();
+        // The batch that opened the question predates its presentation:
+        // none of its other keys may answer it.
+        let mut quit_opened = false;
         for ev in evs {
             match ev {
                 Event::Quit { .. } => {
-                    if !(self.qol.confirm_quit && self.dirty && !self.front) {
-                        return Err(Halt);
-                    }
-                    if self.current != Some(Modal::Quit) {
-                        if self.in_menu {
-                            // Close the window that is up; the question follows.
-                            self.menu_keys.push_back((keys::ESC, "escape".into()));
-                        }
-                        self.in_menu = true;
-                        self.modal_wanted = Some(Modal::Quit);
-                    }
+                    let asking = self.asking_quit();
+                    self.quit_requested()?;
+                    quit_opened |= !asking && self.asking_quit();
                 }
                 Event::Window { win_event, .. } => {
                     use sdl2::event::WindowEvent as We;
@@ -1090,6 +1123,9 @@ impl SdlIo {
                     }
                 }
                 Event::KeyDown { keycode: Some(k), keymod, repeat, .. } => {
+                    if quit_opened || (self.asking_quit() && repeat) {
+                        continue;
+                    }
                     let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::CAPSMOD);
                     let alt = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
                     // Fullscreen: never passed to the game.
@@ -1145,6 +1181,20 @@ impl SdlIo {
                         self.snap();
                         continue;
                     }
+                    // Escape at a command prompt quits, the same way as
+                    // closing the window (SPEC §25); elsewhere it is the
+                    // key it always was.
+                    if k == Keycode::Escape {
+                        match escape_dispatch(self.front, self.in_menu, self.at_prompt, self.fresh_wait, repeat, self.asking_quit()) {
+                            EscapeDispatch::Quit => {
+                                self.quit_requested()?;
+                                quit_opened = self.asking_quit();
+                                continue;
+                            }
+                            EscapeDispatch::Drop => continue,
+                            EscapeDispatch::Forward => {}
+                        }
+                    }
                     // Keys typed while a window is up are the window's.
                     if self.in_menu {
                         self.menu_keys.push_back((c.unwrap_or(0), name));
@@ -1175,6 +1225,35 @@ impl SdlIo {
             }
         }
         Ok(())
+    }
+
+    /// The window's close button, or Escape at a command prompt: quit now
+    /// when Confirm quit is off or outside gameplay, else ask once.
+    /// Nothing is saved either way.
+    fn quit_requested(&mut self) -> IoResult<()> {
+        match quit_action(self.qol.confirm_quit, self.front, self.asking_quit()) {
+            QuitAction::Halt => return Err(Halt),
+            QuitAction::AlreadyAsking => {}
+            QuitAction::Ask => {
+                // Never carry a game key or an earlier menu answer into
+                // a newly opened quit question.
+                self.pending.clear();
+                self.held.clear();
+                self.menu_keys.clear();
+                if self.in_menu {
+                    // Close the window that is up; the question follows.
+                    self.menu_keys.push_back((keys::ESC, "escape".into()));
+                }
+                self.in_menu = true;
+                self.modal_wanted = Some(Modal::Quit);
+            }
+        }
+        Ok(())
+    }
+
+    /// The quit question is up or about to open.
+    fn asking_quit(&self) -> bool {
+        self.current == Some(Modal::Quit) || self.modal_wanted == Some(Modal::Quit)
     }
 
     /// An engine code the game should get: a screen whose feature is off
@@ -1724,7 +1803,7 @@ impl SdlIo {
                     |slots, c| {
                         opts::panel(c);
                         opts::center(c, 5, "Quit the game?", u1_assets::term::WARN);
-                        opts::center(c, 7, "What you did since the last save", u1_assets::term::TEXT);
+                        opts::center(c, 7, "Any progress since the last save", u1_assets::term::TEXT);
                         opts::center(c, 8, "will be lost.", u1_assets::term::TEXT);
                         if *slots {
                             opts::center(c, 10, "To save: Q (Quit) outdoors,", u1_assets::term::TEXT);
@@ -1994,7 +2073,7 @@ fn available(a: &Args) -> [bool; 4] {
 
 fn play(a: &Args) -> Result<(), String> {
     // The command line, then the config file, then the defaults.
-    let cfg_path = config::default_path();
+    let cfg_path = config_path(a.portable.as_ref());
     let cfg = cfg_path.as_deref().map(Config::load).unwrap_or_default();
     for w in &cfg.warnings {
         eprintln!("config: {w}");
@@ -2183,6 +2262,10 @@ impl Args {
 }
 
 fn main() -> ExitCode {
+    if std::env::args().skip(1).any(|a| a == "--version" || a == "-V") {
+        println!("ultima1-engine {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     let res = parse_args().and_then(|a| {
         if let Some(out) = &a.sound_demo {
             return sound_demo(&a, out);
@@ -2348,6 +2431,52 @@ enum ArrowDispatch {
 
 /// Shared keyboard dispatch policy. Steady aim is an input context, not a
 /// global ban on repeat. Menus have their own earlier dispatch branch.
+#[derive(Debug, PartialEq, Eq)]
+enum QuitAction {
+    Halt,
+    Ask,
+    AlreadyAsking,
+}
+
+/// What a quit request (close button or Escape) does.
+fn quit_action(confirm_quit: bool, front: bool, asking: bool) -> QuitAction {
+    if !confirm_quit || front {
+        QuitAction::Halt
+    } else if asking {
+        QuitAction::AlreadyAsking
+    } else {
+        QuitAction::Ask
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum EscapeDispatch {
+    /// Quit, as the close button.
+    Quit,
+    /// Ignored (a held key's repeat).
+    Drop,
+    /// The key as before: to the window that is up, or to the game.
+    Forward,
+}
+
+/// Escape: quits only from a fresh press at a game command prompt (any
+/// play mode), never in the title or character menu, a window, a
+/// press-any-key wait or a command's own prompt. A held Escape's repeats
+/// neither ask again nor answer the quit question.
+fn escape_dispatch(front: bool, in_menu: bool, at_prompt: bool, fresh_wait: bool, repeat: bool, asking: bool) -> EscapeDispatch {
+    if in_menu {
+        return if repeat && asking { EscapeDispatch::Drop } else { EscapeDispatch::Forward };
+    }
+    if front || !at_prompt || fresh_wait {
+        return EscapeDispatch::Forward;
+    }
+    if repeat {
+        EscapeDispatch::Drop
+    } else {
+        EscapeDispatch::Quit
+    }
+}
+
 fn arrow_dispatch(steady_front: bool, engine_repeat: bool, fresh_wait: bool, repeat: bool, c: Option<u8>) -> ArrowDispatch {
     if fresh_wait {
         return if repeat { ArrowDispatch::Drop } else { ArrowDispatch::Forward };
@@ -2391,6 +2520,198 @@ fn keycode_to_byte(k: sdl2::keyboard::Keycode, shift: bool) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    // A real SDL event pump + software canvas (dummy video, no audio).
+    // Kept in one test because SDL permits only one live event pump.
+    fn quit_test_io(sdl: &sdl2::Sdl) -> SdlIo {
+        let video = sdl.video().unwrap();
+        let window = video.window("quit dispatch test", 640, 400).build().unwrap();
+        let canvas = window.into_canvas().software().build().unwrap();
+        let tc: &'static _ = Box::leak(Box::new(canvas.texture_creator()));
+        let tex = tc.create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGB24, 320, 200).unwrap();
+        let events = sdl.event_pump().unwrap();
+        let cfg = Config::default();
+        SdlIo {
+            canvas,
+            tex,
+            events,
+            palette: u1_assets::palette::EGA_PALETTE,
+            next: Instant::now(),
+            pending: Default::default(),
+            at_prompt: false,
+            view_key: None,
+            keymap: cfg.keys.clone(),
+            pad: PadInput::new(cfg.pad.clone()),
+            held: Repeater::default(),
+            // Opened even with the setting off (it reads nothing until a pad
+            // is opened), so the menu can turn the gamepad on.
+            gc: None,
+            pads: Vec::new(),
+            audio: None,
+            sound: SoundMode::Original,
+            sounds: None,
+            sound_src: None,
+            pack: None,
+            enhanced: false,
+            pack_src: None,
+            start: Instant::now(),
+            tc,
+            game_dir: PathBuf::new(),
+            shown: VideoMode::Ega,
+            wanted: VideoMode::Ega,
+            avail: [true; 4],
+            modal_wanted: None,
+            in_menu: false,
+            menu_keys: Default::default(),
+            cfg_path: None,
+            front: true,
+            restart: false,
+            qol: Qol::default(),
+            in_space: false,
+            space_front_view: false,
+            fresh_wait: false,
+            clicked: false,
+            area: None,
+            tracks: Default::default(),
+            rendering: false,
+            crt_tex: None,
+            last_frame: None,
+            save_base: None,
+            save_req: None,
+            toast: None,
+            focus_lost: false,
+            current: None,
+            dirty: false,
+            halt: false,
+            geom: None,
+            geom_moved: false,
+            last_rgb: None,
+        }
+    }
+
+    #[test]
+    fn live_sdl_quit_dispatch_clean_dirty_on_off_and_modal_cancel() {
+        use sdl2::event::Event;
+        use sdl2::keyboard::{Keycode, Mod};
+        std::env::set_var("SDL_VIDEODRIVER", "dummy");
+        let sdl = sdl2::init().unwrap();
+        let events = sdl.event().unwrap();
+        let mut io = quit_test_io(&sdl);
+        let mut t = Term::new();
+        t.println("Live SDL quit confirmation");
+        let key = |k, repeat| Event::KeyDown { timestamp: 0, window_id: 0, keycode: Some(k), scancode: None, keymod: Mod::NOMOD, repeat };
+        io.events.poll_iter().for_each(drop);
+        for dirty in [false, true] {
+            for close in [false, true] {
+                io.reset_for_title();
+                io.front = false;
+                io.at_prompt = true;
+                io.dirty = dirty;
+                io.qol.confirm_quit = true;
+                events.push_event(if close { Event::Quit { timestamp: 0 } } else { key(Keycode::Escape, false) }).unwrap();
+                // Queued answers and repeated Escape must not answer before
+                // the question has been presented.
+                events.push_event(key(Keycode::Y, false)).unwrap();
+                events.push_event(key(Keycode::Escape, true)).unwrap();
+                io.pump().unwrap();
+                assert_eq!(io.modal_wanted, Some(Modal::Quit), "dirty={dirty}, close={close}");
+                assert!(io.menu_keys.is_empty());
+                events.push_event(key(Keycode::Y, true)).unwrap();
+                io.pump().unwrap();
+                assert!(io.menu_keys.is_empty(), "held Y cannot accept");
+                // A fresh N or Escape cancels in the actual quit modal.
+                events.push_event(key(if close { Keycode::N } else { Keycode::Escape }, false)).unwrap();
+                io.menu(&t).unwrap();
+                assert!(!io.halt && !io.in_menu);
+                assert!(io.pending.is_empty());
+                events.push_event(key(Keycode::Escape, true)).unwrap();
+                io.pump().unwrap();
+                assert!(io.modal_wanted.is_none(), "a held repeat cannot reopen");
+                // Fresh request, then fresh Y: halts with no save request.
+                events.push_event(key(Keycode::Escape, false)).unwrap();
+                io.pump().unwrap();
+                events.push_event(key(Keycode::Y, false)).unwrap();
+                assert!(io.menu(&t).is_err());
+                assert!(io.halt);
+                assert!(io.save_req.is_none());
+                io.halt = false;
+            }
+        }
+        // An F1-style window owns Escape, not gameplay.
+        io.reset_for_title();
+        io.front = false;
+        io.at_prompt = true;
+        io.current = Some(Modal::Options);
+        io.in_menu = true;
+        events.push_event(key(Keycode::Escape, false)).unwrap();
+        io.pump().unwrap();
+        assert_eq!(io.menu_keys.pop_front().unwrap().0, keys::ESC);
+        assert!(io.modal_wanted.is_none());
+        // Quit confirmation off: both methods halt even in a modified game.
+        for close in [false, true] {
+            io.reset_for_title();
+            io.front = false;
+            io.at_prompt = true;
+            io.dirty = true;
+            io.qol.confirm_quit = false;
+            events.push_event(if close { Event::Quit { timestamp: 0 } } else { key(Keycode::Escape, false) }).unwrap();
+            assert!(io.pump().is_err());
+            assert!(io.save_req.is_none());
+        }
+    }
+
+    #[test]
+    fn escape_quits_only_from_a_fresh_press_at_a_play_prompt() {
+        use EscapeDispatch::*;
+        // (front, in_menu, at_prompt, fresh_wait, repeat, asking)
+        assert_eq!(escape_dispatch(false, false, true, false, false, false), Quit, "command prompt: overworld, town, dungeon, space, Mondain");
+        assert_eq!(escape_dispatch(false, false, true, false, true, false), Drop, "held Escape repeat never asks again");
+        assert_eq!(escape_dispatch(true, false, true, false, false, false), Forward, "title/character menu keep Escape");
+        assert_eq!(escape_dispatch(false, false, false, false, false, false), Forward, "a command's own prompt gets Escape as before");
+        assert_eq!(escape_dispatch(false, false, true, true, false, false), Forward, "press-any-key / ending waits unchanged");
+        assert_eq!(escape_dispatch(false, true, true, false, false, false), Forward, "a window (F1, slots, keys) closes on Escape");
+        assert_eq!(escape_dispatch(false, true, true, false, false, true), Forward, "a fresh Escape cancels the quit question");
+        assert_eq!(escape_dispatch(false, true, true, false, true, true), Drop, "a held Escape cannot cancel the question it opened");
+        assert_eq!(escape_dispatch(false, true, false, false, true, false), Forward, "other windows keep their key repeat");
+    }
+
+    #[test]
+    fn escape_uses_the_close_button_quit_flow() {
+        use QuitAction::*;
+        // (confirm_quit, front, asking)
+        assert_eq!(quit_action(true, false, false), Ask, "default: gameplay always asks first");
+        assert_eq!(quit_action(true, false, true), AlreadyAsking, "never a second question");
+        assert_eq!(quit_action(true, false, false), Ask, "a freshly loaded or saved game also asks");
+        assert_eq!(quit_action(false, false, false), Halt, "Confirm quit off: quits without asking");
+        assert_eq!(quit_action(true, true, false), Halt, "title/menu: nothing to lose");
+    }
+
+    #[test]
+    fn escape_sequence_ask_cancel_then_held_repeat_does_not_reopen() {
+        // A simulated session through both deciders: press Esc at a prompt
+        // (question opens), its repeats while held, a fresh Esc answers No,
+        // then the still-held key's repeats back at the prompt do nothing.
+        let mut asking = false;
+        let mut halted = false;
+        let mut events = vec![(false, false), (true, true), (true, true), (true, false)];
+        events.extend([(false, true), (false, true)]);
+        let mut opened = 0;
+        for (in_menu, repeat) in events {
+            match escape_dispatch(false, in_menu, true, false, repeat, asking) {
+                EscapeDispatch::Quit => match quit_action(true, false, asking) {
+                    QuitAction::Ask => {
+                        asking = true;
+                        opened += 1;
+                    }
+                    QuitAction::Halt => halted = true,
+                    QuitAction::AlreadyAsking => {}
+                },
+                EscapeDispatch::Forward if asking => asking = false, // Quit window: Esc = No
+                _ => {}
+            }
+        }
+        assert_eq!((opened, asking, halted), (1, false, false));
+    }
+
     #[test]
     fn ending_music_respects_switch_volume_and_independent_effects() {
         let mut q = Qol::default();

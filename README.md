@@ -1,5 +1,9 @@
 # ultima1-engine
 
+Current milestone: **0.1.0-beta.1**, Linux x86-64 and portable Windows x64.
+See [beta setup, testing scope and caveats](docs/BETA.md). Beta work focuses
+on fixes and regressions; macOS and Android are not beta targets.
+
 An open-source re-implementation engine for Origin Systems' *Ultima I: The
 First Age of Darkness* (the MS-DOS port of the 1986 remake, as sold on the
 *Ultima 1-3* CD-ROM and by GOG.com). It is written independently in Rust
@@ -521,7 +525,8 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | Screenshot key | F12 | rebindable (Keys screen, `key_screenshot`) | PNG to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`). |
 | Window memory | always | | The window's place and size are remembered (`window = "x,y,w,h"`). |
 | Volumes | 100% / 100% / 50% | | Master, effects (`sfx_volume`) and music volume, set separately. |
-| Confirm quit | **on** | | Closing the window with unsaved progress asks first. |
+| Confirm quit | **on** | | Closing the window during gameplay, or Escape at a command prompt, always asks first (including just after loading or saving) (nothing is saved; Y quits, N or Escape keeps playing). |
+| Escape quits | always | Esc | At the command prompt in every play mode, Escape is the close button (same question, no save). Elsewhere (windows, title, character menu, a command's own prompt, press-any-key waits) Escape is unchanged; a held Escape never repeats the question. |
 | AppImage desktop entry | | | The AppImage carries a desktop entry and our own 16-bit style icon (CC-BY-SA 4.0). |
 | Vehicle facing | **on** | | Enhanced video: vehicles face the way they last moved sideways; kept in the `.map` sidecar. |
 | `--save FILE` fix | | | Saves back to FILE (or to the roster when FILE is in the game folder), no longer over roster character 1. `--player N` plays character N. |
@@ -604,6 +609,14 @@ Actions tab, which also runs Windows).
 and attaches it to a GitHub release (a pre-release for tags such as
 `v0.1.0-alpha.1`); started by hand it only keeps the AppImage as a run
 artifact.
+
+`.github/workflows/windows-portable.yml` (started by hand, or by pushes
+to the `windows-portable` branch) runs the tests on Windows, builds
+`packaging/windows/build-portable.ps1`'s portable ZIP (release build with
+SDL2 linked in, no console window, enhanced assets, licences, a
+`portable.txt` marker and an empty `ULTIMA1` folder; no game files), checks
+its DLL imports, smoke-tests it from another folder and keeps it as a run
+artifact. Nothing is published.
 
 ## Roadmap
 

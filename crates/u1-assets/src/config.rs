@@ -212,7 +212,7 @@ impl Config {
         flag(q.footsteps, d.footsteps, "footsteps", "overworld footsteps in enhanced sound");
         flag(q.vehicle_facing, d.vehicle_facing, "vehicle_facing", "enhanced video: vehicles face left or right");
         flag(q.music, d.music, "music", "our own area music (F1)");
-        flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "ask before closing with unsaved progress");
+        flag(q.confirm_quit, d.confirm_quit, "confirm_quit", "always ask before quitting during gameplay");
         flag(q.sign_wait, d.sign_wait, "wait_on_signs", "\"Press any key\" after signs and princess rescue");
         flag(q.docking_fee, d.docking_fee, "docking_fee", "the 500 coin fee to refuel at a space station");
         flag(q.steady_aim, d.steady_aim, "steady_aim", "space sights glide while an arrow is held");

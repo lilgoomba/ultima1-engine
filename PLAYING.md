@@ -107,9 +107,16 @@ unchanged). Ace need is 20, 10 or 5 (default 20) for the Space Ace
 award, kill HUD and princess time-machine reward. Kill counter (off by default) shows `K:n/N` on
 the space status panel, or `Ace!` once you have reached the need.
 
-The game also pauses when its window loses focus. Closing the window with
-progress not yet saved asks first (F1, Interface: Confirm quit). The
-window's size and place are remembered.
+The game also pauses when its window loses focus. With Confirm quit on
+(the default, F1 → Interface), closing the window during gameplay always
+asks first, even just after loading or saving. Escape at the command prompt
+(outdoors, towns and castles, dungeons, space and Mondain's lair) quits the
+same way: Y quits, N, Enter or a fresh Escape keeps playing. Nothing is
+saved by either method; Q (Quit) outdoors still saves. With Confirm quit
+off, both methods close at once. A held/repeated key or a key already queued
+when the question opens cannot answer it. In windows, the title and
+character menus, and a command's own questions, Escape keeps its usual
+meaning (close / cancel). The window's size and place are remembered.
 
 In dungeons, as in the original, G (Get) does nothing (it answers "Get?").
 Step onto a chest's square and press U (Unlock) to open it (it may be
@@ -135,6 +142,12 @@ facing, saved beside your save in its `.map` file).
   fine. `--save-to FILE` or `--roster DIR` choose another place.
 * **Settings**: `~/.config/ultima1-engine/config.toml`
   (`$XDG_CONFIG_HOME/ultima1-engine/config.toml`), written by the F1 menu.
+* **Portable mode** (the Windows portable ZIP, or `--portable`): when a
+  `portable.txt` file sits beside the program, settings are `config.toml`
+  and saves are `saves/` in the program's own folder (not the current
+  folder), the enhanced assets are its `assets/enhanced`, and the game files
+  are looked for only in that folder or its `ULTIMA1` folder (`--game-dir`
+  and `$U1_GAME_DIR` still work). The game files are still only read.
 
 ## 6. Bugs
 

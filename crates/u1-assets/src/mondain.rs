@@ -491,6 +491,9 @@ impl Lair<'_> {
         loop {
             self.prompt();
             let mut key = None;
+            // At the command prompt, as in OUT and space (the engine's
+            // Escape-to-quit is taken only there).
+            self.io.command_prompt(true);
             for _ in 0..1500 {
                 key = self.poll()?;
                 self.tick();
@@ -498,6 +501,7 @@ impl Lair<'_> {
                     break;
                 }
             }
+            self.io.command_prompt(false);
             self.command(key.unwrap_or(b' '))?;
             if self.redraw {
                 self.draw_all();

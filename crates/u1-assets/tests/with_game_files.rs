@@ -326,11 +326,16 @@ struct LairBot {
     seen: Vec<String>,
     /// With `U1_LAIR_FRAMES` set: the last distinct screens, as RGB.
     frames: Option<std::collections::VecDeque<Vec<u8>>>,
+    /// The game says it is at a command prompt (the engine's Escape quits
+    /// only then).
+    prompt: bool,
+    /// Polls at a command prompt after the first "Hit Mondain!".
+    lair_prompt_polls: u32,
 }
 
 impl LairBot {
     fn new(prefix: &str, polls: u32) -> Self {
-        LairBot { queue: ScriptIo::from_text(prefix).keys, left: polls, seen: Vec::new(), frames: std::env::var_os("U1_LAIR_FRAMES").map(|_| Default::default()) }
+        LairBot { queue: ScriptIo::from_text(prefix).keys, left: polls, seen: Vec::new(), frames: std::env::var_os("U1_LAIR_FRAMES").map(|_| Default::default()), prompt: false, lair_prompt_polls: 0 }
     }
 
     fn keep(&mut self, t: &Term) {
@@ -431,11 +436,17 @@ impl LairBot {
 }
 
 impl Io for LairBot {
+    fn command_prompt(&mut self, on: bool) {
+        self.prompt = on;
+    }
     fn poll(&mut self, t: &Term) -> IoResult<Option<u8>> {
         if self.left == 0 {
             return Err(Halt);
         }
         self.left -= 1;
+        if self.prompt && self.saw("Hit Mondain!") {
+            self.lair_prompt_polls += 1;
+        }
         self.keep(t);
         for l in t.messages() {
             if !l.trim().is_empty() && self.seen.last() != Some(&l) {
@@ -471,6 +482,10 @@ fn defeating_mondain_shows_the_ending() {
         return;
     };
     assert!(bot.saw("Hit Mondain!"));
+    // Mondain's lair reports its command prompt like OUT and space, so the
+    // engine's Escape-to-quit works there too, and not in the ending wait.
+    assert!(bot.lair_prompt_polls > 0, "the lair's command polls are at a prompt");
+    assert!(!bot.prompt, "the ending's press-any-key wait is not a command prompt");
     assert!(g.term.row_text(24).contains("Press any key to return to title screen"), "{:?}", g.term.messages());
     assert!(g.return_to_title);
     assert_eq!(g.stopped, Some("victory"));

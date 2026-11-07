@@ -521,7 +521,8 @@ U1_GAME_DIR="/path/to/Ultima1" cargo test --workspace
 | Screenshot key | F12 | rebindable (Keys screen, `key_screenshot`) | PNG to `~/Pictures/ultima1-engine/` (or `~/.local/share/ultima1-engine/screenshots/`). |
 | Window memory | always | | The window's place and size are remembered (`window = "x,y,w,h"`). |
 | Volumes | 100% / 100% / 50% | | Master, effects (`sfx_volume`) and music volume, set separately. |
-| Confirm quit | **on** | | Closing the window with unsaved progress asks first. |
+| Confirm quit | **on** | | Closing the window, or Escape at a command prompt, with unsaved progress asks first (nothing is saved; Y quits, N or Escape keeps playing). |
+| Escape quits | always | Esc | At the command prompt in every play mode, Escape is the close button (same question, no save). Elsewhere (windows, title, character menu, a command's own prompt, press-any-key waits) Escape is unchanged; a held Escape never repeats the question. |
 | AppImage desktop entry | | | The AppImage carries a desktop entry and our own 16-bit style icon (CC-BY-SA 4.0). |
 | Vehicle facing | **on** | | Enhanced video: vehicles face the way they last moved sideways; kept in the `.map` sidecar. |
 | `--save FILE` fix | | | Saves back to FILE (or to the roster when FILE is in the game folder), no longer over roster character 1. `--player N` plays character N. |

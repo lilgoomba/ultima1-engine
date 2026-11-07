@@ -1081,19 +1081,7 @@ impl SdlIo {
         let evs: Vec<Event> = self.events.poll_iter().collect();
         for ev in evs {
             match ev {
-                Event::Quit { .. } => {
-                    if !(self.qol.confirm_quit && self.dirty && !self.front) {
-                        return Err(Halt);
-                    }
-                    if self.current != Some(Modal::Quit) {
-                        if self.in_menu {
-                            // Close the window that is up; the question follows.
-                            self.menu_keys.push_back((keys::ESC, "escape".into()));
-                        }
-                        self.in_menu = true;
-                        self.modal_wanted = Some(Modal::Quit);
-                    }
-                }
+                Event::Quit { .. } => self.quit_requested()?,
                 Event::Window { win_event, .. } => {
                     use sdl2::event::WindowEvent as We;
                     match win_event {
@@ -1183,6 +1171,19 @@ impl SdlIo {
                         self.snap();
                         continue;
                     }
+                    // Escape at a command prompt quits, the same way as
+                    // closing the window (SPEC §25); elsewhere it is the
+                    // key it always was.
+                    if k == Keycode::Escape {
+                        match escape_dispatch(self.front, self.in_menu, self.at_prompt, self.fresh_wait, repeat, self.asking_quit()) {
+                            EscapeDispatch::Quit => {
+                                self.quit_requested()?;
+                                continue;
+                            }
+                            EscapeDispatch::Drop => continue,
+                            EscapeDispatch::Forward => {}
+                        }
+                    }
                     // Keys typed while a window is up are the window's.
                     if self.in_menu {
                         self.menu_keys.push_back((c.unwrap_or(0), name));
@@ -1213,6 +1214,30 @@ impl SdlIo {
             }
         }
         Ok(())
+    }
+
+    /// The window's close button, or Escape at a command prompt: quit now
+    /// when nothing is unsaved (or Confirm quit is off), else ask once.
+    /// Nothing is saved either way.
+    fn quit_requested(&mut self) -> IoResult<()> {
+        match quit_action(self.qol.confirm_quit, self.dirty, self.front, self.asking_quit()) {
+            QuitAction::Halt => return Err(Halt),
+            QuitAction::AlreadyAsking => {}
+            QuitAction::Ask => {
+                if self.in_menu {
+                    // Close the window that is up; the question follows.
+                    self.menu_keys.push_back((keys::ESC, "escape".into()));
+                }
+                self.in_menu = true;
+                self.modal_wanted = Some(Modal::Quit);
+            }
+        }
+        Ok(())
+    }
+
+    /// The quit question is up or about to open.
+    fn asking_quit(&self) -> bool {
+        self.current == Some(Modal::Quit) || self.modal_wanted == Some(Modal::Quit)
     }
 
     /// An engine code the game should get: a screen whose feature is off
@@ -2386,6 +2411,52 @@ enum ArrowDispatch {
 
 /// Shared keyboard dispatch policy. Steady aim is an input context, not a
 /// global ban on repeat. Menus have their own earlier dispatch branch.
+#[derive(Debug, PartialEq, Eq)]
+enum QuitAction {
+    Halt,
+    Ask,
+    AlreadyAsking,
+}
+
+/// What a quit request (close button or Escape) does.
+fn quit_action(confirm_quit: bool, dirty: bool, front: bool, asking: bool) -> QuitAction {
+    if !(confirm_quit && dirty && !front) {
+        QuitAction::Halt
+    } else if asking {
+        QuitAction::AlreadyAsking
+    } else {
+        QuitAction::Ask
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum EscapeDispatch {
+    /// Quit, as the close button.
+    Quit,
+    /// Ignored (a held key's repeat).
+    Drop,
+    /// The key as before: to the window that is up, or to the game.
+    Forward,
+}
+
+/// Escape: quits only from a fresh press at a game command prompt (any
+/// play mode), never in the title or character menu, a window, a
+/// press-any-key wait or a command's own prompt. A held Escape's repeats
+/// neither ask again nor answer the quit question.
+fn escape_dispatch(front: bool, in_menu: bool, at_prompt: bool, fresh_wait: bool, repeat: bool, asking: bool) -> EscapeDispatch {
+    if in_menu {
+        return if repeat && asking { EscapeDispatch::Drop } else { EscapeDispatch::Forward };
+    }
+    if front || !at_prompt || fresh_wait {
+        return EscapeDispatch::Forward;
+    }
+    if repeat {
+        EscapeDispatch::Drop
+    } else {
+        EscapeDispatch::Quit
+    }
+}
+
 fn arrow_dispatch(steady_front: bool, engine_repeat: bool, fresh_wait: bool, repeat: bool, c: Option<u8>) -> ArrowDispatch {
     if fresh_wait {
         return if repeat { ArrowDispatch::Drop } else { ArrowDispatch::Forward };
@@ -2429,6 +2500,59 @@ fn keycode_to_byte(k: sdl2::keyboard::Keycode, shift: bool) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn escape_quits_only_from_a_fresh_press_at_a_play_prompt() {
+        use EscapeDispatch::*;
+        // (front, in_menu, at_prompt, fresh_wait, repeat, asking)
+        assert_eq!(escape_dispatch(false, false, true, false, false, false), Quit, "command prompt: overworld, town, dungeon, space, Mondain");
+        assert_eq!(escape_dispatch(false, false, true, false, true, false), Drop, "held Escape repeat never asks again");
+        assert_eq!(escape_dispatch(true, false, true, false, false, false), Forward, "title/character menu keep Escape");
+        assert_eq!(escape_dispatch(false, false, false, false, false, false), Forward, "a command's own prompt gets Escape as before");
+        assert_eq!(escape_dispatch(false, false, true, true, false, false), Forward, "press-any-key / ending waits unchanged");
+        assert_eq!(escape_dispatch(false, true, true, false, false, false), Forward, "a window (F1, slots, keys) closes on Escape");
+        assert_eq!(escape_dispatch(false, true, true, false, false, true), Forward, "a fresh Escape cancels the quit question");
+        assert_eq!(escape_dispatch(false, true, true, false, true, true), Drop, "a held Escape cannot cancel the question it opened");
+        assert_eq!(escape_dispatch(false, true, false, false, true, false), Forward, "other windows keep their key repeat");
+    }
+
+    #[test]
+    fn escape_uses_the_close_button_quit_flow() {
+        use QuitAction::*;
+        // (confirm_quit, dirty, front, asking)
+        assert_eq!(quit_action(true, true, false, false), Ask, "default: unsaved progress asks first");
+        assert_eq!(quit_action(true, true, false, true), AlreadyAsking, "never a second question");
+        assert_eq!(quit_action(true, false, false, false), Halt, "nothing unsaved: quits");
+        assert_eq!(quit_action(false, true, false, false), Halt, "Confirm quit off: quits without asking");
+        assert_eq!(quit_action(true, true, true, false), Halt, "title/menu: nothing to lose");
+    }
+
+    #[test]
+    fn escape_sequence_ask_cancel_then_held_repeat_does_not_reopen() {
+        // A simulated session through both deciders: press Esc at a prompt
+        // (question opens), its repeats while held, a fresh Esc answers No,
+        // then the still-held key's repeats back at the prompt do nothing.
+        let mut asking = false;
+        let mut halted = false;
+        let mut events = vec![(false, false), (true, true), (true, true), (true, false)];
+        events.extend([(false, true), (false, true)]);
+        let mut opened = 0;
+        for (in_menu, repeat) in events {
+            match escape_dispatch(false, in_menu, true, false, repeat, asking) {
+                EscapeDispatch::Quit => match quit_action(true, true, false, asking) {
+                    QuitAction::Ask => {
+                        asking = true;
+                        opened += 1;
+                    }
+                    QuitAction::Halt => halted = true,
+                    QuitAction::AlreadyAsking => {}
+                },
+                EscapeDispatch::Forward if asking => asking = false, // Quit window: Esc = No
+                _ => {}
+            }
+        }
+        assert_eq!((opened, asking, halted), (1, false, false));
+    }
+
     #[test]
     fn ending_music_respects_switch_volume_and_independent_effects() {
         let mut q = Qol::default();

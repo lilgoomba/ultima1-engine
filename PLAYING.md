@@ -108,7 +108,13 @@ award, kill HUD and princess time-machine reward. Kill counter (off by default) 
 the space status panel, or `Ace!` once you have reached the need.
 
 The game also pauses when its window loses focus. Closing the window with
-progress not yet saved asks first (F1, Interface: Confirm quit). The
+progress not yet saved asks first (F1, Interface: Confirm quit). Escape at
+the command prompt (outdoors, in towns and castles, dungeons, space and
+Mondain's lair) quits the same way: it saves nothing, asks first if there is
+unsaved progress (Y quits, N or Escape keeps playing) and, with Confirm quit
+off or nothing unsaved, closes at once. Q (Quit) outdoors still saves. In
+windows, the title and character menus and a command's own questions,
+Escape keeps its usual meaning (close / cancel). The
 window's size and place are remembered.
 
 In dungeons, as in the original, G (Get) does nothing (it answers "Get?").

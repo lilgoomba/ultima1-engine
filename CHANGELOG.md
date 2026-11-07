@@ -13,6 +13,10 @@ No tagged releases yet; entries are by branch.
   `assets/enhanced`, game files looked for only there. Without the marker
   every path is unchanged.
 - `u1/windows-gui` Cargo feature (used by the ZIP only): no console window.
+- Escape at the command prompt (outdoors, towns, castles, dungeons, space,
+  Mondain's lair) quits like closing the window: the Confirm quit question
+  when progress is unsaved (on by default), nothing saved. Windows and
+  other prompts keep Escape as close/cancel.
 
 ## space-aim-alt (unreleased)
 

@@ -35,7 +35,11 @@ $crt = '^(vcruntime140|vcruntime140_1|msvcp140)\.dll$'
 foreach ($d in $deps) {
     if ($d -imatch $system) { continue }
     if ($d -imatch $crt) {
-        $src = Get-ChildItem -Recurse "$vs\VC\Redist\MSVC" -Filter $d | Where-Object { $_.FullName -match '\\x64\\Microsoft\.VC\d+\.CRT\\' -and $_.FullName -notmatch 'onecore|debug' } | Select-Object -First 1
+        # The newest redistributable (never older than the toolset that linked us).
+        $src = Get-ChildItem -Recurse "$vs\VC\Redist\MSVC" -Filter $d |
+            Where-Object { $_.FullName -match '\\MSVC\\(\d+\.\d+\.\d+)\\x64\\Microsoft\.VC\d+\.CRT\\' -and $_.FullName -notmatch 'onecore|debug' } |
+            Sort-Object { [version]([regex]::Match($_.FullName, '\\MSVC\\(\d+\.\d+\.\d+)\\').Groups[1].Value) } -Descending |
+            Select-Object -First 1
         if (-not $src) { throw "no redistributable $d found" }
         Copy-Item $src.FullName $out
         Write-Host "shipped $d from $($src.FullName)"

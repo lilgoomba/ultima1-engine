@@ -22,6 +22,11 @@ Copy-Item 'packaging\windows\ULTIMA1-README.txt' (Join-Path $out 'ULTIMA1\README
 Copy-Item 'LICENSE' (Join-Path $out 'LICENSE.txt')
 Copy-Item 'CREDITS' (Join-Path $out 'CREDITS.txt')
 Copy-Item 'PLAYING.md' $out
+Copy-Item 'docs\BETA.md' $out
+$metadata = cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json
+$version = ($metadata.packages | Where-Object name -eq 'u1').version
+$sha = git rev-parse HEAD
+"Version: $version`nSource: $sha" | Set-Content -Encoding utf8 (Join-Path $out 'BUILD-INFO.txt')
 
 # DLLs the program needs that are not part of Windows itself are shipped
 # beside it (only the Visual C++ runtime, if it is linked dynamically).

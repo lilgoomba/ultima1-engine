@@ -28,7 +28,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build the AppImage
-        run: packaging/build-appimage.sh
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --no-deps --locked | jq -r '.packages[] | select(.name=="u1") | .version') packaging/build-appimage.sh
       - name: Check it
         run: |
           ls -l build/ultima1-engine-*.AppImage
@@ -36,6 +37,10 @@ jobs:
           if find squashfs-root -type f | grep -iE '\.(exe|bin|u1|16|4|com)$'; then
             echo "game data in the AppImage"; exit 1
           fi
+          ./squashfs-root/AppRun --version | tee version.txt
+          expected=$(cargo metadata --format-version 1 --no-deps --locked | jq -r '.packages[] | select(.name=="u1") | .version')
+          grep -Fx "ultima1-engine $expected" version.txt
+          grep -Fx "Source: $GITHUB_SHA" squashfs-root/usr/share/doc/ultima1-engine/BUILD-INFO.txt
           # No game files: it must say which are missing and fail.
           mkdir empty && cd empty
           if HOME=$PWD ../squashfs-root/AppRun --game-dir . --screenshot x.png 2> err.txt; then exit 1; fi

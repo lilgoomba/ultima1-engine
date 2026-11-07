@@ -1,5 +1,9 @@
 # ultima1-engine
 
+Current milestone: **0.1.0-beta.1**, Linux x86-64 and portable Windows x64.
+See [beta setup, testing scope and caveats](docs/BETA.md). Beta work focuses
+on fixes and regressions; macOS and Android are not beta targets.
+
 An open-source re-implementation engine for Origin Systems' *Ultima I: The
 First Age of Darkness* (the MS-DOS port of the 1986 remake, as sold on the
 *Ultima 1-3* CD-ROM and by GOG.com). It is written independently in Rust

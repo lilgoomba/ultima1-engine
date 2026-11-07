@@ -14,7 +14,8 @@ APPDIR=build/AppDir
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/share/ultima1-engine" "$APPDIR/usr/share/doc/ultima1-engine"
 cp -r assets/enhanced "$APPDIR/usr/share/ultima1-engine/enhanced"
-cp LICENSE PLAYING.md CREDITS "$APPDIR/usr/share/doc/ultima1-engine/"
+cp LICENSE PLAYING.md CREDITS docs/BETA.md "$APPDIR/usr/share/doc/ultima1-engine/"
+printf 'Version: %s\nSource: %s\n' "$VERSION" "$(git rev-parse HEAD)" > "$APPDIR/usr/share/doc/ultima1-engine/BUILD-INFO.txt"
 
 # Safety net: nothing that looks like original game data goes in.
 bad=$(find "$APPDIR" -type f \( -iname '*.exe' -o -iname '*.bin' -o -iname '*.u1' -o -iname '*.16' -o -iname '*.4' -o -iname '*.com' \) -print)

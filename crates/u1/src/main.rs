@@ -2262,6 +2262,10 @@ impl Args {
 }
 
 fn main() -> ExitCode {
+    if std::env::args().skip(1).any(|a| a == "--version" || a == "-V") {
+        println!("ultima1-engine {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     let res = parse_args().and_then(|a| {
         if let Some(out) = &a.sound_demo {
             return sound_demo(&a, out);

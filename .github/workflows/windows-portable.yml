@@ -36,6 +36,13 @@ jobs:
           $exe = Join-Path $dir 'ultima1-engine.exe'
           $cwd = Join-Path $env:RUNNER_TEMP 'elsewhere'
           New-Item -ItemType Directory $cwd | Out-Null
+          $metadata = cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json
+          $expected = ($metadata.packages | Where-Object name -eq 'u1').version
+          $v = Join-Path $cwd 'version.txt'
+          $p = Start-Process $exe -ArgumentList '--version' -WorkingDirectory $cwd -Wait -PassThru -RedirectStandardOutput $v
+          if ($p.ExitCode -ne 0 -or (Get-Content -Raw $v).Trim() -ne "ultima1-engine $expected") { throw 'binary version mismatch' }
+          $info = Get-Content -Raw (Join-Path $dir 'BUILD-INFO.txt')
+          if ($info -notmatch [regex]::Escape($env:GITHUB_SHA)) { throw 'source commit mismatch' }
           $before = Get-ChildItem -Recurse -File $dir | ForEach-Object FullName
           # Starts, finds the pack beside it (not via the current folder) and
           # renders the enhanced sounds.

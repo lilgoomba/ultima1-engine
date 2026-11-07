@@ -1,6 +1,25 @@
 # Changelog
 
-No tagged releases yet; entries are by branch.
+## 0.1.0-beta.1
+
+First Linux x86-64 / Windows x64 beta, promoting the reviewed space-aim-alt
+and windows-portable work. Beta development focuses on bugs and regressions.
+
+- Portable Windows ZIP with bundled runtime, executable-folder settings
+  and saves; Linux AppImage. Both require your own Ultima I files.
+- Space combat options, enhanced galaxy map and Space Ace target/HUD;
+  princess eligibility follows the selected target.
+- Testing-only God mode (off), optional gem attacks, readable title/message
+  pauses, jester reward hardening and normal movement key repeat fixes.
+- Safe victory return to title and the original ending composition
+  "Sosaria Restored"; Escape quits through the shared confirmation flow.
+- Confirm quit always asks during gameplay when enabled, even just after
+  loading/saving; queued/repeated keys cannot answer the new question.
+- Save record format and faithful defaults preserved. No original game
+  assets or reference implementation code are distributed.
+
+Testing scope and caveats: see docs/BETA.md. Historical branch entries below.
+
 
 ## windows-portable (unreleased)
 

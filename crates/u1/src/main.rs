@@ -1079,9 +1079,16 @@ impl SdlIo {
         use sdl2::event::Event;
         use sdl2::keyboard::{Keycode, Mod};
         let evs: Vec<Event> = self.events.poll_iter().collect();
+        // The batch that opened the question predates its presentation:
+        // none of its other keys may answer it.
+        let mut quit_opened = false;
         for ev in evs {
             match ev {
-                Event::Quit { .. } => self.quit_requested()?,
+                Event::Quit { .. } => {
+                    let asking = self.asking_quit();
+                    self.quit_requested()?;
+                    quit_opened |= !asking && self.asking_quit();
+                }
                 Event::Window { win_event, .. } => {
                     use sdl2::event::WindowEvent as We;
                     match win_event {
@@ -1116,6 +1123,9 @@ impl SdlIo {
                     }
                 }
                 Event::KeyDown { keycode: Some(k), keymod, repeat, .. } => {
+                    if quit_opened || (self.asking_quit() && repeat) {
+                        continue;
+                    }
                     let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD | Mod::CAPSMOD);
                     let alt = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
                     // Fullscreen: never passed to the game.
@@ -1178,6 +1188,7 @@ impl SdlIo {
                         match escape_dispatch(self.front, self.in_menu, self.at_prompt, self.fresh_wait, repeat, self.asking_quit()) {
                             EscapeDispatch::Quit => {
                                 self.quit_requested()?;
+                                quit_opened = self.asking_quit();
                                 continue;
                             }
                             EscapeDispatch::Drop => continue,
@@ -1217,13 +1228,18 @@ impl SdlIo {
     }
 
     /// The window's close button, or Escape at a command prompt: quit now
-    /// when nothing is unsaved (or Confirm quit is off), else ask once.
+    /// when Confirm quit is off or outside gameplay, else ask once.
     /// Nothing is saved either way.
     fn quit_requested(&mut self) -> IoResult<()> {
-        match quit_action(self.qol.confirm_quit, self.dirty, self.front, self.asking_quit()) {
+        match quit_action(self.qol.confirm_quit, self.front, self.asking_quit()) {
             QuitAction::Halt => return Err(Halt),
             QuitAction::AlreadyAsking => {}
             QuitAction::Ask => {
+                // Never carry a game key or an earlier menu answer into
+                // a newly opened quit question.
+                self.pending.clear();
+                self.held.clear();
+                self.menu_keys.clear();
                 if self.in_menu {
                     // Close the window that is up; the question follows.
                     self.menu_keys.push_back((keys::ESC, "escape".into()));
@@ -1787,7 +1803,7 @@ impl SdlIo {
                     |slots, c| {
                         opts::panel(c);
                         opts::center(c, 5, "Quit the game?", u1_assets::term::WARN);
-                        opts::center(c, 7, "What you did since the last save", u1_assets::term::TEXT);
+                        opts::center(c, 7, "Any progress since the last save", u1_assets::term::TEXT);
                         opts::center(c, 8, "will be lost.", u1_assets::term::TEXT);
                         if *slots {
                             opts::center(c, 10, "To save: Q (Quit) outdoors,", u1_assets::term::TEXT);
@@ -2419,8 +2435,8 @@ enum QuitAction {
 }
 
 /// What a quit request (close button or Escape) does.
-fn quit_action(confirm_quit: bool, dirty: bool, front: bool, asking: bool) -> QuitAction {
-    if !(confirm_quit && dirty && !front) {
+fn quit_action(confirm_quit: bool, front: bool, asking: bool) -> QuitAction {
+    if !confirm_quit || front {
         QuitAction::Halt
     } else if asking {
         QuitAction::AlreadyAsking
@@ -2500,6 +2516,145 @@ fn keycode_to_byte(k: sdl2::keyboard::Keycode, shift: bool) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    // A real SDL event pump + software canvas (dummy video, no audio).
+    // Kept in one test because SDL permits only one live event pump.
+    fn quit_test_io(sdl: &sdl2::Sdl) -> SdlIo {
+        let video = sdl.video().unwrap();
+        let window = video.window("quit dispatch test", 640, 400).build().unwrap();
+        let canvas = window.into_canvas().software().build().unwrap();
+        let tc: &'static _ = Box::leak(Box::new(canvas.texture_creator()));
+        let tex = tc.create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGB24, 320, 200).unwrap();
+        let events = sdl.event_pump().unwrap();
+        let cfg = Config::default();
+        SdlIo {
+            canvas,
+            tex,
+            events,
+            palette: u1_assets::palette::EGA_PALETTE,
+            next: Instant::now(),
+            pending: Default::default(),
+            at_prompt: false,
+            view_key: None,
+            keymap: cfg.keys.clone(),
+            pad: PadInput::new(cfg.pad.clone()),
+            held: Repeater::default(),
+            // Opened even with the setting off (it reads nothing until a pad
+            // is opened), so the menu can turn the gamepad on.
+            gc: None,
+            pads: Vec::new(),
+            audio: None,
+            sound: SoundMode::Original,
+            sounds: None,
+            sound_src: None,
+            pack: None,
+            enhanced: false,
+            pack_src: None,
+            start: Instant::now(),
+            tc,
+            game_dir: PathBuf::new(),
+            shown: VideoMode::Ega,
+            wanted: VideoMode::Ega,
+            avail: [true; 4],
+            modal_wanted: None,
+            in_menu: false,
+            menu_keys: Default::default(),
+            cfg_path: None,
+            front: true,
+            restart: false,
+            qol: Qol::default(),
+            in_space: false,
+            space_front_view: false,
+            fresh_wait: false,
+            clicked: false,
+            area: None,
+            tracks: Default::default(),
+            rendering: false,
+            crt_tex: None,
+            last_frame: None,
+            save_base: None,
+            save_req: None,
+            toast: None,
+            focus_lost: false,
+            current: None,
+            dirty: false,
+            halt: false,
+            geom: None,
+            geom_moved: false,
+            last_rgb: None,
+        }
+    }
+
+    #[test]
+    fn live_sdl_quit_dispatch_clean_dirty_on_off_and_modal_cancel() {
+        use sdl2::event::Event;
+        use sdl2::keyboard::{Keycode, Mod};
+        std::env::set_var("SDL_VIDEODRIVER", "dummy");
+        let sdl = sdl2::init().unwrap();
+        let events = sdl.event().unwrap();
+        let mut io = quit_test_io(&sdl);
+        let mut t = Term::new();
+        t.println("Live SDL quit confirmation");
+        let key = |k, repeat| Event::KeyDown { timestamp: 0, window_id: 0, keycode: Some(k), scancode: None, keymod: Mod::NOMOD, repeat };
+        io.events.poll_iter().for_each(drop);
+        for dirty in [false, true] {
+            for close in [false, true] {
+                io.reset_for_title();
+                io.front = false;
+                io.at_prompt = true;
+                io.dirty = dirty;
+                io.qol.confirm_quit = true;
+                events.push_event(if close { Event::Quit { timestamp: 0 } } else { key(Keycode::Escape, false) }).unwrap();
+                // Queued answers and repeated Escape must not answer before
+                // the question has been presented.
+                events.push_event(key(Keycode::Y, false)).unwrap();
+                events.push_event(key(Keycode::Escape, true)).unwrap();
+                io.pump().unwrap();
+                assert_eq!(io.modal_wanted, Some(Modal::Quit), "dirty={dirty}, close={close}");
+                assert!(io.menu_keys.is_empty());
+                events.push_event(key(Keycode::Y, true)).unwrap();
+                io.pump().unwrap();
+                assert!(io.menu_keys.is_empty(), "held Y cannot accept");
+                // A fresh N or Escape cancels in the actual quit modal.
+                events.push_event(key(if close { Keycode::N } else { Keycode::Escape }, false)).unwrap();
+                io.menu(&t).unwrap();
+                assert!(!io.halt && !io.in_menu);
+                assert!(io.pending.is_empty());
+                events.push_event(key(Keycode::Escape, true)).unwrap();
+                io.pump().unwrap();
+                assert!(io.modal_wanted.is_none(), "a held repeat cannot reopen");
+                // Fresh request, then fresh Y: halts with no save request.
+                events.push_event(key(Keycode::Escape, false)).unwrap();
+                io.pump().unwrap();
+                events.push_event(key(Keycode::Y, false)).unwrap();
+                assert!(io.menu(&t).is_err());
+                assert!(io.halt);
+                assert!(io.save_req.is_none());
+                io.halt = false;
+            }
+        }
+        // An F1-style window owns Escape, not gameplay.
+        io.reset_for_title();
+        io.front = false;
+        io.at_prompt = true;
+        io.current = Some(Modal::Options);
+        io.in_menu = true;
+        events.push_event(key(Keycode::Escape, false)).unwrap();
+        io.pump().unwrap();
+        assert_eq!(io.menu_keys.pop_front().unwrap().0, keys::ESC);
+        assert!(io.modal_wanted.is_none());
+        // Quit confirmation off: both methods halt even in a modified game.
+        for close in [false, true] {
+            io.reset_for_title();
+            io.front = false;
+            io.at_prompt = true;
+            io.dirty = true;
+            io.qol.confirm_quit = false;
+            events.push_event(if close { Event::Quit { timestamp: 0 } } else { key(Keycode::Escape, false) }).unwrap();
+            assert!(io.pump().is_err());
+            assert!(io.save_req.is_none());
+        }
+    }
+
     #[test]
     fn escape_quits_only_from_a_fresh_press_at_a_play_prompt() {
         use EscapeDispatch::*;
@@ -2518,12 +2673,12 @@ mod tests {
     #[test]
     fn escape_uses_the_close_button_quit_flow() {
         use QuitAction::*;
-        // (confirm_quit, dirty, front, asking)
-        assert_eq!(quit_action(true, true, false, false), Ask, "default: unsaved progress asks first");
-        assert_eq!(quit_action(true, true, false, true), AlreadyAsking, "never a second question");
-        assert_eq!(quit_action(true, false, false, false), Halt, "nothing unsaved: quits");
-        assert_eq!(quit_action(false, true, false, false), Halt, "Confirm quit off: quits without asking");
-        assert_eq!(quit_action(true, true, true, false), Halt, "title/menu: nothing to lose");
+        // (confirm_quit, front, asking)
+        assert_eq!(quit_action(true, false, false), Ask, "default: gameplay always asks first");
+        assert_eq!(quit_action(true, false, true), AlreadyAsking, "never a second question");
+        assert_eq!(quit_action(true, false, false), Ask, "a freshly loaded or saved game also asks");
+        assert_eq!(quit_action(false, false, false), Halt, "Confirm quit off: quits without asking");
+        assert_eq!(quit_action(true, true, false), Halt, "title/menu: nothing to lose");
     }
 
     #[test]
@@ -2538,7 +2693,7 @@ mod tests {
         let mut opened = 0;
         for (in_menu, repeat) in events {
             match escape_dispatch(false, in_menu, true, false, repeat, asking) {
-                EscapeDispatch::Quit => match quit_action(true, true, false, asking) {
+                EscapeDispatch::Quit => match quit_action(true, false, asking) {
                     QuitAction::Ask => {
                         asking = true;
                         opened += 1;

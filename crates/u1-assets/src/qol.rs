@@ -270,7 +270,7 @@ pub struct Qol {
     pub master_volume: u8,
     /// The effects' loudness (beeps and enhanced sounds), in per cent.
     pub sfx_volume: u8,
-    /// Ask before closing the window with progress not yet saved (an
+    /// Always ask before quitting during gameplay (window close or Esc; an
     /// engine safety net only: nothing in the game changes).
     pub confirm_quit: bool,
     /// After a signpost/pillar or the princess-rescue reward text, wait

@@ -4,6 +4,14 @@ No tagged releases yet; entries are by branch.
 
 ## windows-portable (unreleased)
 
+### Fixed
+- Confirm quit now always asks during gameplay when on (including a
+  freshly loaded or saved game), for Escape and window close. Previously
+  the input-derived "dirty" flag could bypass it. No save is written.
+- Keys queued in the batch that opened the quit question, and held-key
+  repeats while it is open, cannot answer it accidentally.
+
+
 ### Added
 - Portable Windows x86-64 ZIP (`packaging/windows`, Actions workflow
   `windows-portable.yml`): extract anywhere, put your own game files in

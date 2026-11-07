@@ -239,7 +239,7 @@ impl Row {
             Row::Keys => "Extra keys for commands and screens.",
             Row::MasterVolume => "How loud everything is.",
             Row::SfxVolume => "How loud the beeps and sound effects are.",
-            Row::ConfirmQuit => "Ask before quitting (window close or Esc) unsaved.",
+            Row::ConfirmQuit => "Always ask before quitting gameplay (close or Esc).",
             Row::MessagePauses => "Signs/princess: key; first title: longer timed dwell.",
             Row::DockFee => "Pay 500 coin to refuel at a station.",
             Row::SteadyAim => "Original drift; opposite press stops free. Press again to go that way.",
